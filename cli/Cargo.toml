@@ -1,0 +1,19 @@
+[package]
+name = "wl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "worldline 命令行工具:check / play / graph"
+
+[dependencies]
+worldline-core = { path = "../core" }
+worldline-runtime = { path = "../runtime" }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "wl"
+path = "src/main.rs"
+
+[lib]
+name = "wl"
+path = "src/lib.rs"

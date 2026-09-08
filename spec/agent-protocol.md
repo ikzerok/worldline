@@ -1,0 +1,263 @@
+# worldline 机器接口契约(agent 协议与 CLI JSON 模式)
+
+**协议版本:** 1（语言 v1.9 字段扩展）
+
+时段包含扩展：`timeline.periods[]` 新增 `parent: string | null`，保存直接上级 ID。父子层级由 core 验证，未知上级及循环包含为 A219 编译诊断。CLI 与 RPC 同时返回该字段，不影响会话状态和运行指纹。
+
+资料导航扩展：CLI `catalog --json` 与 agent `analyze.catalog` 的目录新增 `aliases`（target/name/file/line）和 `text_links`（source/target/label/file/line/column）数组；正文引用同时出现在 references。属于向后兼容的附加字段，旧消费者可忽略。未知别名／正文链接目标为 A218 编译诊断；格式错误为 P004；故事层仍返回 `ok:false`，不变成 JSON-RPC 协议错误。播放输出只包含链接的显示文字，不增加运行记录或另一份状态。
+**生产者:** `wl`(JSON 模式)、`wl-agent`(`worldline-agent` crate)
+**消费者:** 外部 agent 程序、CI、测试
+**依据:** 本仓库语言规范与 core/runtime 的公开模型。
+
+---
+
+## 0. 原则
+
+1. **分层**:人类交互走 `wl` 人类模式与 worldedit;机器驱动走本文档定义的
+   两条通道——一次性 CLI JSON 命令与 `wl-agent` 有状态协议。两者都只是
+   core/runtime 的投影,不引入第二套解析或分析。
+2. **真相唯一**:诊断、图、时间线、状态视图一律产自 `worldline-core` /
+   `worldline-runtime`;接口层只做序列化与转发。
+3. **契约先行**:方法表、字段、错误码的任何变更先改本文档,再改实现。
+4. 本文档只定义**机器视图**;语言语义见 `syntax.md` / `semantics.md`,
+   诊断编号见 `diagnostics.md`,图结构见 `relations.md`。
+
+## 1. 总则
+
+- 全部机器输出为 UTF-8;JSON 字段名 snake_case;`serde_json` 紧凑风格
+  (无缩进)。
+- **map 类字段(vars、visits、symbols 内的映射等)键序不定**,消费方不得
+  依赖其顺序;有序信息一律使用 `*_order` 字段或数组。
+- 退出码约定(`wl` 各子命令通用):
+  - `0` 成功;
+  - `1` 故事层失败(编译存在 error 诊断、或运行期错误);
+  - `2` 用法 / IO 失败(文件无法读取、参数错误)。
+- **故事层失败是正常结果**,不是协议错误:CLI 以退出码 + JSON 表达,
+  `wl-agent` 以 `{"ok": false, ...}` 结果表达。协议层错误仅指消息本身
+  不合法(见 §3.2)。
+
+## 2. `wl` CLI JSON 模式
+
+新增 `wl catalog <目录或入口> [--tag ID] [--recursive] [--kind 类型] [--json]`。
+JSON 为 `{ok, catalog, matches, diagnostics}`;catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
+每个对象有 target:{kind,id}、display、file、line;标签/素材与链接也保留声明位置。
+无 --tag 时 matches 为所有对象,有 --tag 时为直接或递归命中,按 --kind 可进一步过滤。
+未知标签视为用法失败;重复路径按对象 ID 去重。`analyze` 结果增加同样的 catalog 字段,
+属于协议版本 1 的向后兼容扩展。详见 [catalog.md](catalog.md)。
+
+人类模式输出保持不变;`--json` 切换机器输出。标志:`--load=<存档.json>`、
+`--save=<存档.json>`、`--json`。
+
+### 2.1 `wl check <file> --json`
+
+见 `diagnostics.md` §3,不在此重复:`{ok, stats, diagnostics[]}`。
+
+### 2.2 `wl graph <file> --json`
+
+```json
+{ "graph": {
+    "nodes":  [ { "name": "start", "is_event": true, "file": "s.wl", "line": 1,
+                  "choice_count": 1, "word_count": 0, "storyline": "main",
+                  "seq": 1, "summary": null, "characters": [], "perm": null },
+                { "name": "hall", "is_event": true, "file": "s.wl", "line": 4,
+                  "choice_count": 0, "word_count": 0, "storyline": "main",
+                  "seq": 2, "summary": null, "characters": [], "perm": null } ],
+    "edges":  [ { "from": 0, "to": 1, "kind": "choice", "label": "走",
+                  "file": "s.wl", "line": 2,
+                  "contexts": [{"conditions": [], "choices": ["走"]}],
+                  "target_requirement": null },
+                { "from": 0, "to": 1, "kind": "divert", "label": null,
+                  "file": "s.wl", "line": 3,
+                  "contexts": [{"conditions": [], "choices": ["走"]}],
+                  "target_requirement": null } ],
+    "ids": {"start": 0, "hall": 1},
+    "entry": 0,
+    "depth":  [0, 1],
+    "storyline_order": [["main", "主线"]] } }
+```
+
+字段与 `relations.md` §1 完全一致;`kind` 序列化为
+`"divert" | "choice" | "enter" | "drift"`。编译存在 error 时输出单行
+`{"type":"compile_failed","diagnostics":[…]}`(同 §2.4),退出码 1。
+
+每条 `GraphEdge` 新增 `contexts: [{conditions: string[], choices: string[]}]` 和 `target_requirement: string | null`。conditions 累计显式条件与前面分支的否定，choices 保留外到内选择文案；同一上下文中的条件共同约束该处，不同上下文表示不同收集路径。空数组表示未收集到上下文，不证明无条件可达。target_requirement 单独表示目标事件准入；同事件内场景跳转无需重复准入时为 null。两者都不执行表达式，不预测运行必然到达，详见 [relations.md](relations.md) §2.1。
+
+图节点的旧 `perm` 字段仍保留；旧权限归一后通常为 null。消费者应读取准入表达式，不通过该字段是否为空推断是否受身份限制。
+
+### 2.3 `wl timeline <file> --json`
+
+```json
+{ "stats": { "events": 12, "scenes": 5, "choices": 20, "words": 1834,
+             "storylines": 2, "characters": 3 },
+  "anchors": [ { "node": "start", "name": "开局", "note": null,
+                 "file": "s.wl", "line": 4 } ],
+  "timeline": { "periods": [], "events": [], "edges": [] },
+  "graph": { "…同 §2.2,完整 RelationGraph 视图…": true } }
+```
+
+### 2.4 `wl play <file> --json [--load=存档.json] [--save=存档.json]`
+
+逐回合行协议:每回合向 stdout 输出**一行** JSON 事件;暂停时从 stdin 读
+**一行**十进制整数作为选择(取值为上事件 `choices[].index`,**0 起**;
+与人类模式的 1 起序号不同,机器模式以事件中的 index 字段为准)。
+
+事件类型:
+
+```json
+{ "type": "turn", "outputs": [...], "choices": [{"index": 0, "label": "甲", "line": 5, "offset": 0}], "state": { ...状态视图... } }
+{ "type": "ended", "state": { ... } }
+{ "type": "eof", "state": { ... } }
+{ "type": "run_error", "message": "...", "node": null, "line": 3 }
+{ "type": "invalid_choice", "message": "(输入序号无效)" }
+{ "type": "compile_failed", "diagnostics": [...同 check --json...] }
+```
+
+- `outputs` 元素为 Output 的机器视图:`{"type":"text","content":"…","new_line":true,"tags":["…"]}`、`{"type":"ended"}`(`semantics.md` §5)。
+- 编译存在 error 时输出单行 `compile_failed` 后退出(码 1),不进入循环。
+- stdin EOF(故事尚未结束时):输出单行 `eof` 事件后退出,退出码 0
+  (与人类模式一致);故事自然结束则输出 `ended` 收束。
+- `--save=<path>`:退出前(ended / eof / run_error)将 `Story::save()`
+  的存档 JSON 写入该文件;暂停态语义同 `semantics.md` §7。
+  人类模式下 `--save` 同样生效。
+
+### 2.5 状态视图(state)
+
+由 `worldline_runtime::Story::state_view()` 统一产出,CLI 与 `wl-agent`
+共用,字段:
+
+```json
+{ "turns": 3, "storyline": "main", "current_node": "start",
+  "vars": { "gold": 5 }, "visits": { "start": 1 },
+  "perms": [], "met": [], "anchors": [ "...AnchorRecord..." ],
+  "states": {}, "state_history": [],
+  "paused": true, "ended": false }
+```
+
+选项列表不进入状态视图,只出现在各协议事件/结果的 `choices` 字段中。
+`perms` 是世界叙事身份状态的旧权限名称投影，不维护第二份集合；独立锚点在 `catalog.anchors`，这里的 `anchors` 仍是运行时记录。
+
+## 3. `wl-agent` 协议(JSON-RPC 2.0 · stdio 行分帧)
+
+`wl-agent` 是有状态的机器协议入口:外部 agent 程序 spawn 子进程,经
+stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → 选择 →
+存读档 → 状态查询 全流程。
+
+### 3.1 分帧与处理模型
+
+- 每行一个 JSON 消息;空行忽略;以 EOF 或 `shutdown` 结束,退出码 0。
+- **单线程顺序处理**:上一请求响应完成后才处理下一请求;无并发交错。
+- `id` 必须回显;通知(无 id)不响应。
+- stdout 上只写协议消息;日志一律走 stderr(当前实现不主动输出日志)。
+
+### 3.2 错误模型
+
+| 场景 | 表达 |
+|---|---|
+| 行不是合法 JSON | error `-32700`(data: 原始错误摘要) |
+| 不是合法请求对象(缺 method / jsonrpc 不符) | error `-32600` |
+| 未知方法 | error `-32601` |
+| 参数缺失 / 类型错误 / 未知 story_id / 未知 session_id / 选择越界 | error `-32602`(data: 原因) |
+| 编译存在 error 诊断 | result `{"ok": false, "diagnostics": [...]}` |
+| 运行期错误(准入失败、指纹不匹配等,即 `RunError`) | result `{"ok": false, "run_error": {message, node, line}}` |
+
+### 3.3 方法表
+
+| 方法 | 参数 | 结果(result) |
+|---|---|---|
+| `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version: "0.1.0"}` |
+| `compile` | `{path}` 或 `{source, file_name?}` | `{ok, story_id, fingerprint, stats, diagnostics}`;ok=false 时无 story_id |
+| `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
+| `export` | `{story_id, format}`;format ∈ `graph_mermaid` \| `timeline_mermaid` | `{text}` |
+| `session.open` | `{story_id, save?}`(save 为存档 JSON 字符串) | `{session_id, state}` |
+| `session.continue` | `{session_id}` | `{outputs, choices, state, paused, ended}`;运行期错误 → `ok:false` |
+| `session.choose` | `{session_id, index}`(**0 起**) | `{state, paused, ended, choices}`;越界 → error `-32602` |
+| `session.state` | `{session_id}` | `{state}` |
+| `session.save` | `{session_id}` | `{save}`(存档 JSON **字符串**) |
+| `session.restart` | `{session_id}` | `{state}` |
+| `session.close` | `{session_id}` | `{closed: true}` |
+| `shutdown` | `{}` | `{bye: true}`(响应后进程退出,码 0) |
+
+### 3.4 生命周期语义
+
+v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目录(解析 world.wl)。
+`analyze.world` 和角色 properties / relations / events 字段见 relations.md §6。
+协议版本仍为 1,消费者应忽略不认识的新增字段。
+`analyze.timeline` 与 `wl timeline --json` 的新增 `timeline` 字段输出时段及先后约束,
+结构见 relations.md §7;原 graph 保留执行关系,二者不能互换。
+
+- `compile` 产出一个 **story 单元**(Program + Analysis 驻留服务进程),
+  `story_id` 自 `"s1"` 起递增;产物驻留至进程退出(设计面向短生命周期
+  agent 进程,不做回收)。
+- `session.open` 基于 story_id 新建会话(多会话可共享同一 story);带
+  `save` 时经 `Story::load` 恢复,指纹不匹配 → `ok:false`。
+  `session_id` 自 `"c1"` 起递增。
+- `session.continue` 对应库层 `continue_story()`;`session.choose` 对应
+  `choose()`——**只消费选择、不推进**(与库语义一致),推进靠随后的
+  `session.continue`。
+- 会话结束(ended)后 `session.continue` 仍可安全调用:返回
+  `ended: true`,`outputs` 仅含 `{"type":"ended"}` 收束事件;
+  `session.restart` 复位到开头。
+
+### 3.5 会话示例
+
+```text
+→ {"jsonrpc":"2.0","id":1,"method":"compile","params":{"path":"story.wl"}}
+← {"jsonrpc":"2.0","id":1,"result":{"ok":true,"story_id":"s1","fingerprint":9812,…}}
+→ {"jsonrpc":"2.0","id":2,"method":"session.open","params":{"story_id":"s1"}}
+← {"jsonrpc":"2.0","id":2,"result":{"session_id":"c1","state":{…}}}
+→ {"jsonrpc":"2.0","id":3,"method":"session.continue","params":{"session_id":"c1"}}
+← {"jsonrpc":"2.0","id":3,"result":{"outputs":[{"type":"text","content":"…"}],
+   "choices":[{"index":0,"label":"甲"}],"paused":true,"ended":false,"state":{…}}}
+→ {"jsonrpc":"2.0","id":4,"method":"session.choose","params":{"session_id":"c1","index":0}}
+← {"jsonrpc":"2.0","id":4,"result":{"state":{…},"paused":false,"ended":false}}
+→ {"jsonrpc":"2.0","id":5,"method":"session.continue","params":{"session_id":"c1"}}
+← …
+→ {"jsonrpc":"2.0","id":9,"method":"shutdown"}
+← {"jsonrpc":"2.0","id":9,"result":{"bye":true}}
+```
+
+## 4. 状态目录与演练历史（语言 v1.9）
+
+分析结果 catalog.states 提供全工程状态声明与按 ID 聚合的变更索引；状态语义见 states.md。运行时状态与真实变更历史随存档持久化。
+
+状态视图 `states` 为状态 ID 到标签 ID 数组的映射；`state_history` 为有序记录数组，每条含 `kind/state/before/after/event/node/note/turn`。`event` / `node` / `note` 可以为 null；before/after 是实际操作前后的完整集合。旧历史缺少 kind 时按 Become 读取。
+
+编译目录 `catalog.states` 为 ID 到声明信息的映射，信息含 `id/display/target/tags/file/line/changes`。每条 `StateChangeSite` 形如：
+
+```json
+{"kind":"AddTags","event":"arrival","node":"arrival","timing":"enter",
+ "tags":["alert"],"note":"读到来信","contexts":[],"file":"events/harbor.wl","line":5}
+```
+
+| 字段 | 类型与含义 |
+|---|---|
+| `kind` | `"Become"` / `"AddTags"` / `"RemoveTags"`，与 Rust ChangeKind 的序列化大小写一致；分别对应 with/add/remove |
+| `event`, `node` | 字符串，所属事件与节点 ID |
+| `timing` | `"enter"` / `"exit"` / `"done"` / `"during"` |
+| `tags` | 字符串数组，本次操作参数；add/remove 时不是操作后的完整集合 |
+| `note` | 字符串或 null |
+| `contexts` | 字符串数组，源码中的条件、选择等说明；与 GraphEdge 的对象数组形状不同 |
+| `file`, `line` | 源文件与从 1 开始的行号，用于定位，不是永久动作 ID |
+
+索引顺序不是执行顺序；不要把不同分支的出处合并为唯一状态结果。实际历史的 `kind` 使用相同枚举值，同值操作也保留记录。
+
+## 5. 独立锚点目录
+
+`catalog.anchors` 是 ID 到 `AnchorInfo` 的映射，字段为 `id/display/description/file/line/links`。links 的每个元素为 `{anchor, target: {kind, id}, file, line}`，其中 kind 仅为 character/event/state/anchor。顶层 objects 与 references 同时暴露锚点对象和引用来源；可用 `wl catalog <工程> --kind anchor --json` 查询。
+
+该映射不含复制的 states 或 changes 内容。Rust API `Catalog::anchors_for(&TargetRef)` 反查直接关联的锚点；`Catalog::anchor_changes(id)` 返回关联状态与关联事件的共同变化出处借用。JSON 消费者通过 links 找到状态 ID 与事件 ID，再从 `catalog.states[id].changes` 按 event 过滤，得到相同集合。上述 Rust 方法不是新增 JSON-RPC 方法。
+
+`analyze.anchors` / `wl timeline --json` 的顶层 anchors 仍是正文手动语句位置，`state.anchors` 仍是实际演练记录；二者不改名、不自动转为独立目录对象。独立锚点资料及链接不改变 fingerprint。
+
+## 6. 旧权限与协议兼容
+
+协议版本仍为 1；消费者应容忍新增字段。`compile` 接受旧 grant/revoke/perm 输入，核心将其归一到世界叙事身份状态；analyze 返回归一后的状态声明、动作和准入表达式。所有旧权限都使用同一状态模型，生成 ID 不保证固定拼写。
+
+`perms` 兼容数组与旧 Grant/Revoke 演练锚点从身份状态及其动作派生；没有可独立写入的权限集合。旧存档仅在记录的旧指纹/归一后指纹对匹配时转换；无映射权限、缺失状态、冲突来源或其他指纹变化返回故事层 `ok:false/run_error`，不变成 JSON-RPC 协议错误。存档详细规则见 [states.md](states.md)。
+
+
+## 4. 工作区与编辑器控制边界
+
+传入目录时，`compile.path` 与所有 CLI 分析命令读取根目录 `world.wl` 并递归载入所有 `.wl`。传入文件时维持入口及 include 的语言工具模式；只允许访问入口父目录范围。目录模式和编辑器分析结果一致。引用越界为 A109 故事诊断。目录读取失败仍按原 IO 契约处理。
+
+`wl-agent` 的 `export` 只导出 Mermaid 文本，不是工程目录导出。现有协议没有连接运行中 worldedit 的通道，也没有修改缓冲、切换视图、撤销重做、窗口控制、图布局、系统文件对话框的方法。AI 可以修改磁盘工作区文件并用 CLI 校验；桌面自动刷新后显示修改。不能声称 CLI 已完整控制编辑器。

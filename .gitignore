@@ -1,0 +1,26 @@
+# 构建与发布产物
+/target/
+/dist/
+/releases/
+node_modules/
+__pycache__/
+
+# 本机配置、凭据与系统文件
+.env*
+*.pem
+*.key
+*.pfx
+.idea/
+.vscode/
+.mimosa/
+.zcode/
+.DS_Store
+Thumbs.db
+
+# 日志、临时稿与演练存档
+*.log
+*.tmp
+*.bak
+*.swp
+*.pyc
+*.save.json

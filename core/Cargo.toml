@@ -1,0 +1,9 @@
+[package]
+name = "worldline-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "worldline 语言核心:词法、语法、语义分析、诊断与关系图"
+
+[dependencies]
+serde = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "worldline-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "worldline 运行时:故事状态机、选择分支、存读档"
+
+[dependencies]
+worldline-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1"
