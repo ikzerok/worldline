@@ -36,6 +36,8 @@ fn recursive_index_refresh_conflict_and_complete_export() {
     fs::write(root.join(".agent/skills/note.md"), "关联创作资料").unwrap();
     fs::write(root.join("unused.bin"), [0, 255, 128]).unwrap();
     let mut project = Project::open(&root).unwrap();
+    // 文档索引与刷新结果使用工程规范路径。
+    let root = project.root.clone();
     assert_eq!(project.documents.len(), 2);
     assert!(project
         .compile()
