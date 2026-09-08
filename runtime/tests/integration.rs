@@ -395,9 +395,14 @@ fn attachments_export_and_save_as_are_portable_and_preserve_sources() {
         "{:?}",
         compiled.diagnostics
     );
+    // Windows 临时目录可能使用短路径或不同大小写，比较前统一解析真实路径。
+    let canonical_output = output.canonicalize().unwrap();
     for asset in compiled.analysis.catalog.assets.values() {
         assert!(!std::path::Path::new(&asset.path).is_absolute());
-        assert!(std::path::Path::new(&asset.resolved_path).starts_with(&output));
+        assert!(std::path::Path::new(&asset.resolved_path)
+            .canonicalize()
+            .unwrap()
+            .starts_with(&canonical_output));
     }
     assert_eq!(
         std::fs::read(output.join("assets/概念 图.PNG")).unwrap(),

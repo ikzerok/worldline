@@ -160,14 +160,10 @@ fn exported_world_preserves_state_ids_and_relocates_file_targets() {
         2
     );
     assert_eq!(
-        reopened.analysis.catalog.states["file_status"]
-            .target
-            .id
-            .replace('\\', "/"),
-        output
-            .join("events/harbor.wl")
-            .to_string_lossy()
-            .replace('\\', "/")
+        std::path::Path::new(&reopened.analysis.catalog.states["file_status"].target.id)
+            .canonicalize()
+            .unwrap(),
+        output.join("events/harbor.wl").canonicalize().unwrap()
     );
     assert!(output.join("world.wl").is_file());
     assert!(!output.join("spec/README.md").exists());
