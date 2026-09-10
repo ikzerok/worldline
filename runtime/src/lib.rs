@@ -491,7 +491,7 @@ impl<'p> Story<'p> {
             let stmt_loc_line = stmt_line(&self.frames[fi].stmts[self.frames[fi].idx]);
             match &self.frames[fi].stmts[self.frames[fi].idx] {
                 Stmt::Text(t) => {
-                    let content = self.render_parts(&t.parts)?;
+                    let (content, links) = self.render_parts(&t.parts)?;
                     let tags = t.tags.clone();
                     let new_line = !self.glue_pending;
                     self.glue_pending = false;
@@ -500,6 +500,7 @@ impl<'p> Story<'p> {
                             content,
                             new_line,
                             tags,
+                            links,
                         });
                     }
                     if t.glue {
@@ -654,9 +655,10 @@ impl<'p> Story<'p> {
                                 continue;
                             }
                         }
-                        let label = self.render_parts(&c.label)?;
+                        let (label, links) = self.render_parts(&c.label)?;
                         choices.push(ChoiceView {
                             label,
+                            links,
                             line: c.loc.line,
                             offset,
                         });
@@ -752,19 +754,47 @@ impl<'p> Story<'p> {
 
     // -- 求值 ---------------------------------------------------------------
 
-    fn render_parts(&self, parts: &[TextPart]) -> Result<String, RunError> {
+    fn render_parts(
+        &self,
+        parts: &[TextPart],
+    ) -> Result<(String, Vec<worldline_core::navigation::RenderedLink>), RunError> {
         let mut out = String::new();
+        let mut links = Vec::new();
         for p in parts {
             match p {
                 TextPart::Str(s) => out.push_str(s),
-                TextPart::Link(link) => out.push_str(&link.label),
+                TextPart::Link(link) => {
+                    let start = out.len();
+                    out.push_str(&link.label);
+                    let mut target = link.target.clone();
+                    if target.kind == "file" {
+                        if let Some(file) = self
+                            .current_node()
+                            .and_then(|node| {
+                                self.symbols
+                                    .events
+                                    .get(node.split('.').next().unwrap_or(&node))
+                            })
+                            .and_then(|node| self.program.event_files.get(node.event))
+                        {
+                            target.id = worldline_core::catalog::resolved_asset(file, &target.id)
+                                .to_string_lossy()
+                                .into_owned();
+                        }
+                    }
+                    links.push(worldline_core::navigation::RenderedLink {
+                        target,
+                        start,
+                        end: out.len(),
+                    });
+                }
                 TextPart::Expr(e) => {
                     let v = self.eval(e)?;
                     out.push_str(&v.display());
                 }
             }
         }
-        Ok(out)
+        Ok((out, links))
     }
 
     fn eval(&self, e: &Expr) -> Result<Value, RunError> {

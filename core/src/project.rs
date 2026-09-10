@@ -22,7 +22,7 @@ pub struct Project {
     pub documents: BTreeMap<PathBuf, Document>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SearchHit {
     pub file: PathBuf,
     pub line: u32,

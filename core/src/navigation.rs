@@ -22,6 +22,14 @@ pub struct InlineLink {
     pub column: u32,
 }
 
+/// 求值后文字中的显式链接；start/end 是 UTF-8 字节范围。
+#[derive(Debug, Clone, Serialize)]
+pub struct RenderedLink {
+    pub target: TargetRef,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TextLinkInfo {
     pub source: TargetRef,

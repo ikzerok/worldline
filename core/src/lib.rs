@@ -22,6 +22,7 @@ pub mod project;
 pub mod relation_context;
 pub mod states;
 pub mod timeline;
+pub mod wiki;
 
 pub use analysis::{Analysis, Stats, Symbols};
 pub use ast::{Program, ValueKind};

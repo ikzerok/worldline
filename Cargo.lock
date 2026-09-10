@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "wl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "worldline-core",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -250,14 +250,14 @@ dependencies = [
 
 [[package]]
 name = "worldline-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "worldline-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",

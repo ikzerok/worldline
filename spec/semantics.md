@@ -76,14 +76,15 @@ StoryState {
 `tick()` 循环产出 `Output` 流:
 
 ```text
-Output ::= Text { content: String, new_line: bool, tags: Vec<String> } | Ended
+Output ::= Text { content: String, new_line: bool, tags: Vec<String>, links: Vec<RenderedLink> } | Ended
 ```
 
 - 文本行默认段落模型:连续文本行间以换行相连;
   `new_line=false` 表示粘接(上一行行尾 `~`),消费端不再插入换行。
 - `tags` 为该行 `#标签` 元数据,不属正文,宿主可自行消费。
+- `links` 保留显式对象链接：`{start, end, target: {kind, id}}`，start/end 是求值后 content 的 UTF-8 字节范围，左闭右开。文件目标解析为工作区源码路径。只附带阅读信息，不重新求值插值、不触发对象或改变存档；没有链接时 JSON 省略 links 字段。
 - 选择呈现不是 Output——它是 Story 的暂停态 `choices()`,
-  元素含:标签文本(内插后)、源码行、组内偏移。
+  元素含:标签文本(内插后)、源码行、组内偏移，以及同规则的 links（范围相对 label）。
 - `-> END` 或事件体执行完无跃迁(视同 END,编译期给 hint)→ `Ended`。
 
 ## 6. 确定性与随机

@@ -404,7 +404,11 @@ fn choices_json(story: &Story) -> Vec<serde_json::Value> {
         .choices()
         .iter()
         .enumerate()
-        .map(|(i, c)| json!({ "index": i, "label": c.label, "line": c.line, "offset": c.offset }))
+        .map(|(i, c)| {
+            let mut choice = json!(c);
+            choice["index"] = json!(i);
+            choice
+        })
         .collect()
 }
 

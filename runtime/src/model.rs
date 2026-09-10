@@ -48,6 +48,8 @@ pub enum Output {
         content: String,
         new_line: bool,
         tags: Vec<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        links: Vec<worldline_core::navigation::RenderedLink>,
     },
     /// 故事结束(`-> END` 或执行到末尾)。
     Ended,
@@ -57,6 +59,8 @@ pub enum Output {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChoiceView {
     pub label: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<worldline_core::navigation::RenderedLink>,
     /// 源码行(编辑器跳转用)。
     pub line: u32,
     /// 组内偏移。

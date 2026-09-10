@@ -113,6 +113,7 @@ JSON 为 `{ok, catalog, matches, diagnostics}`;catalog 含 objects/tags/assets/s
 ```
 
 - `outputs` 元素为 Output 的机器视图:`{"type":"text","content":"…","new_line":true,"tags":["…"]}`、`{"type":"ended"}`(`semantics.md` §5)。
+- 正文输出及 choices 可附带非空 `links: [{start, end, target: {kind, id}}]`。范围为求值后 content / label 的 UTF-8 字节偏移，左闭右开；省略表示没有显式链接。该信息用于 Wiki 导航，不影响选择索引或运行结果。
 - 编译存在 error 时输出单行 `compile_failed` 后退出(码 1),不进入循环。
 - stdin EOF(故事尚未结束时):输出单行 `eof` 事件后退出,退出码 0
   (与人类模式一致);故事自然结束则输出 `ended` 收束。
@@ -164,7 +165,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 
 | 方法 | 参数 | 结果(result) |
 |---|---|---|
-| `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version: "0.1.0"}` |
+| `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version: "0.2.0"}` |
 | `compile` | `{path}` 或 `{source, file_name?}` | `{ok, story_id, fingerprint, stats, diagnostics}`;ok=false 时无 story_id |
 | `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
 | `export` | `{story_id, format}`;format ∈ `graph_mermaid` \| `timeline_mermaid` | `{text}` |
