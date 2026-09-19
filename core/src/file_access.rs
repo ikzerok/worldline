@@ -11,18 +11,30 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
             for entry in std::fs::read_dir(directory)? {
                 let path = entry?.path();
                 let metadata = std::fs::symlink_metadata(&path)?;
-                #[cfg(windows)]
-                let linked = {
-                    use std::os::windows::fs::MetadataExt;
-                    metadata.file_attributes() & 0x400 != 0
-                };
-                #[cfg(not(windows))]
-                let linked = metadata.file_type().is_symlink();
-                if linked || !crate::compiler::source_path(&path).starts_with(root) {
+                if is_link_or_junction(&metadata)
+                    || !crate::compiler::source_path(&path).starts_with(root)
+                {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::PermissionDenied,
                         format!("工作区不支持链接或目录外文件：{}", path.display()),
                     ));
+                }
+                let transactions = root.join(".world").join(".transactions");
+                if path == transactions {
+                    if !metadata.is_dir() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("保存事务目录不是目录：{}", path.display()),
+                        ));
+                    }
+                    // 保存事务是受控暂存区，不属于作者普通文件清单；其
+                    // 链接形态仍在上面的边界检查中拒绝。
+                    continue;
+                }
+                if path.starts_with(&transactions) {
+                    // 保存事务是受控暂存区，不属于作者普通文件清单；其
+                    // 链接形态仍在上面的边界检查中拒绝。
+                    continue;
                 }
                 if metadata.is_dir() {
                     pending.push(path);
@@ -44,6 +56,19 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
                 .cloned()
                 .collect()
         }))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn is_link_or_junction(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
     }
 }
 

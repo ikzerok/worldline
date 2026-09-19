@@ -34,6 +34,7 @@ pub struct Project {
     pub authoring_documents: BTreeMap<PathBuf, AuthoringDocument>,
     authoring_diagnostics: Vec<crate::Diagnostic>,
     refresh_generation: u64,
+    recovery_conflicts: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,12 @@ impl Project {
     /// `.wl` 仍是编译器唯一的 source；展示 JSON 只读取清单明确注册的
     /// 路径，并以原始字节进入 authoring_documents。
     pub fn refresh(&mut self) -> Result<Vec<PathBuf>, String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let recovery = crate::storage::recover(&self.root)?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.recovery_conflicts = recovery.conflicts.clone();
+        }
         let paths = crate::file_access::workspace_files(&self.root).map_err(|e| e.to_string())?;
         let mut disk_sources = BTreeMap::new();
         for path in &paths {
@@ -94,6 +101,9 @@ impl Project {
             .map(|path| crate::file_access::read(path).map(|bytes| (path.clone(), bytes)))
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map_err(|error| error.to_string())?;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.reconcile_recovered_documents(&recovery.recovered, &disk_sources, &disk_authoring);
 
         let external_change = self
             .documents
@@ -227,9 +237,49 @@ impl Project {
         Ok(conflicts)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn reconcile_recovered_documents(
+        &mut self,
+        recovered: &[crate::storage::RecoveredFile],
+        disk_sources: &BTreeMap<PathBuf, String>,
+        disk_authoring: &BTreeMap<PathBuf, Vec<u8>>,
+    ) {
+        // 只接受 storage 根据 journal 前后 hash 实际恢复出的文件；当前缓冲
+        // 可以是在中断后继续编辑的版本，推进的是磁盘保存基线而不是它本身。
+        for evidence in recovered {
+            let expected = evidence.after.as_deref();
+            if let Some(document) = self.documents.get_mut(&evidence.path) {
+                let disk_matches = match (expected, disk_sources.get(&evidence.path)) {
+                    (None, None) => true,
+                    (Some(expected), Some(current)) => current.as_bytes() == expected,
+                    _ => false,
+                };
+                if disk_matches {
+                    document.saved = match expected {
+                        None => None,
+                        Some(expected) => String::from_utf8(expected.to_vec()).ok(),
+                    };
+                }
+                continue;
+            }
+            let Some(document) = self.authoring_documents.get_mut(&evidence.path) else {
+                continue;
+            };
+            let disk_matches = match (expected, disk_authoring.get(&evidence.path)) {
+                (None, None) => true,
+                (Some(expected), Some(current)) => current.as_slice() == expected,
+                _ => false,
+            };
+            if disk_matches {
+                document.saved = expected.map(|bytes| bytes.to_vec());
+            }
+        }
+    }
+
     pub fn open(path: &Path) -> Result<Self, String> {
         let entry = entry_path(path);
         let root = entry.parent().ok_or("工作区缺少主目录")?.to_path_buf();
+        let recovery = crate::storage::recover(&root)?;
         crate::file_access::read_to_string(&entry)
             .map_err(|e| format!("无法打开 {}: {e}", entry.display()))?;
         let mut project = Self {
@@ -239,6 +289,7 @@ impl Project {
             authoring_documents: BTreeMap::new(),
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
+            recovery_conflicts: recovery.conflicts,
         };
         project.refresh()?;
         project.migrate_permissions()?;
@@ -285,7 +336,16 @@ impl Project {
             authoring_documents: BTreeMap::new(),
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
+            recovery_conflicts: Vec::new(),
         }
+    }
+
+    /// 返回最近一次打开时发现的保存事务冲突。
+    ///
+    /// 冲突文件保留磁盘上的第三方内容，未完成事务和日志继续保留，直到
+    /// 用户完成合并；保存与导出会拒绝在此状态下继续覆盖工程。
+    pub fn recovery_conflicts(&self) -> &[PathBuf] {
+        &self.recovery_conflicts
     }
 
     /// 将已授权的旧权限输入迁移到缓冲；返回修改文件数，不改变保存基线或磁盘。
@@ -571,6 +631,7 @@ impl Project {
     /// 另存工程保留未完成的源码,不要求编译通过。
     #[cfg(not(target_arch = "wasm32"))]
     pub fn save_as(&mut self, destination: &Path) -> Result<(), String> {
+        self.ensure_storage_ready()?;
         if destination.exists() {
             return Err("目标文件夹已存在,请选择新名称".into());
         }
@@ -632,6 +693,7 @@ impl Project {
             authoring_documents,
             authoring_diagnostics: self.authoring_diagnostics.clone(),
             refresh_generation: 0,
+            recovery_conflicts: Vec::new(),
         };
         candidate.save_buffers(true)?;
         for (relative, source) in portable.copies {
@@ -710,26 +772,92 @@ impl Project {
         Ok(())
     }
 
-    /// 先检查所有修改文件,任何外部变更均阻止整次保存;逐文件采用临时文件替换。
+    /// 先检查所有修改文件，再以可恢复事务逐文件替换；跨文件不宣称原子性。
     #[cfg(not(target_arch = "wasm32"))]
     pub fn save(&mut self) -> Result<(), String> {
         self.save_buffers(false)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn ensure_storage_ready(&self) -> Result<(), String> {
+        if !self.recovery_conflicts.is_empty()
+            || crate::storage::has_unresolved_transactions(&self.root)?
+        {
+            return Err("工程存在未解决的保存事务，请重新打开并处理冲突".into());
+        }
+        Ok(())
+    }
+
     // 只有另存到新的独立目录，才允许复制未知格式的原始字节。
     #[cfg(not(target_arch = "wasm32"))]
     fn save_buffers(&mut self, copying_to_new_directory: bool) -> Result<(), String> {
+        self.ensure_storage_ready()?;
+        if self.documents.values().any(Document::is_dirty)
+            || self
+                .authoring_documents
+                .values()
+                .any(AuthoringDocument::is_dirty)
+        {
+            self.preflight_save(copying_to_new_directory)?;
+        }
+
+        let mut pending = Vec::new();
+        for (path, document) in self.documents.iter().filter(|(_, d)| d.is_dirty()) {
+            let relative = path
+                .strip_prefix(&self.root)
+                .map_err(|_| format!("文件不在工程目录内:{}", path.display()))?
+                .to_path_buf();
+            pending.push(crate::storage::PendingFile {
+                relative,
+                before: document.saved.as_ref().map(|text| text.as_bytes().to_vec()),
+                after: (!document.deleted).then(|| document.text.as_bytes().to_vec()),
+            });
+        }
+        for (path, document) in self
+            .authoring_documents
+            .iter()
+            .filter(|(_, document)| document.is_dirty())
+        {
+            let relative = path
+                .strip_prefix(&self.root)
+                .map_err(|_| format!("文件不在工程目录内:{}", path.display()))?
+                .to_path_buf();
+            pending.push(crate::storage::PendingFile {
+                relative,
+                before: document.saved.clone(),
+                after: (!document.deleted).then(|| document.bytes.clone()),
+            });
+        }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        crate::storage::save(&self.root, &pending)?;
+
+        // 事务提交并清理成功后才一次性推进所有文档的保存基线。
+        for document in self.documents.values_mut().filter(|d| d.is_dirty()) {
+            document.saved = (!document.deleted).then(|| document.text.clone());
+        }
+        for document in self
+            .authoring_documents
+            .values_mut()
+            .filter(|document| document.is_dirty())
+        {
+            document.saved = (!document.deleted).then(|| document.bytes.clone());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn preflight_save(&self, copying_to_new_directory: bool) -> Result<(), String> {
         for (path, document) in self.documents.iter().filter(|(_, d)| d.is_dirty()) {
             crate::file_access::within(&self.root, path)?;
-            match (&document.saved, std::fs::read_to_string(path)) {
-                (Some(saved), Ok(current)) if saved == &current => {}
-                (None, Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
-                _ => {
-                    return Err(format!(
-                        "{} 已被外部修改或无法读取;请导出副本后合并,避免覆盖他人修改",
-                        path.display()
-                    ))
-                }
+            let current = read_disk(path)?;
+            let expected = document.saved.as_ref().map(|text| text.as_bytes().to_vec());
+            if current != expected {
+                return Err(format!(
+                    "{} 已被外部修改或无法读取;请导出副本后合并,避免覆盖他人修改",
+                    path.display()
+                ));
             }
         }
         for (path, document) in self
@@ -741,72 +869,13 @@ impl Project {
                 return Err("展示文档已变为只读，请另存副本保留本地修改".into());
             }
             crate::file_access::within(&self.root, path)?;
-            match (&document.saved, std::fs::read(path)) {
-                (Some(saved), Ok(current)) if saved == &current => {}
-                (None, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
-                _ => {
-                    return Err(format!(
-                        "{} 已被外部修改或无法读取;请导出副本后合并,避免覆盖他人修改",
-                        path.display()
-                    ))
-                }
+            let current = read_disk(path)?;
+            if current != document.saved {
+                return Err(format!(
+                    "{} 已被外部修改或无法读取;请导出副本后合并,避免覆盖他人修改",
+                    path.display()
+                ));
             }
-        }
-        for (path, document) in self.documents.iter_mut().filter(|(_, d)| d.is_dirty()) {
-            if document.deleted {
-                std::fs::remove_file(path)
-                    .map_err(|error| format!("删除失败:{} ({error})", path.display()))?;
-                document.saved = None;
-                continue;
-            }
-            std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-            let temp = path.with_extension(format!("wl.{}.tmp", std::process::id()));
-            use std::io::Write;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp)
-                .map_err(|e| e.to_string())?;
-            let result = file
-                .write_all(document.text.as_bytes())
-                .and_then(|_| file.sync_all());
-            drop(file);
-            let result = result.and_then(|_| std::fs::rename(&temp, path));
-            if let Err(e) = result {
-                let _ = std::fs::remove_file(&temp);
-                return Err(format!("保存失败:{} ({e})", path.display()));
-            }
-            document.saved = Some(document.text.clone());
-        }
-        for (path, document) in self
-            .authoring_documents
-            .iter_mut()
-            .filter(|(_, document)| document.is_dirty())
-        {
-            if document.deleted {
-                std::fs::remove_file(path)
-                    .map_err(|error| format!("删除失败:{} ({error})", path.display()))?;
-                document.saved = None;
-                continue;
-            }
-            std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-            let temp = path.with_extension(format!("json.{}.tmp", std::process::id()));
-            use std::io::Write;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp)
-                .map_err(|e| e.to_string())?;
-            let result = file
-                .write_all(&document.bytes)
-                .and_then(|_| file.sync_all());
-            drop(file);
-            let result = result.and_then(|_| std::fs::rename(&temp, path));
-            if let Err(error) = result {
-                let _ = std::fs::remove_file(&temp);
-                return Err(format!("保存失败:{} ({error})", path.display()));
-            }
-            document.saved = Some(document.bytes.clone());
         }
         Ok(())
     }
@@ -814,6 +883,7 @@ impl Project {
     /// 导出可直接编译的完整目录;不覆盖目标目录,包含所有内存修改。
     #[cfg(not(target_arch = "wasm32"))]
     pub fn export(&self, destination: &Path) -> Result<(), String> {
+        self.ensure_storage_ready()?;
         if destination.exists() {
             return Err("导出目标已存在,请选择新的文件夹名称".into());
         }
@@ -855,6 +925,8 @@ impl Project {
 
     /// 校验并生成完整可移植工程；桌面目录与浏览器下载共用同一导出内容。
     pub fn export_files(&self) -> Result<BTreeMap<PathBuf, Vec<u8>>, String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.ensure_storage_ready()?;
         let mut migrated = self.clone();
         if migrated.root.exists() || cfg!(target_arch = "wasm32") {
             migrated.refresh()?;
@@ -942,6 +1014,15 @@ fn validate_relative(path: &Path) -> Result<(), String> {
         return Err("文件路径须为工程内的相对 .wl 路径,例如 events/harbor.wl".into());
     }
     Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_disk(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn validate_authoring_relative(path: &Path) -> Result<(), String> {

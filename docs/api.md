@@ -27,7 +27,7 @@ JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不
 
 返回 CompileResult 包含 program、analysis、diagnostics、sources。即使有错误也可能返回尽力解析的数据；执行前检查 has_errors，不能因为 program 非空就运行。
 
-`Project::open` 打开工作区并将旧权限迁移到缓冲；`Project::new(root)` 建立未保存的雾港示例。`documents` 保存源码与保存基线，`sources` 返回当前文本映射。`refresh` 更新磁盘变化并返回冲突路径；`search` 搜索缓冲，每个命中行返回一次，列号按 Unicode 字符。`save` 保留冲突文件，`save_as` 建立新工作区，`export` 输出经校验的新目录，`export_files` 返回相对路径到字节的映射供 ZIP 使用。
+`Project::open` 打开工作区、先恢复 `.world/.transactions/` 中的未完成保存，再将旧权限迁移到缓冲；`Project::new(root)` 建立未保存的雾港示例。`documents` 保存源码与保存基线，`sources` 返回当前文本映射。`refresh` 更新磁盘变化并返回冲突路径；`search` 搜索缓冲，每个命中行返回一次，列号按 Unicode 字符。`save` 以逐文件可恢复事务写入，跨文件不宣称原子性；打开时若目标同时不同于事务前后 hash，会保留第三方值与事务草稿，`recovery_conflicts` 返回冲突路径，普通保存、另存和导出等待人工处理；recovery_drafts 返回含事务身份、前后/当前 hash 与原始字节（或删除意图）的救援记录，export_recovery_drafts 显式写入工程外新目录并附 recovery.json，原工程及事务不变。`save_as` 建立新工作区，`export` 输出经校验的新目录，`export_files` 返回相对路径到字节的映射供 ZIP 使用。
 
 调用结构编辑先准备草稿，再放进 `Project::edit` 事务；错误时全部缓冲回滚。直接 `set_text` 允许未完成源码，编辑器据此显示诊断。事务不等于多文件磁盘原子提交：保存逐个文件替换，IO 中断可能已经保存一部分，后续依保存基线恢复。
 
