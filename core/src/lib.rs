@@ -18,6 +18,7 @@ pub mod lexer;
 pub mod migration;
 pub mod navigation;
 pub mod parser;
+pub mod presentation;
 pub mod project;
 pub mod relation_context;
 pub mod states;
@@ -33,6 +34,10 @@ pub use compiler::{
 pub use diagnostic::{sort_diagnostics, Diagnostic, Severity, Span};
 pub use fingerprint::fingerprint_program;
 pub use graph::{AnchorDecl, EdgeKind, GraphEdge, GraphNode, RelationGraph};
+pub use presentation::{
+    MapCanvas, MapDocument, MapGeometry, MapIndex, MapLayer, MapNavigation, MapPlacement,
+    MapPlacementRef, MapRasterLayer,
+};
 
 /// 编译快照:源文件、程序、分析与全部诊断。
 pub struct CompileResult {

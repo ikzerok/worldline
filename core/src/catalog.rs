@@ -93,7 +93,7 @@ pub struct TagInfo {
     pub declared: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AssetInfo {
     pub id: String,
     pub kind: String,

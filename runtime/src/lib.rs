@@ -62,6 +62,9 @@ pub struct Story<'p> {
 impl<'p> Story<'p> {
     /// 新建故事(调用方须保证编译无 error 诊断)。
     pub fn new(program: &'p Program, analysis: &'p Analysis) -> Result<Self, RunError> {
+        if program.events.is_empty() {
+            return Err(RunError::new("工程没有可运行入口"));
+        }
         let entry_idx = analysis
             .symbols
             .events
@@ -1032,6 +1035,9 @@ impl<'p> Story<'p> {
         analysis: &'p Analysis,
         json: &str,
     ) -> Result<Self, RunError> {
+        if program.events.is_empty() {
+            return Err(RunError::new("工程没有可运行入口"));
+        }
         let mut state: SaveState =
             serde_json::from_str(json).map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
         let legacy = state.fingerprint != analysis.fingerprint;

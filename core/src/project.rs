@@ -886,9 +886,6 @@ impl Project {
                 return Err(format!("素材 `{}` 不可用，请修复引用后导出", asset.id));
             }
         }
-        if result.program.events.is_empty() {
-            return Err("工程没有可运行的事件".into());
-        }
         let portable = self.portable_assets()?;
         let mut files = BTreeMap::<PathBuf, String>::new();
         for (path, text) in &portable.sources {

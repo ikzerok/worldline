@@ -77,6 +77,37 @@ Diagnostic {
 | A218 | error | 别名或正文对象链接的目标不存在 |
 | A219 | error | 时段的上级不存在、自包含或包含关系有环 |
 
+### WS00x — 工作区注册
+
+工作区清单诊断保留在工作区域，不混入 `.wl` 编译诊断：
+
+| code | severity | 场景 |
+|---|---|---|
+| WS001 | error | 清单 JSON 无法解析或顶层结构错误 |
+| WS002 | error | 清单 schema 版本不受支持 |
+| WS003 | error | 清单必需能力未知或格式错误 |
+| WS004 | error | 清单注册项路径、类型或边界无效 |
+
+### MAP00x — 地图展示文档
+
+地图解析由 `worldline-core` 产生，文件原始字节仍由 `Project` 保存。地图诊断
+不改变 `.wl` 内容诊断，也不把展示文档加入 `Program` 或运行指纹：
+
+| code | severity | 场景 |
+|---|---|---|
+| MAP001 | error | 地图 JSON、顶层结构或字段类型错误 |
+| MAP002 | error | 地图 schema 版本或必需能力不受支持，只读查看 |
+| MAP003 | error | 地图 ID 无效、与注册 ID 不一致或重复 |
+| MAP004 | error | 画布尺寸、单位或范围无效 |
+| MAP005 | error | 图层、图层顺序或图层引用无效 |
+| MAP006 | error | 标记几何、坐标、范围或多边形拓扑无效 |
+| MAP007 | error | TargetRef 结构或 kind 无效；未解析对象另作 warning |
+| MAP008 | error | 栅格图层结构、矩形或 asset 引用格式无效 |
+| MAP009 | error | 导航结构或地图 ID 格式无效 |
+| MAP010 | warning | asset 未声明、不是 image、缺失或不可用；地图仍可读 |
+| MAP011 | warning | TargetRef 对象尚未在内容目录中解析；地图仍可读 |
+| MAP012 | warning | 导航目标尚未注册；地图仍可读 |
+
 ## 3. 机器接口
 
 `wl check --json` 输出:
@@ -98,7 +129,7 @@ severity 序列化为小写字符串。编辑器据此渲染面板并跳转。
 
 - 诊断只产自 `worldline-core`;CLI 与编辑器只做格式化、过滤、跳转。
 - 同一事实只报一次:重复符号在两处都报,但互为 `related`。
-- error 必须阻止运行;warning/hint 不阻止。
+- 语言编译的 error 必须阻止运行；展示文档的 MAP/WS 错误单独报告，不阻止无关故事运行；warning/hint 不阻止。
 - 消息一律中文,含符号名与行号定位描述;修复建议给到可直接替换的文本。
 
 状态操作与旧权限归一规则见 [states.md](states.md)；独立锚点见 [catalog.md](catalog.md) §4。标记/附件的未知引用使用 A214；执行图回环不使用时间环错误 A213。

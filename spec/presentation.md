@@ -81,6 +81,19 @@ M1支持现有kind；M2增加`entity`，实体的place/organization/culture等�
 
 详细机器约束见`schemas/map.schema.json`；样例见`examples/map_harbor.json`。这些文件检查设计契约，并不意味着当前编辑器能够打开它们。
 
+M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument` 与
+`MapIndex`：地图 JSON 的格式、ID、坐标、图层、TargetRef、素材声明和导航
+引用都在 core 校验。`TargetRef` 只接受现有 1.9 kinds；`entity` 等 1.10
+能力必须经显式版本/能力协商后再启用。无效 JSON、重复键、越界/非有限坐标和
+自交多边形产生 `MAP` 域诊断，原始字节继续由 Project 保留；缺失素材、未解析
+对象和未注册导航目标作为可见的局部诊断，不阻止其他地图和源码读取。core 只
+提供素材声明、相对路径和 `available` 状态，不解码图片。
+
+`MapIndex` 是只读派生查询，不是地图文件的写入格式。每个 `MapDocument.source`
+保留完整的原始 JSON 值，包含所有层级的未知可选字段与能力声明；查询中的几何、
+引用和素材 DTO 只提供已理解的字段。后续结构编辑在 Project 原始文档上修改指定
+字段，不能把派生 DTO 整体覆盖回文件。原始字节（含格式）仍由 Project 管理。
+
 | 字段 | 类型与含义 |
 |---|---|
 | schema_version | 1 |
@@ -104,6 +117,8 @@ M1支持现有kind；M2增加`entity`，实体的place/organization/culture等�
 坐标系属于地图文档自身：原点在canvas extent左上，x向右，y向下。持久坐标为归一化二维值`[u,v]`，均相对地图extent取[0,1]。标记、折线、多边形与未来矢量图元共用这一坐标系；更换、裁剪或删除栅格图层不改变任何已保存坐标。未知位置不用[0,0]占位，而是不建立标记。
 
 栅格图层（PNG/JPEG等位图素材）是放置在该坐标系中的展示图层：每层声明asset引用与放置矩形`[u0,v0,u1,v1]`，默认整幅铺满extent。首次导入位图时extent默认取该图像素尺寸、放置矩形为[0,0,1,1]，作者随后可显式调整extent或各层放置。矢量图元（点标记、折线、多边形）是格式的原生成员；外部SVG等矢量文件导入不是本期目标，未来作为新图层类型经required_features演进。
+
+栅格放置矩形必须满足 `u0 < u1` 且 `v0 < v1`，拒绝零宽、零高和倒置矩形。
 
 显示变换：`screen = viewport_origin + pan + zoom * (u*width, v*height)`。zoom与pan是个人镜头，不写内容。点击和拖拽通过逆变换定位。屏幕坐标使用显示逻辑点（与渲染框架无关的UI单位），由编辑器负责与设备像素的正确换算，不得重复乘系统DPI。图标大小与点击热区按屏幕逻辑点计算，避免缩小后无法点选。
 

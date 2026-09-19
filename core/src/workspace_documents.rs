@@ -60,6 +60,7 @@ impl AuthoringDocument {
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
+    pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
 }
 
@@ -142,6 +143,10 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             continue;
         };
         for (id, value) in entries {
+            if !valid_id(id) {
+                registry.report(root, "WS004", format!("清单 {key}.{id} 的 ID 无效，已跳过"));
+                continue;
+            }
             let Some(relative) = value.as_str() else {
                 registry.report(
                     root,
@@ -151,7 +156,12 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                 continue;
             };
             if let Ok(path) = registered_path(root, relative) {
-                paths.insert(path);
+                paths.insert(path.clone());
+                if key == "maps" {
+                    // registry.maps 只保存已经通过路径边界检查的注册项；重复
+                    // JSON key 已在 parse_unique_json 阶段拒绝。
+                    registry.maps.insert(id.clone(), path);
+                }
             } else {
                 registry.report(
                     root,
@@ -223,7 +233,7 @@ fn manifest_capability_is_read_only(bytes: &[u8]) -> bool {
     !(version_ok && features_ok)
 }
 
-fn features_supported(features: &Value) -> bool {
+pub(crate) fn features_supported(features: &Value) -> bool {
     features.as_array().is_some_and(|features| {
         features
             .iter()
@@ -240,9 +250,17 @@ fn supported_feature(feature: &str) -> bool {
     )
 }
 
+pub(crate) fn valid_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// serde_json 默认对重复键采用后者覆盖前者的语义。
 /// 清单路径决定载入哪些文件，因此必须在注册前拒绝重复键。
-fn parse_unique_json(bytes: &[u8]) -> Result<Value, String> {
+pub(crate) fn parse_unique_json(bytes: &[u8]) -> Result<Value, String> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let value = deserializer
         .deserialize_any(UniqueValueVisitor)
