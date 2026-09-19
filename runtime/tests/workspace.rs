@@ -303,7 +303,12 @@ fn authoring_conflicts_preserve_local_bytes_and_block_all_writes() {
         .set_authoring_document(&map, b"local".to_vec())
         .unwrap();
     fs::write(&map, b"external").unwrap();
-    assert_eq!(project.refresh().unwrap(), vec![map.clone()]);
+    let conflicts = project.refresh().unwrap();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(
+        conflicts[0].canonicalize().unwrap(),
+        map.canonicalize().unwrap()
+    );
     assert_eq!(project.authoring_document(&map).unwrap().bytes(), b"local");
     assert!(project.save().is_err());
     assert_eq!(fs::read(&map).unwrap(), b"external");
