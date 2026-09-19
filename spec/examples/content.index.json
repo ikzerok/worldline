@@ -1,0 +1,65 @@
+{
+  "note": "仅用于Schema和引用契约测试的索引桩。没有底图文件，不是可运行工程；M1地图用旧tag身份，M2关系样例增加entity。",
+  "objects": [
+    {
+      "kind": "world",
+      "id": "harbor_world",
+      "display": "雾港世界"
+    },
+    {
+      "kind": "tag",
+      "id": "harbor",
+      "display": "雾港"
+    },
+    {
+      "kind": "tag",
+      "id": "lighthouse",
+      "display": "灯塔"
+    },
+    {
+      "kind": "character",
+      "id": "lin",
+      "display": "林舟"
+    },
+    {
+      "kind": "entity",
+      "id": "keepers",
+      "display": "守灯会"
+    },
+    {
+      "kind": "event",
+      "id": "lighthouse_outage",
+      "display": "灯塔熄灭"
+    },
+    {
+      "kind": "asset",
+      "id": "harbor_image",
+      "display": "城市底图"
+    },
+    {
+      "kind": "asset",
+      "id": "overview_image",
+      "display": "地区底图"
+    }
+  ],
+  "assets": [
+    {
+      "id": "harbor_image",
+      "kind": "image",
+      "path": "assets/maps/harbor.png"
+    },
+    {
+      "id": "overview_image",
+      "kind": "image",
+      "path": "assets/maps/overview.png"
+    }
+  ],
+  "relation_types": [
+    {
+      "id": "maintains",
+      "direction": "directed",
+      "display": "维护",
+      "inverse_display": "由其维护"
+    }
+  ]
+}

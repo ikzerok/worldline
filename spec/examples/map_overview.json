@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "map_overview",
+  "title": "雾港地区总览",
+  "raster_layers": [
+    {
+      "id": "overview_base",
+      "asset": {
+        "kind": "asset",
+        "id": "overview_image"
+      },
+      "rect": [0, 0, 1, 1]
+    }
+  ],
+  "canvas": {
+    "width": 1024,
+    "height": 768,
+    "unit": "normalized"
+  },
+  "layer_order": [
+    "overview"
+  ],
+  "layers": {
+    "overview": {
+      "title": "总览",
+      "visible_default": true,
+      "locked": false
+    }
+  },
+  "placements": {
+    "pin_harbor": {
+      "layer_id": "overview",
+      "target_ref": {
+        "kind": "tag",
+        "id": "harbor"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.5,
+          0.6
+        ]
+      },
+      "annotation": "进入城市地图，不创建地点归属关系。",
+      "role": "地区与子地图入口",
+      "navigation": {
+        "map_id": "map_harbor"
+      }
+    },
+    "pin_lighthouse_overview": {
+      "layer_id": "overview",
+      "target_ref": {
+        "kind": "tag",
+        "id": "lighthouse"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.55,
+          0.58
+        ]
+      },
+      "annotation": "与城市图引用同一个灯塔对象。",
+      "role": "地点资料入口"
+    }
+  },
+  "extensions": {}
+}

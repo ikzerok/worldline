@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "rel_keepers_lighthouse",
+  "relation_type": "maintains",
+  "from_ref": {
+    "kind": "entity",
+    "id": "keepers"
+  },
+  "to_ref": {
+    "kind": "tag",
+    "id": "lighthouse"
+  },
+  "description": "守灯会维护灯塔。这里是M2新增关系的查询DTO样例，不是第二份关系存储文件。",
+  "source_note": "原创验收资料",
+  "scope_refs": [],
+  "extensions": {}
+}

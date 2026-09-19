@@ -13,7 +13,11 @@
 | [agent-protocol.md](agent-protocol.md) | 机器接口契约:CLI JSON 模式、`wl-agent` JSON-RPC 协议 |
 | [states.md](states.md) | 状态替换/增加/移除、世界叙事身份迁移、变更出处与旧档兼容 |
 | [catalog.md](catalog.md) | 通用标签、独立锚点与反查、文件引用及工程打包 |
+| [presentation.md](presentation.md) | 地图、网络视图、展示文档、关系 DTO、命令边界与跨仓契约 |
 
-规范随工具发行包提供，无需在线文档；作品导出只保留工作区自身内容，不自动插入规范。配套示例位于 `examples/`，集成测试位于 `runtime/tests/`。
+`presentation.md` 及其 [schemas](schemas/README.md) 是地图、展示文档和共同文件格式的唯一规范真源。
+验证夹具位于 [examples](examples/README.md)，仅用于设计级 Schema/引用检查，不是可运行工程或产品资源。
+
+规范随工具发行包提供，无需在线文档；作品导出只保留工作区自身内容，不自动插入规范。语言运行示例位于仓库根 `examples/`，共同契约验证夹具位于本目录 `examples/`，集成测试位于 `runtime/tests/`。
 
 [v1.9 创作模型补全](authoring-v19.md)：权限统一为状态、独立锚点、条件关系与正文概览。

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "view_lighthouse",
+  "title": "灯塔关联专题",
+  "focus": {
+    "kind": "tag",
+    "id": "lighthouse"
+  },
+  "filters": {
+    "depth": 1,
+    "relation_types": [
+      "maintains"
+    ],
+    "max_nodes": 250,
+    "max_edges": 500
+  },
+  "positions": {
+    "tag:lighthouse": [
+      0,
+      0
+    ],
+    "entity:keepers": [
+      -160,
+      80
+    ]
+  },
+  "hidden_relation_ids": [],
+  "extensions": {}
+}

@@ -1,0 +1,1656 @@
+{
+  "document_version": "0.2",
+  "baseline_date": "2026-09-19",
+  "requirements": [
+    {
+      "id": "BND-001",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M0",
+      "report_tasks": [
+        "C01"
+      ],
+      "title": "创作与展示的范围契约",
+      "acceptance": "地图与网络不创建世界事件，不引入模拟、时间推进、资源结算或自主角色；保留已有剧情演练但不依赖它。",
+      "dependencies": [],
+      "test_id": "T-BND-001",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-00",
+        "WP-01"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "WL-001",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "C02"
+      ],
+      "title": "统一对象引用",
+      "acceptance": "地图、网络、资料均以 TargetRef(kind,id) 引用同一内容；改显示名不断链，同名异对象不合并。",
+      "dependencies": [
+        "BND-001"
+      ],
+      "test_id": "T-WL-001",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-002",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M01",
+        "A02"
+      ],
+      "title": "多类型编辑缓冲",
+      "acceptance": ".wl 与注册的地图/清单 JSON 都有原文、保存基线、增删状态；sources() 只返回活动 .wl。",
+      "dependencies": [
+        "WL-001"
+      ],
+      "test_id": "T-WL-002",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-02"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-003",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "C02",
+        "Q01"
+      ],
+      "title": "不可变工作区快照",
+      "acceptance": "内容索引与展示索引共用工作区修订号；展示操作不重编译故事，不将过期异步结果应用到新修订。",
+      "dependencies": [
+        "WL-002"
+      ],
+      "test_id": "T-WL-003",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-02",
+        "WP-03"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-004",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M04",
+        "A02"
+      ],
+      "title": "带前置条件的编辑事务",
+      "acceptance": "每次语义或版式修改带预期修订及文件基线；失败不提交，一次拖拽对应一次可撤销命令。",
+      "dependencies": [
+        "WL-003"
+      ],
+      "test_id": "T-WL-004",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-02",
+        "WP-06"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-005",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "A02"
+      ],
+      "title": "外部变化与三方冲突保护",
+      "acceptance": "清洁缓冲自动刷新，脏缓冲保留；同文件外部变化阻止覆盖；删除/修改冲突显示双方差异。",
+      "dependencies": [
+        "WL-002"
+      ],
+      "test_id": "T-WL-005",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-02",
+        "WP-06"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-006",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01",
+        "A02"
+      ],
+      "title": "保存失败与恢复",
+      "acceptance": "全部目标先预检，逐文件替换保留恢复记录；中途失败不谎报整批成功，重开能恢复或保存两份。",
+      "dependencies": [
+        "WL-004",
+        "WL-005"
+      ],
+      "test_id": "T-WL-006",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-06"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-007",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M01",
+        "M03",
+        "M05"
+      ],
+      "title": "地图文档契约",
+      "acceptance": "栅格图层、逻辑画布、图层和标记有独立 ID；坐标为地图局部归一化值；支持无内容目标的说明标记。",
+      "dependencies": [
+        "WL-002"
+      ],
+      "test_id": "T-WL-007",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-008",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M06",
+        "A02"
+      ],
+      "title": "跨视图引用与反查",
+      "acceptance": "对象能反查所有地图标记；删除对象列出地图、关系、正文、批注等明确引用，不隐式级联删除。",
+      "dependencies": [
+        "WL-001",
+        "WL-007"
+      ],
+      "test_id": "T-WL-008",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03",
+        "WP-11"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-009",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "工作区包完整性",
+      "acceptance": "桌面目录与浏览器 ZIP 使用相同内容清单，包含未保存地图配置和原素材；重新载入字节与引用一致。",
+      "dependencies": [
+        "WL-006",
+        "WL-007"
+      ],
+      "test_id": "T-WL-009",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-06"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-010",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "C01",
+        "Q01"
+      ],
+      "title": "诊断分域",
+      "acceptance": "语言、内容、展示、存储分别诊断；坏地图不阻止已合法故事的演练；坏正文不阻止不相关地图版式修复。",
+      "dependencies": [
+        "WL-003"
+      ],
+      "test_id": "T-WL-010",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-011",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M04",
+        "Q01"
+      ],
+      "title": "运行指纹隔离",
+      "acceptance": "平移缩放不产生共享修改；拖拽标记只变展示修订，不改 .wl、故事指纹或当前演练。",
+      "dependencies": [
+        "WL-003",
+        "WL-004"
+      ],
+      "test_id": "T-WL-011",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03",
+        "WP-05"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-012",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M01",
+        "Q01"
+      ],
+      "title": "格式版本与能力协商",
+      "acceptance": "无清单旧工程按原方式读取；未知必需特性只读，不重写；JSON 未知可选字段往返保留。",
+      "dependencies": [
+        "WL-002"
+      ],
+      "test_id": "T-WL-012",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-01",
+        "WP-02"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-013",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R01",
+        "R02"
+      ],
+      "title": "可扩展关系类型",
+      "acceptance": "关系有方向、显示名、可选端点约束；反向名称只用于读取，不保存第二条关系；不推断传递关系。",
+      "dependencies": [
+        "WL-001"
+      ],
+      "test_id": "T-WL-013",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-014",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R01",
+        "R02"
+      ],
+      "title": "一等语义关系",
+      "acceptance": "关系有稳定 ID、类型、两端、说明、来源和可选作者范围；同端点多关系合法。",
+      "dependencies": [
+        "WL-013",
+        "WL-004"
+      ],
+      "test_id": "T-WL-014",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-015",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R01",
+        "A02"
+      ],
+      "title": "旧人物关系兼容",
+      "acceptance": "旧关系作为兼容投影显示，不静默改写；持久引用前显式提升为新关系；保留迁移前后差异。",
+      "dependencies": [
+        "WL-014"
+      ],
+      "test_id": "T-WL-015",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-016",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R03",
+        "R04"
+      ],
+      "title": "局部关系查询",
+      "acceptance": "按对象/类型/方向/层数查询明确关系，返回边身份及来源；超出上限有截断标记，绝不将路径称为因果证明。",
+      "dependencies": [
+        "WL-014"
+      ],
+      "test_id": "T-WL-016",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-017",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "C03"
+      ],
+      "title": "通用内容实体",
+      "acceptance": "新增 entity 的 place/organization/item 等类型；原 character/tag 保留原 ID；类型不是额外运行状态。",
+      "dependencies": [
+        "WL-001",
+        "WL-012"
+      ],
+      "test_id": "T-WL-017",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-08"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-018",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03"
+      ],
+      "title": "可选模板与校验",
+      "acceptance": "模板定义栏目、提示和可选字段，不复制已有值；删除/升级模板不能删正文或自定义字段。",
+      "dependencies": [
+        "WL-017"
+      ],
+      "test_id": "T-WL-018",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-019",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03"
+      ],
+      "title": "自由正文与未知内容",
+      "acceptance": "可仅写正文；多行、中文、注释不丢；空白与未知不变成 false/0，未定位不自动置于原点。",
+      "dependencies": [
+        "WL-017"
+      ],
+      "test_id": "T-WL-019",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12",
+        "WP-13"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-020",
+      "owner": "worldline",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "M09",
+        "R02"
+      ],
+      "title": "作者范围与专题选择",
+      "acceptance": "时期/章节/版本只筛选作者明确分配的对象和关系；无资料就无结果，不推算中间历史。",
+      "dependencies": [
+        "WL-014"
+      ],
+      "test_id": "T-WL-020",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-15"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-021",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03",
+        "N01"
+      ],
+      "title": "出处、陈述性质与创作状态",
+      "acceptance": "来源可定位对象/资料；草稿或已接受与事实/传闻/人物观点分开，不自动决定真假。",
+      "dependencies": [
+        "WL-017"
+      ],
+      "test_id": "T-WL-021",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-022",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "N01",
+        "N02"
+      ],
+      "title": "历史、故事与锚点关联",
+      "acceptance": "历史条目无需可执行 event；通过关系连接地点、人物、scene 和 anchor，点击不触发演练。",
+      "dependencies": [
+        "WL-014",
+        "WL-017"
+      ],
+      "test_id": "T-WL-022",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-023",
+      "owner": "worldline",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "A01"
+      ],
+      "title": "持久批注锚定",
+      "acceptance": "支持对象、关系、标记及带基线的正文范围；原文变化无法匹配时标记失锚，不自动绑到相邻段落。",
+      "dependencies": [
+        "WL-008"
+      ],
+      "test_id": "T-WL-023",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-16"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-024",
+      "owner": "worldline",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "A02"
+      ],
+      "title": "修改提案与语义差异",
+      "acceptance": "提案记录基线、作者、理由和命令；采纳前检查基线；内容变化与版式变化分开审阅。",
+      "dependencies": [
+        "WL-004",
+        "WL-023"
+      ],
+      "test_id": "T-WL-024",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-16"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-025",
+      "owner": "worldline",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "C03",
+        "A02"
+      ],
+      "title": "草稿与活动源码配置",
+      "acceptance": "无清单仍递归全部 .wl；启用显式源码集后区分待用/归档，include 到非活动文件报错而非偷偷载入。",
+      "dependencies": [
+        "WL-012"
+      ],
+      "test_id": "T-WL-025",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-15"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-026",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "C02",
+        "R03",
+        "Q01"
+      ],
+      "title": "命令行工作区检查和查询",
+      "acceptance": "新增工作区检查/地图引用/关系查询，保留既有 wl graph 控制流含义；机器字段带版本和截断信息。",
+      "dependencies": [
+        "WL-008",
+        "WL-016"
+      ],
+      "test_id": "T-WL-026",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-027",
+      "owner": "worldline",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "A02",
+        "C02"
+      ],
+      "title": "跨文件重命名与删除方案",
+      "acceptance": "显示名变更不改 ID；ID 重命名跨 .wl 和展示 JSON 批量更新；引用有冲突则整批不提交。",
+      "dependencies": [
+        "WL-008",
+        "WL-014"
+      ],
+      "test_id": "T-WL-027",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-11"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-028",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "C01",
+        "M01",
+        "Q01"
+      ],
+      "title": "纯内容工程合法性",
+      "acceptance": "只有 world/tag/人物和地图、没有 event 的工程可以保存、打包和打开；试玩显示无可运行入口。",
+      "dependencies": [
+        "WL-009",
+        "WL-010"
+      ],
+      "test_id": "T-WL-028",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03",
+        "WP-06"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WL-029",
+      "owner": "worldline",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M08",
+        "M09"
+      ],
+      "title": "线面与导航的格式契约",
+      "acceptance": "支持作者绘制折线/简单多边形、子地图链接；几何数据不生成语义关系；共享预设归WE-019于M4。",
+      "dependencies": [
+        "WL-007",
+        "WL-012"
+      ],
+      "test_id": "T-WL-029",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-03",
+        "WP-04"
+      ],
+      "design_documents": [
+        "docs/design/PRD.md",
+        "docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-001",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M01"
+      ],
+      "title": "地图工作区入口",
+      "acceptance": "旧工程可直接新建地图；空白态解释添加栅格图层和内容引用，不要求启动试玩。",
+      "dependencies": [
+        "WL-007",
+        "WL-028"
+      ],
+      "test_id": "T-WE-001",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-002",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M01",
+        "Q01"
+      ],
+      "title": "受限栅格图层加载",
+      "acceptance": "首版 PNG/JPEG；按文件签名、尺寸、像素和内存预算（共同契约阈值登记）预检；失败显示原因并保留原文件。",
+      "dependencies": [
+        "WE-001"
+      ],
+      "test_id": "T-WE-002",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-04"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-003",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M02"
+      ],
+      "title": "地图浏览镜头",
+      "acceptance": "平移、指针中心缩放、适配视口、重置和快捷键有效；浏览一百次共享文件仍零变化。",
+      "dependencies": [
+        "WE-002",
+        "WL-011"
+      ],
+      "test_id": "T-WE-003",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-04"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-004",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M03"
+      ],
+      "title": "点标记与资料入口",
+      "acceptance": "从对象选择器挂载已有对象；一个对象可多处标注；点击显示当前快照中的原资料。",
+      "dependencies": [
+        "WL-008",
+        "WE-003"
+      ],
+      "test_id": "T-WE-004",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-005",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M04"
+      ],
+      "title": "浏览和编辑展示分离",
+      "acceptance": "默认浏览，编辑工具明确启用；Delete 默认删选中标记，不是对象；人物标记显示其用途。",
+      "dependencies": [
+        "WE-004"
+      ],
+      "test_id": "T-WE-005",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-006",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M04",
+        "A02"
+      ],
+      "title": "拖拽预览与撤销",
+      "acceptance": "按下记录基线，拖动仅预览，松开提交一次；Esc取消；冲突时保留预览供人工处理。",
+      "dependencies": [
+        "WL-004",
+        "WE-005"
+      ],
+      "test_id": "T-WE-006",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-007",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M05"
+      ],
+      "title": "图层、锁定与图例",
+      "acceptance": "作者能配置图层顺序和默认可见性；浏览临时开关不写共享配置；锁定图层不能误拖。",
+      "dependencies": [
+        "WE-004"
+      ],
+      "test_id": "T-WE-007",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-008",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M06"
+      ],
+      "title": "搜索、定位与反查",
+      "acceptance": "从对象找到全部标记；多个结果可选；无标记明确显示未定位；隐藏图层定位需用户同意临时展开。",
+      "dependencies": [
+        "WL-008",
+        "WE-007"
+      ],
+      "test_id": "T-WE-008",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-009",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "M07"
+      ],
+      "title": "子地图与返回路径",
+      "acceptance": "地图可多入口；面包屑按实际访问路径生成；返回恢复个人镜头，不改地点层级。",
+      "dependencies": [
+        "WL-007",
+        "WE-008"
+      ],
+      "test_id": "T-WE-009",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-010",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R03"
+      ],
+      "title": "跨类型局部关系图",
+      "acceptance": "默认一层，可扩展至受限两层；人物、地点、组织、事件共图，点击打开统一资料侧栏。",
+      "dependencies": [
+        "WL-016"
+      ],
+      "test_id": "T-WE-010",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-011",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R02"
+      ],
+      "title": "关系编辑器",
+      "acceptance": "显式选择关系类型和两端后提交；方向、说明与来源可见；删显示项和删关系为不同操作。",
+      "dependencies": [
+        "WL-014",
+        "WE-010"
+      ],
+      "test_id": "T-WE-011",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-012",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R03"
+      ],
+      "title": "图布局与共享专题",
+      "acceptance": "自动布局只安排显示坐标；个人拖动不默认影响别人；明确保存布局后才写图视图文档。",
+      "dependencies": [
+        "WE-010",
+        "WL-004"
+      ],
+      "test_id": "T-WE-012",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-013",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "R04"
+      ],
+      "title": "连接来源可辨识",
+      "acceptance": "正式关系、正文提及、图形线使用不同标识/图例；关键词匹配不自动生成正式关系。",
+      "dependencies": [
+        "WE-011"
+      ],
+      "test_id": "T-WE-013",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-014",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "C02",
+        "M03"
+      ],
+      "title": "统一导航与资料侧栏",
+      "acceptance": "地图、搜索、Wiki 共用 OpenObject/LocateReference 导航（网络视图入口随 WE-010 于 M2 验收）；返回不复制或重写资料。",
+      "dependencies": [
+        "WL-001"
+      ],
+      "test_id": "T-WE-014",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05",
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-015",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "C03"
+      ],
+      "title": "通用内容创作页面",
+      "acceptance": "地点、组织、物品等可以无代码创建、改名、编辑正文，使用同一实体编辑器而非16套页面。",
+      "dependencies": [
+        "WL-017",
+        "WE-014"
+      ],
+      "test_id": "T-WE-015",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-10"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-016",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03"
+      ],
+      "title": "模板栏目与问题引导",
+      "acceptance": "模板可选、可折叠；只填名称和正文即可保存；所有16类内容均有中文提示和关系建议。",
+      "dependencies": [
+        "WL-018",
+        "WE-015"
+      ],
+      "test_id": "T-WE-016",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-017",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03",
+        "M06"
+      ],
+      "title": "不确定、非地理内容展示",
+      "acceptance": "未定位对象有独立列表；传说地图、示意图和实际地点说明区分；不强迫非空间概念上地图。",
+      "dependencies": [
+        "WL-019",
+        "WE-008"
+      ],
+      "test_id": "T-WE-017",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-018",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M08"
+      ],
+      "title": "基础线面绘制",
+      "acceptance": "在矢量画布上绘制折线与简单多边形、修改控制点、关联资料；无效自交有提示；画线不创建故事路径或领土关系。",
+      "dependencies": [
+        "WL-029",
+        "WE-006"
+      ],
+      "test_id": "T-WE-018",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-04",
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-019",
+      "owner": "worldedit",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "M09"
+      ],
+      "title": "专题/时期/章节预设",
+      "acceptance": "用户保存显式图层和筛选；路径说明、分布区与共享预设；切换不执行事件，不插值边界；未知范围有说明。",
+      "dependencies": [
+        "WL-020",
+        "WL-029"
+      ],
+      "test_id": "T-WE-019",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-14",
+        "WP-15"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-020",
+      "owner": "worldedit",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "A01"
+      ],
+      "title": "对象和地图讨论",
+      "acceptance": "可以就对象/关系/标记发起批注；失锚可重新指定，内容意见和排版意见区分。",
+      "dependencies": [
+        "WL-023"
+      ],
+      "test_id": "T-WE-020",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-16"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-021",
+      "owner": "worldedit",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "A02"
+      ],
+      "title": "审阅面板",
+      "acceptance": "展示基线、内容差异、版式差异与引用影响；过期提案不能一键覆盖当前稿。",
+      "dependencies": [
+        "WL-024"
+      ],
+      "test_id": "T-WE-021",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-16"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-022",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01",
+        "A02"
+      ],
+      "title": "局部故障和冲突界面",
+      "acceptance": "栅格图层缺失有占位与修复入口，坏 JSON 可读原文，断链可重新绑定；其他地图与正文仍可读。",
+      "dependencies": [
+        "WL-005",
+        "WL-010"
+      ],
+      "test_id": "T-WE-022",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05",
+        "WP-06"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-023",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "桌面/浏览器同格式保存",
+      "acceptance": "ZIP保留新增文档；超额或本地存储失败保留未保存标记；下载发起不冒充磁盘已同步。",
+      "dependencies": [
+        "WL-009",
+        "WE-022"
+      ],
+      "test_id": "T-WE-023",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-06"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-024",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "N01",
+        "N02"
+      ],
+      "title": "历史与故事互访",
+      "acceptance": "从历史事件到地点/人物/场景，再到锚点；现有时间线与试玩保留原作用，不驱动地图。",
+      "dependencies": [
+        "WL-022",
+        "WE-014"
+      ],
+      "test_id": "T-WE-024",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-12"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-025",
+      "owner": "worldedit",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "A02",
+        "M06"
+      ],
+      "title": "引用影响面板",
+      "acceptance": "删除对象时列出地图/网络/正文引用；允许取消或显式修复，不以删除资料代替删除标记。",
+      "dependencies": [
+        "WL-027"
+      ],
+      "test_id": "T-WE-025",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-11"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "WE-026",
+      "owner": "worldedit",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M02",
+        "Q01"
+      ],
+      "title": "键盘与低视觉负担",
+      "acceptance": "标记有可搜索列表和文本名称；提供缩放/定位按钮；颜色不是区分关系或错误的唯一手段。",
+      "dependencies": [
+        "WE-003",
+        "WE-008"
+      ],
+      "test_id": "T-WE-026",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05"
+      ],
+      "design_documents": [
+        "worldedit/docs/design/PRD.md",
+        "worldedit/docs/design/ARCHITECTURE.md",
+        "spec/presentation.md"
+      ]
+    },
+    {
+      "id": "Q-001",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M0",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "旧工程回归基线",
+      "acceptance": "冻结两个仓库提交与样例，记录现有测试结果；新功能不能破坏旧 .wl/状态/链接/存档契约。",
+      "dependencies": [
+        "BND-001"
+      ],
+      "test_id": "T-Q-001",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-00",
+        "WP-07",
+        "WP-17"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-002",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "M02",
+        "M04",
+        "R04",
+        "Q01"
+      ],
+      "title": "非污染性质测试",
+      "acceptance": "随机浏览序列不改共享字节；展示编辑不改内容字节/指纹；关系查询无副作用。",
+      "dependencies": [
+        "WL-011",
+        "WE-006"
+      ],
+      "test_id": "T-Q-002",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-05",
+        "WP-07",
+        "WP-10",
+        "WP-17"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-003",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "契约与往返测试",
+      "acceptance": "格式样例、Schema、Rust serde 与未知字段往返一致；断链和非法坐标的负例可重复。",
+      "dependencies": [
+        "WL-007",
+        "WL-012"
+      ],
+      "test_id": "T-Q-003",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-01",
+        "WP-03",
+        "WP-07"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-004",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "不可信工程与资源边界",
+      "acceptance": "拒绝越界、符号链接逃逸、压缩炸弹和超大图片；不执行脚本、不自动访问远程资源。",
+      "dependencies": [
+        "WE-002",
+        "WL-009"
+      ],
+      "test_id": "T-Q-004",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-04",
+        "WP-06",
+        "WP-07"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-005",
+      "owner": "共同",
+      "priority": "P1",
+      "milestone": "M2",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "明确性能预算",
+      "acceptance": "固定测试机与数据，测查询/帧耗时/内存；结果附数据和环境，不把设计目标写成已达标。",
+      "dependencies": [
+        "WE-010",
+        "WE-008"
+      ],
+      "test_id": "T-Q-005",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-09",
+        "WP-10",
+        "WP-13"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-006",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M1",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "跨平台与异常验证",
+      "acceptance": "Windows桌面和WASM浏览器通过保存/恢复/中文路径/缩放测试；MAC/Linux仅编译兼容不冒充实测。",
+      "dependencies": [
+        "WE-023"
+      ],
+      "test_id": "T-Q-006",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-06",
+        "WP-07",
+        "WP-17"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-007",
+      "owner": "共同",
+      "priority": "P0",
+      "milestone": "M0",
+      "report_tasks": [
+        "Q01"
+      ],
+      "title": "配对提交的持续集成",
+      "acceptance": "编辑器CI固定worldline兼容SHA，不无条件追随另一仓库main；记录成对升级与回滚。",
+      "dependencies": [
+        "Q-001"
+      ],
+      "test_id": "T-Q-007",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-00",
+        "WP-17"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-008",
+      "owner": "共同",
+      "priority": "P1",
+      "milestone": "M3",
+      "report_tasks": [
+        "C03",
+        "Q01"
+      ],
+      "title": "长文与模板保真",
+      "acceptance": "大段中文、换行、转义、别名和自定义属性往返不丢；切模板和删标记不能删正文。",
+      "dependencies": [
+        "WL-019",
+        "WE-016"
+      ],
+      "test_id": "T-Q-008",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-13"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    },
+    {
+      "id": "Q-009",
+      "owner": "共同",
+      "priority": "P2",
+      "milestone": "M4",
+      "report_tasks": [
+        "A01",
+        "A02",
+        "Q01"
+      ],
+      "title": "协作冲突与恢复验证",
+      "acceptance": "两副本并行改不同标记可按ID合并；同字段冲突、删改冲突和过期提案均不静默覆盖。",
+      "dependencies": [
+        "WL-024",
+        "WE-021"
+      ],
+      "test_id": "T-Q-009",
+      "status": "设计草案，未实现验收",
+      "work_packages": [
+        "WP-16",
+        "WP-17"
+      ],
+      "design_documents": [
+        "spec/presentation.md",
+        "docs/design/shared/TEST_PLAN.md"
+      ]
+    }
+  ]
+}

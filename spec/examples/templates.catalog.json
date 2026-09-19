@@ -1,0 +1,915 @@
+{
+  "schema_version": 1,
+  "templates": [
+    {
+      "schema_version": 1,
+      "id": "template_world_outline",
+      "title": "世界总纲",
+      "applies_to": {
+        "kind": "world"
+      },
+      "fields": [
+        {
+          "key": "world_outline_1",
+          "label": "世界核心命题",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "world_outline_2",
+          "label": "创作尺度",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "world_outline_3",
+          "label": "主题与风格",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "world_outline_4",
+          "label": "设定边界",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "world_outline_5",
+          "label": "刻意未知",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "world_outline_6",
+          "label": "命名与用词约定",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "这个世界最希望读者记住什么？",
+        "哪些问题应当暂时留白？"
+      ],
+      "suggested_relations": [
+        "关联作品",
+        "创作约定",
+        "未决问题"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_cosmology",
+      "title": "宇宙观与位面",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "cosmology"
+      },
+      "fields": [
+        {
+          "key": "cosmology_1",
+          "label": "起源说法",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "cosmology_2",
+          "label": "世界结构",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "cosmology_3",
+          "label": "位面与边界",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "cosmology_4",
+          "label": "生命与死亡",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "cosmology_5",
+          "label": "超常现象",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "cosmology_6",
+          "label": "不同解释",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "这是作者确定的事实，还是世界内的一种解释？",
+        "不同群体如何理解相同现象？"
+      ],
+      "suggested_relations": [
+        "关联神话",
+        "关联宗教",
+        "记载于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_place",
+      "title": "地理与地点",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "place"
+      },
+      "fields": [
+        {
+          "key": "place_1",
+          "label": "视觉与感官印象",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "place_2",
+          "label": "地貌和环境",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "place_3",
+          "label": "内部地点",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "place_4",
+          "label": "日常生活",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "place_5",
+          "label": "历史痕迹",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "place_6",
+          "label": "与故事的联系",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "到这里的人最先看到、听到或闻到什么？",
+        "它与周边地点有什么作者明确的联系？"
+      ],
+      "suggested_relations": [
+        "位于",
+        "相邻",
+        "事件发生于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_species",
+      "title": "生态与物种",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "species"
+      },
+      "fields": [
+        {
+          "key": "species_1",
+          "label": "外形特征",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "species_2",
+          "label": "栖息地",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "species_3",
+          "label": "生命周期",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "species_4",
+          "label": "共生与驯化",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "species_5",
+          "label": "文化意义",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "species_6",
+          "label": "分类争议",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "哪些特点是个体差异，而不是整个物种的刻板属性？",
+        "世界中的人如何描述和使用它？"
+      ],
+      "suggested_relations": [
+        "分布于",
+        "关联物种",
+        "记载于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_daily_life",
+      "title": "日常生活",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "daily_life"
+      },
+      "fields": [
+        {
+          "key": "daily_life_1",
+          "label": "居住与饮食",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "daily_life_2",
+          "label": "服饰与器具",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "daily_life_3",
+          "label": "医疗与教育",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "daily_life_4",
+          "label": "交通与通信",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "daily_life_5",
+          "label": "节庆与娱乐",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "daily_life_6",
+          "label": "群体差异",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "普通人一天中的生活是什么样的？",
+        "同一地方不同人的生活有什么差别？"
+      ],
+      "suggested_relations": [
+        "发生于",
+        "关联习俗",
+        "使用物品"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_culture",
+      "title": "文化与社会",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "culture"
+      },
+      "fields": [
+        {
+          "key": "culture_1",
+          "label": "礼仪与亲属习惯",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "culture_2",
+          "label": "艺术与审美",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "culture_3",
+          "label": "价值与禁忌",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "culture_4",
+          "label": "群体内部差异",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "culture_5",
+          "label": "文化接触",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "culture_6",
+          "label": "时代变化",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "哪些习惯被人遵守，哪些被挑战？",
+        "文化与物种、国家和宗教如何区分？"
+      ],
+      "suggested_relations": [
+        "使用语言",
+        "分布于",
+        "关联文化"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_language",
+      "title": "语言与命名",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "language"
+      },
+      "fields": [
+        {
+          "key": "language_1",
+          "label": "文字与发音",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "language_2",
+          "label": "词汇与语法说明",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "language_3",
+          "label": "方言与语体",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "language_4",
+          "label": "人名地名",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "language_5",
+          "label": "词源与借词",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "language_6",
+          "label": "文献例句",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "哪些称呼能体现使用者之间的关系？",
+        "这个名字在不同语境中有什么含义？"
+      ],
+      "suggested_relations": [
+        "使用者",
+        "关联文化",
+        "记载于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_organization",
+      "title": "组织与制度",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "organization"
+      },
+      "fields": [
+        {
+          "key": "organization_1",
+          "label": "职责与目标",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "organization_2",
+          "label": "成员与职位",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "organization_3",
+          "label": "传统和规章",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "organization_4",
+          "label": "内部派别",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "organization_5",
+          "label": "管辖与主张",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "organization_6",
+          "label": "他者评价",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "成员为什么愿意留在这里？",
+        "名义职责与实际行为是否有作者写下的差异？"
+      ],
+      "suggested_relations": [
+        "任职于",
+        "维护",
+        "总部位于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_economy",
+      "title": "经济与技艺",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "economy"
+      },
+      "fields": [
+        {
+          "key": "economy_1",
+          "label": "货物与行业",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "economy_2",
+          "label": "生产方式",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "economy_3",
+          "label": "交易习惯",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "economy_4",
+          "label": "货币与债务",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "economy_5",
+          "label": "贸易路线说明",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "economy_6",
+          "label": "生活影响",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "人们如何获得日常所需之物？",
+        "哪一种习惯或关系值得进入故事？"
+      ],
+      "suggested_relations": [
+        "经营",
+        "制作",
+        "运输路线"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_technology",
+      "title": "技术与知识",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "technology"
+      },
+      "fields": [
+        {
+          "key": "technology_1",
+          "label": "工艺与材料",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "technology_2",
+          "label": "知识分类",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "technology_3",
+          "label": "传授方式",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "technology_4",
+          "label": "学派与争议",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "technology_5",
+          "label": "传播与失传",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "technology_6",
+          "label": "设施与维护",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "掌握这项知识意味着什么？",
+        "哪些材料、文献或人物与它明确相关？"
+      ],
+      "suggested_relations": [
+        "掌握",
+        "记载于",
+        "使用材料"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_belief",
+      "title": "宗教与思想",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "belief"
+      },
+      "fields": [
+        {
+          "key": "belief_1",
+          "label": "神话和教义",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "belief_2",
+          "label": "仪式与圣地",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "belief_3",
+          "label": "组织和教派",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "belief_4",
+          "label": "哲学问题",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "belief_5",
+          "label": "解释分歧",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "belief_6",
+          "label": "对生活的影响",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "哪些内容是信仰陈述，而不是作者全知事实？",
+        "同一信仰内部有哪些不同理解？"
+      ],
+      "suggested_relations": [
+        "信奉",
+        "记载于",
+        "圣地位于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_ability",
+      "title": "魔法与能力",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "ability"
+      },
+      "fields": [
+        {
+          "key": "ability_1",
+          "label": "来源与表现",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "ability_2",
+          "label": "学习和传承",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "ability_3",
+          "label": "代价与限制",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "ability_4",
+          "label": "例外和反制",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "ability_5",
+          "label": "学派或传统",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "ability_6",
+          "label": "社会文化影响",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "能力的限制对人物选择有什么意义？",
+        "谁对它持有不同解释？"
+      ],
+      "suggested_relations": [
+        "掌握",
+        "传授",
+        "关联物品"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_character",
+      "title": "人物与群体",
+      "applies_to": {
+        "kind": "character"
+      },
+      "fields": [
+        {
+          "key": "character_1",
+          "label": "外貌与经历",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "character_2",
+          "label": "性格和矛盾",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "character_3",
+          "label": "具体动机",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "character_4",
+          "label": "身份与承诺",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "character_5",
+          "label": "认知和观点",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "character_6",
+          "label": "口吻与例句",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "这个人物想得到什么，又不愿失去什么？",
+        "哪一次经历改变了其关系或自我理解？"
+      ],
+      "suggested_relations": [
+        "任职于",
+        "师承",
+        "参与事件"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_item_building",
+      "title": "物品与建筑",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "item_building"
+      },
+      "fields": [
+        {
+          "key": "item_building_1",
+          "label": "形态和内部结构",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "item_building_2",
+          "label": "制作与用途",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "item_building_3",
+          "label": "持有与流转",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "item_building_4",
+          "label": "损坏和修复经历",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "item_building_5",
+          "label": "象征意义",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "item_building_6",
+          "label": "与地点故事的联系",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "谁赋予它特别意义？",
+        "它的经历留下了哪些可见痕迹？"
+      ],
+      "suggested_relations": [
+        "制造",
+        "持有",
+        "收藏于"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_history",
+      "title": "历史与史料",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "history"
+      },
+      "fields": [
+        {
+          "key": "history_1",
+          "label": "事件描述",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "history_2",
+          "label": "参与者与发生地",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "history_3",
+          "label": "作者确定的前因后果",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "history_4",
+          "label": "遗迹与纪念",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "history_5",
+          "label": "不同记载",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "history_6",
+          "label": "时间范围说明",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "今天还留下什么痕迹？",
+        "谁的记载与谁不同，依据是什么？"
+      ],
+      "suggested_relations": [
+        "参与",
+        "发生于",
+        "描写"
+      ],
+      "extensions": {}
+    },
+    {
+      "schema_version": 1,
+      "id": "template_narrative",
+      "title": "故事与叙事",
+      "applies_to": {
+        "kind": "entity",
+        "entity_type": "narrative"
+      },
+      "fields": [
+        {
+          "key": "narrative_1",
+          "label": "作品与卷章",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "narrative_2",
+          "label": "场景与视角",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "narrative_3",
+          "label": "线索与伏笔",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "narrative_4",
+          "label": "揭示和回收",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "narrative_5",
+          "label": "承诺与主题",
+          "widget": "multiline",
+          "required": false
+        },
+        {
+          "key": "narrative_6",
+          "label": "不同创作方案",
+          "widget": "multiline",
+          "required": false
+        }
+      ],
+      "prompts": [
+        "读者在此处应该知道什么，还不知道什么？",
+        "哪些未回收内容是刻意保留？"
+      ],
+      "suggested_relations": [
+        "描写",
+        "预示",
+        "回收"
+      ],
+      "extensions": {}
+    }
+  ]
+}

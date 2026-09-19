@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "project_id": "project_harbor",
+  "language_version": "1.9",
+  "entry": "world.wl",
+  "required_features": [
+    "presentation.maps.v1"
+  ],
+  "maps": {
+    "map_harbor": ".world/maps/map_harbor.json",
+    "map_overview": ".world/maps/map_overview.json"
+  },
+  "graph_views": {},
+  "extensions": {}
+}

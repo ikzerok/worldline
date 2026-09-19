@@ -1,0 +1,15 @@
+// 语言1.10设计示意：当前worldline 1.9不支持。
+// 使用.wl.txt避免被当前递归源码扫描误载入。
+entity keepers kind organization as "守灯会"
+  description "一段作者编写的组织资料。"
+
+tag lighthouse as "灯塔"
+  description "旧工程已有的词条身份，可以继续被地图和关系引用。"
+
+relation_type maintains as "维护"
+  inverse "由其维护"
+  direction directed
+
+relation_def rel_keepers_lighthouse type maintains from entity keepers to tag lighthouse
+  description "守灯会负责维护灯塔。"
+  source_note "原创验收资料"

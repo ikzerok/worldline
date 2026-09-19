@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "map_harbor",
+  "title": "雾港城市图",
+  "raster_layers": [
+    {
+      "id": "harbor_base",
+      "asset": {
+        "kind": "asset",
+        "id": "harbor_image"
+      },
+      "rect": [0, 0, 1, 1]
+    }
+  ],
+  "canvas": {
+    "width": 2048,
+    "height": 1536,
+    "unit": "normalized"
+  },
+  "layer_order": [
+    "places",
+    "history"
+  ],
+  "layers": {
+    "places": {
+      "title": "地点",
+      "visible_default": true,
+      "locked": false
+    },
+    "history": {
+      "title": "历史资料",
+      "visible_default": false,
+      "locked": false
+    }
+  },
+  "placements": {
+    "pin_lighthouse": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "tag",
+        "id": "lighthouse"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.62,
+          0.35
+        ]
+      },
+      "annotation": "从这里查看灯塔资料；此坐标只是图上位置。",
+      "role": "地点资料入口",
+      "label_override": null,
+      "navigation": null,
+      "scope_refs": []
+    },
+    "pin_history": {
+      "layer_id": "history",
+      "target_ref": {
+        "kind": "event",
+        "id": "lighthouse_outage"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.64,
+          0.37
+        ]
+      },
+      "annotation": "作者写下的事件，不因查看而执行。",
+      "role": "事件发生地说明",
+      "scope_refs": []
+    }
+  },
+  "extensions": {}
+}

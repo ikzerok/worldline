@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "title": "SemanticRelation query DTO v1 — proposed normalized representation",
+  "required": [
+    "schema_version",
+    "id",
+    "relation_type",
+    "from_ref",
+    "to_ref",
+    "description",
+    "scope_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "relation_type": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "from_ref": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "world",
+            "character",
+            "event",
+            "scene",
+            "storyline",
+            "period",
+            "state",
+            "anchor",
+            "tag",
+            "asset",
+            "variable",
+            "file",
+            "entity"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "to_ref": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "world",
+            "character",
+            "event",
+            "scene",
+            "storyline",
+            "period",
+            "state",
+            "anchor",
+            "tag",
+            "asset",
+            "variable",
+            "file",
+            "entity"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "description": {
+      "type": "string"
+    },
+    "source_note": {
+      "type": "string"
+    },
+    "scope_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "world",
+              "character",
+              "event",
+              "scene",
+              "storyline",
+              "period",
+              "state",
+              "anchor",
+              "tag",
+              "asset",
+              "variable",
+              "file",
+              "entity"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "extensions": {
+      "type": "object"
+    }
+  }
+}
