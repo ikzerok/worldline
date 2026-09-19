@@ -77,6 +77,14 @@ pub fn compile_text_with_disk_includes(path: &Path, text: &str) -> CompileResult
 
 /// 所有内存文件优先于磁盘,包括尚未保存的新文件。
 pub fn compile_sources(entry: &Path, sources: &BTreeMap<PathBuf, String>) -> CompileResult {
+    compile_sources_excluding(entry, sources, HashSet::new())
+}
+
+pub(crate) fn compile_sources_excluding(
+    entry: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+    deleted: HashSet<PathBuf>,
+) -> CompileResult {
     let entry = entry_path(entry);
     let overrides = sources
         .iter()
@@ -85,6 +93,7 @@ pub fn compile_sources(entry: &Path, sources: &BTreeMap<PathBuf, String>) -> Com
     let mut compiler = Compiler {
         root: entry.parent().unwrap_or(Path::new(".")).to_path_buf(),
         overrides,
+        deleted,
         sources: BTreeMap::new(),
         files: Vec::new(),
         loaded: HashSet::new(),
@@ -143,6 +152,7 @@ fn finish(
 struct Compiler {
     root: PathBuf,
     overrides: BTreeMap<PathBuf, String>,
+    deleted: HashSet<PathBuf>,
     sources: BTreeMap<PathBuf, String>,
     files: Vec<String>,
     loaded: HashSet<PathBuf>,
@@ -154,6 +164,15 @@ struct Compiler {
 impl Compiler {
     fn load(&mut self, path: &Path, from: &str, span: Span) {
         let path = source_path(path);
+        if self.deleted.contains(&path) {
+            self.diags.push(Diagnostic::error(
+                "A105",
+                from,
+                span,
+                format!("引用文件已标记删除:{}", path.display()),
+            ));
+            return;
+        }
         if !path.starts_with(&self.root) {
             self.diags.push(Diagnostic::error(
                 "A109",

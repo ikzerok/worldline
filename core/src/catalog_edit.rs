@@ -1,7 +1,6 @@
 //! 目录结构编辑与素材的可移植打包计划。
 use crate::authoring::{identifier, property_lines, quote, WorldDraft};
 use crate::catalog::{CatalogDecl, TargetRef};
-use crate::compile_sources;
 use crate::lexer::{lex_source, LineKind};
 use crate::project::Project;
 use std::collections::BTreeMap;
@@ -45,7 +44,7 @@ impl Project {
         if original.is_some_and(|id| id != draft.id) {
             return Err("标签 ID 是引用身份,修改名称和资料时请保留 ID".into());
         }
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let path = original
             .and_then(|id| result.analysis.catalog.tags.get(id))
             .map(|tag| PathBuf::from(&tag.file))
@@ -62,7 +61,7 @@ impl Project {
 
     pub fn write_asset(&mut self, draft: &AssetDraft) -> Result<(), String> {
         identifier(&draft.id)?;
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let existing = result.analysis.catalog.assets.get(&draft.id);
         let path = existing
             .map(|a| PathBuf::from(&a.file))
@@ -161,7 +160,7 @@ impl Project {
         } else {
             "file"
         };
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let existing = result
             .analysis
             .catalog
@@ -213,12 +212,24 @@ impl Project {
 
     pub(crate) fn portable_assets(&self) -> Result<PortableAssets, String> {
         let sources = self.sources();
+        let authoring = self
+            .authoring_documents
+            .iter()
+            .filter(|(_, document)| !document.is_deleted())
+            .map(|(path, document)| (path.clone(), document.bytes().to_vec()))
+            .collect();
+        let registered: std::collections::BTreeSet<_> =
+            self.authoring_documents.keys().cloned().collect();
+        let source_paths: std::collections::BTreeSet<_> = self.documents.keys().cloned().collect();
         let mut copies = BTreeMap::new();
         if self.root.exists() || cfg!(target_arch = "wasm32") {
             for path in
                 crate::file_access::workspace_files(&self.root).map_err(|e| e.to_string())?
             {
-                if !sources.contains_key(&path) {
+                if !sources.contains_key(&path)
+                    && !source_paths.contains(&path)
+                    && !registered.contains(&path)
+                {
                     copies.insert(
                         path.strip_prefix(&self.root)
                             .map_err(|e| e.to_string())?
@@ -228,12 +239,17 @@ impl Project {
                 }
             }
         }
-        Ok(PortableAssets { sources, copies })
+        Ok(PortableAssets {
+            sources,
+            authoring,
+            copies,
+        })
     }
 }
 
 pub(crate) struct PortableAssets {
     pub sources: BTreeMap<PathBuf, String>,
+    pub authoring: BTreeMap<PathBuf, Vec<u8>>,
     pub copies: BTreeMap<PathBuf, PathBuf>,
 }
 

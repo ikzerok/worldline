@@ -3,7 +3,7 @@ mod choices;
 use crate::ast::{ChangeKind, EffectWhen, PropertyValue};
 use crate::lexer::{lex_source, valid_identifier, Line, LineKind};
 use crate::project::Project;
-use crate::{compile_sources, Severity};
+use crate::Severity;
 pub use choices::ChoiceDraft;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -236,7 +236,7 @@ impl Project {
         if let Some(parent) = parent {
             identifier(parent)?;
         }
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let existing = result.analysis.timeline.periods.iter().find(|p| p.id == id);
         let path = existing
             .map(|p| PathBuf::from(&p.file))
@@ -297,13 +297,13 @@ impl Project {
     }
 
     pub fn event_draft(&self, id: &str) -> Result<(PathBuf, EventDraft), String> {
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         self.event_draft_from(id, &result)
     }
 
     /// 一次编译取得全工程事件内容，供只读正文概览使用。
     pub fn event_drafts(&self) -> Vec<(PathBuf, EventDraft)> {
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let mut nodes: Vec<_> = result
             .analysis
             .graph
@@ -484,7 +484,7 @@ impl Project {
         if self.event_draft(id)?.1.period.is_some() {
             return Err("时段内事件为部分顺序,请用先后约束编辑时间关系".into());
         }
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let mut nodes: Vec<_> = result
             .analysis
             .graph
@@ -589,7 +589,7 @@ impl Project {
 
     pub fn write_world(&mut self, draft: &WorldDraft) -> Result<(), String> {
         identifier(&draft.id)?;
-        let result = compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         let world = result.analysis.world;
         let path = world
             .as_ref()

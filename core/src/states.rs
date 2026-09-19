@@ -449,7 +449,7 @@ impl crate::project::Project {
         for tag in &draft.tags {
             crate::authoring::identifier(tag)?;
         }
-        let result = crate::compile_sources(&self.entry, &self.sources());
+        let result = self.compile_current();
         if original.is_none() && result.analysis.catalog.states.contains_key(&draft.id) {
             return Err("状态 ID 已存在".into());
         }
