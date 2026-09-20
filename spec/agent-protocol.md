@@ -1,6 +1,6 @@
 # worldline 机器接口契约(agent 协议与 CLI JSON 模式)
 
-**协议版本:** 1（语言 v1.9 字段扩展）
+**协议版本:** 1（语言 v1.10 entity 字段扩展）
 
 时段包含扩展：`timeline.periods[]` 新增 `parent: string | null`，保存直接上级 ID。父子层级由 core 验证，未知上级及循环包含为 A219 编译诊断。CLI 与 RPC 同时返回该字段，不影响会话状态和运行指纹。
 
@@ -30,27 +30,59 @@
   依赖其顺序;有序信息一律使用 `*_order` 字段或数组。
 - 退出码约定(`wl` 各子命令通用):
   - `0` 成功;
-  - `1` 故事层失败(编译存在 error 诊断、或运行期错误);
+  - `1` 故事层失败(编译存在 error 诊断、运行期错误，或 `check` 发现工作区只读诊断);
   - `2` 用法 / IO 失败(文件无法读取、参数错误)。
 - **故事层失败是正常结果**,不是协议错误:CLI 以退出码 + JSON 表达,
   `wl-agent` 以 `{"ok": false, ...}` 结果表达。协议层错误仅指消息本身
   不合法(见 §3.2)。
 
+工作区诊断与故事编译诊断分域。`diagnostics[]` 只表示当前
+`CompileResult` 的故事层诊断；读取 `.world/project.json`、注册展示文档及其
+能力声明得到的作者工作区诊断放在 `workspace_diagnostics[]`，不会注入
+`CompileResult.diagnostics`。`read_only` 在工作区存在这些诊断时为 `true`，表示
+可以继续查询目录和资料，但不能通过作者编辑接口写盘。查询命令可以在
+`read_only: true` 时保持 `ok: true`；`wl check` 则以退出码 1 和 `ok: false`
+提示工作区不可安全写入。未知 `language_version` 或 `required_features` 都以
+`WS003` 工作区诊断报告。
+
 ## 2. `wl` CLI JSON 模式
 
 新增 `wl catalog <目录或入口> [--tag ID] [--recursive] [--kind 类型] [--json]`。
-JSON 为 `{ok, catalog, matches, diagnostics}`;catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
+JSON 为 `{ok, catalog, matches, diagnostics, workspace_diagnostics, read_only}`;
+其中 `diagnostics` 是故事编译诊断，`workspace_diagnostics` 是工作区只读诊断。
+catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
 每个对象有 target:{kind,id}、display、file、line;标签/素材与链接也保留声明位置。
 无 --tag 时 matches 为所有对象,有 --tag 时为直接或递归命中,按 --kind 可进一步过滤。
 未知标签视为用法失败;重复路径按对象 ID 去重。`analyze` 结果增加同样的 catalog 字段,
 属于协议版本 1 的向后兼容扩展。详见 [catalog.md](catalog.md)。
 
 人类模式输出保持不变;`--json` 切换机器输出。标志:`--load=<存档.json>`、
-`--save=<存档.json>`、`--json`。
+`--save=<存档.json>`、`--language-version=1.10`、`--json`。未指定
+`--language-version` 时,目录或入口若位于带 `language_version` 的工程清单中,
+由清单选择语言版本;没有清单的旧调用仍固定使用 1.9。直接 source API 和旧
+CLI 调用不会因出现 `entity` 文本而隐式升级。
+
+### 2.6 `wl entity` 作者资料编辑
+
+`wl entity create <目录或入口> --id ID --kind 类型 --display 名称`
+创建实体;`update` 使用相同参数修改显示名、分类、description 或 property;
+`delete` 使用 `--id ID` 删除实体。`--description` 设置描述,
+`--property name=value` 可重复,值为字符串、有限数值或 `true`/`false`。
+编辑命令要求工程清单明确选择 1.10,并使用 `Project::edit` 与保存基线检查;
+若同时提供 `--baseline` 且工作区内容基线不同,输出故事层失败而不写盘。
+JSON 成功结果为 `{ok, operation, entity, catalog, language_version, baseline,
+workspace_diagnostics, read_only}`；写入成功时 `read_only` 为 `false`。
+失败为 `{ok:false,error:{code,message},diagnostics,workspace_diagnostics,read_only}`。
+`code` 使用英文稳定标识,
+`message` 使用中文。外部磁盘修改、保存事务或引用影响会以 `CONFLICT` 或
+`EDIT_FAILED` 返回,不伪造成功。
 
 ### 2.1 `wl check <file> --json`
 
-见 `diagnostics.md` §3,不在此重复:`{ok, stats, diagnostics[]}`。
+见 `diagnostics.md` §3,不在此重复:`{ok, stats, diagnostics[],
+workspace_diagnostics[], read_only, language_version}`。工作区存在 `WS003`
+等只读诊断时，故事 `diagnostics[]` 仍可为空，但 `ok` 为 `false` 且退出码为 1；
+人类模式同时打印中文诊断和“工作区只读”提示。
 
 ### 2.2 `wl graph <file> --json`
 
@@ -166,8 +198,8 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | 方法 | 参数 | 结果(result) |
 |---|---|---|
 | `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version: "0.2.0"}` |
-| `compile` | `{path}` 或 `{source, file_name?}` | `{ok, story_id, fingerprint, stats, diagnostics}`;ok=false 时无 story_id |
-| `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
+| `compile` | `{path, language_version?}` 或 `{source, file_name?, language_version?}` | `{ok, story_id, fingerprint, stats, diagnostics, workspace_diagnostics, read_only, language_version}`;故事编译失败时无 story_id；工程可编译但工作区只读时仍可返回 story_id，`read_only` 为 true |
+| `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog, language_version}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
 | `export` | `{story_id, format}`;format ∈ `graph_mermaid` \| `timeline_mermaid` | `{text}` |
 | `session.open` | `{story_id, save?}`(save 为存档 JSON 字符串) | `{session_id, state}` |
 | `session.continue` | `{session_id}` | `{outputs, choices, state, paused, ended}`;运行期错误 → `ok:false` |
@@ -176,13 +208,34 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `session.save` | `{session_id}` | `{save}`(存档 JSON **字符串**) |
 | `session.restart` | `{session_id}` | `{state}` |
 | `session.close` | `{session_id}` | `{closed: true}` |
+| `project.open` | `{path}` | `{ok, project_id, language_version, baseline, catalog, diagnostics, workspace_diagnostics, read_only}`;故事可读但有故事诊断或工作区只读诊断时仍返回 `project_id`，后者不伪装成可写 |
+| `project.analyze` | `{project_id}` | `{ok, language_version, baseline, catalog, diagnostics, workspace_diagnostics, read_only, conflicts?}` |
+| `entity.create` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | `{ok, operation, entity, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `entity.update` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | 同 `entity.create`;实体 ID 为稳定身份 |
+| `entity.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, entity:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `shutdown` | `{}` | `{bye: true}`(响应后进程退出,码 0) |
 
 ### 3.4 生命周期语义
 
 v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目录(解析 world.wl)。
 `analyze.world` 和角色 properties / relations / events 字段见 relations.md §6。
-协议版本仍为 1,消费者应忽略不认识的新增字段。
+协议版本仍为 1,消费者应忽略不认识的新增字段。`language_version` 是编译选项
+的机器投影;实体对象只出现在 `catalog.entities` 和作者资料编辑结果,不会进入
+运行时状态或 fingerprint。`project.open` 返回的 `baseline` 是
+`Project::content_baseline()` 计算的内容基线,覆盖源码、工程清单和已注册展示文档的
+相对路径、原始字节与删除状态,不使用 runtime fingerprint。后续编辑请求可回传它
+保护陈旧请求。已有 `project_id` 的 `project.analyze` 与 `entity.*` 每次先刷新磁盘源码及
+清单注册的展示文档，再返回刷新后的 `baseline`；`project.analyze` 遇刷新冲突仍返回可读
+目录并附 `conflicts`，刷新错误返回 `ok:false` 的 `IO_ERROR`，实体编辑的刷新冲突返回
+`ok:false` 的 `CONFLICT`。调用方应解决冲突后用返回的新基线重试。省略时仍由 Project
+保存前的磁盘基线检查保护外部修改。编辑失败始终是 result 中的 `ok:false`;只有未知方法、
+参数类型错误、未知工程 ID 等协议违规才使用 JSON-RPC error。
+`project.open` 与 `project.analyze` 的 `diagnostics` 仍只属于故事编译域；清单版本、
+未知必需能力及注册文档问题只进入 `workspace_diagnostics`。只要该数组非空就返回
+`read_only: true`；工程仍可返回 `project_id`、`catalog` 和最新 `baseline`，但
+`entity.*` 必须返回故事层 `READ_ONLY` 结果而不写盘。已有 `project_id` 的查询和编辑
+请求都先刷新工作区，再计算这些分域诊断，因此外部新增未知能力或展示文档变化也会
+立即反映在 `project.analyze` 与后续编辑结果中。
 `analyze.timeline` 与 `wl timeline --json` 的新增 `timeline` 字段输出时段及先后约束,
 结构见 relations.md §7;原 graph 保留执行关系,二者不能互换。
 

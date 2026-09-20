@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod catalog_edit;
 mod catalog_syntax;
 mod compiler;
+mod content_baseline;
 pub mod deletion_content_references;
 pub mod diagnostic;
 pub mod expression;
@@ -36,7 +37,9 @@ pub mod workspace_snapshot;
 pub use analysis::{Analysis, Stats, Symbols};
 pub use ast::{Program, ValueKind};
 pub use compiler::{
-    compile_path, compile_source, compile_sources, compile_text_with_disk_includes,
+    compile_path, compile_path_with_options, compile_source, compile_source_with_options,
+    compile_sources, compile_sources_with_options, compile_text_with_disk_includes,
+    compile_text_with_disk_includes_with_options, CompileOptions, LanguageVersion,
 };
 pub use diagnostic::{sort_diagnostics, Diagnostic, Severity, Span};
 pub use fingerprint::fingerprint_program;
@@ -52,6 +55,7 @@ pub struct CompileResult {
     pub analysis: Analysis,
     pub diagnostics: Vec<Diagnostic>,
     pub sources: std::collections::BTreeMap<std::path::PathBuf, String>,
+    pub options: CompileOptions,
 }
 impl CompileResult {
     pub fn has_errors(&self) -> bool {

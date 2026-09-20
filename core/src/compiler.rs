@@ -3,6 +3,58 @@ use crate::{analysis, lexer, parser, CompileResult, Diagnostic, Span};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
+/// 语言版本。默认入口仍然固定使用 1.9；需要 1.10 语法的调用方必须
+/// 显式传入 [`CompileOptions`]。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum LanguageVersion {
+    #[serde(rename = "1.9")]
+    #[default]
+    V1_9,
+    #[serde(rename = "1.10")]
+    V1_10,
+}
+
+impl LanguageVersion {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1_9 => "1.9",
+            Self::V1_10 => "1.10",
+        }
+    }
+
+    pub const fn supports_entities(self) -> bool {
+        matches!(self, Self::V1_10)
+    }
+}
+
+/// 编译开关。结构故意保持小而显式，避免新语法无版本地改变旧工程。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompileOptions {
+    pub language_version: LanguageVersion,
+}
+
+impl Default for CompileOptions {
+    fn default() -> Self {
+        Self {
+            language_version: LanguageVersion::V1_9,
+        }
+    }
+}
+
+impl CompileOptions {
+    pub const fn new(language_version: LanguageVersion) -> Self {
+        Self { language_version }
+    }
+
+    pub const fn v1_9() -> Self {
+        Self::new(LanguageVersion::V1_9)
+    }
+
+    pub const fn v1_10() -> Self {
+        Self::new(LanguageVersion::V1_10)
+    }
+}
+
 pub fn source_path(path: &Path) -> PathBuf {
     let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let canonical = absolute.canonicalize().unwrap_or_else(|_| {
@@ -43,18 +95,35 @@ pub fn entry_path(path: &Path) -> PathBuf {
 /// assert_eq!(result.program.entry, "hello");
 /// ```
 pub fn compile_source(file: &str, src: &str) -> CompileResult {
+    compile_source_with_options(file, src, CompileOptions::default())
+}
+
+/// 使用显式版本编译单个源文件。
+pub fn compile_source_with_options(
+    file: &str,
+    src: &str,
+    options: CompileOptions,
+) -> CompileResult {
     let mut diags = Vec::new();
-    let lines = lexer::lex_source(file, src, &mut diags);
+    let lines = lexer::lex_source_with_options(file, src, &mut diags, options);
     finish(
         file,
         lines,
         vec![file.into()],
         BTreeMap::from([(PathBuf::from(file), src.into())]),
         diags,
+        options,
     )
 }
 
 pub fn compile_path(path: &Path) -> std::io::Result<CompileResult> {
+    compile_path_with_options(path, CompileOptions::default())
+}
+
+pub fn compile_path_with_options(
+    path: &Path,
+    options: CompileOptions,
+) -> std::io::Result<CompileResult> {
     if path.is_dir() {
         let root = source_path(path);
         let mut sources = BTreeMap::new();
@@ -64,26 +133,53 @@ pub fn compile_path(path: &Path) -> std::io::Result<CompileResult> {
             }
         }
         crate::file_access::read_to_string(root.join("world.wl"))?;
-        return Ok(compile_sources(&root.join("world.wl"), &sources));
+        return Ok(compile_sources_with_options(
+            &root.join("world.wl"),
+            &sources,
+            options,
+        ));
     }
     let path = entry_path(path);
     let text = crate::file_access::read_to_string(&path)?;
-    Ok(compile_text_with_disk_includes(&path, &text))
+    Ok(compile_text_with_disk_includes_with_options(
+        &path, &text, options,
+    ))
 }
 
 pub fn compile_text_with_disk_includes(path: &Path, text: &str) -> CompileResult {
-    compile_sources(path, &BTreeMap::from([(source_path(path), text.into())]))
+    compile_text_with_disk_includes_with_options(path, text, CompileOptions::default())
+}
+
+pub fn compile_text_with_disk_includes_with_options(
+    path: &Path,
+    text: &str,
+    options: CompileOptions,
+) -> CompileResult {
+    compile_sources_with_options(
+        path,
+        &BTreeMap::from([(source_path(path), text.into())]),
+        options,
+    )
 }
 
 /// 所有内存文件优先于磁盘,包括尚未保存的新文件。
 pub fn compile_sources(entry: &Path, sources: &BTreeMap<PathBuf, String>) -> CompileResult {
-    compile_sources_excluding(entry, sources, HashSet::new())
+    compile_sources_with_options(entry, sources, CompileOptions::default())
 }
 
-pub(crate) fn compile_sources_excluding(
+pub fn compile_sources_with_options(
+    entry: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+    options: CompileOptions,
+) -> CompileResult {
+    compile_sources_excluding_with_options(entry, sources, HashSet::new(), options)
+}
+
+pub(crate) fn compile_sources_excluding_with_options(
     entry: &Path,
     sources: &BTreeMap<PathBuf, String>,
     deleted: HashSet<PathBuf>,
+    options: CompileOptions,
 ) -> CompileResult {
     let entry = entry_path(entry);
     let overrides = sources
@@ -100,6 +196,7 @@ pub(crate) fn compile_sources_excluding(
         active: Vec::new(),
         lines: Vec::new(),
         diags: Vec::new(),
+        options,
     };
     compiler.load(&entry, &entry.to_string_lossy(), Span::new(1, 1, 1));
     for path in compiler.overrides.keys().cloned().collect::<Vec<_>>() {
@@ -111,6 +208,7 @@ pub(crate) fn compile_sources_excluding(
         compiler.files,
         compiler.sources,
         compiler.diags,
+        options,
     )
 }
 
@@ -120,8 +218,9 @@ fn finish(
     files: Vec<String>,
     sources: BTreeMap<PathBuf, String>,
     mut diags: Vec<Diagnostic>,
+    options: CompileOptions,
 ) -> CompileResult {
-    let mut program = parser::Parser::new(&lines, &mut diags).parse_program();
+    let mut program = parser::Parser::new_with_options(&lines, &mut diags, options).parse_program();
     program.files = files;
     let entry = program
         .event_files
@@ -146,6 +245,7 @@ fn finish(
         analysis,
         diagnostics,
         sources,
+        options,
     }
 }
 
@@ -159,6 +259,7 @@ struct Compiler {
     active: Vec<PathBuf>,
     lines: Vec<lexer::Line>,
     diags: Vec<Diagnostic>,
+    options: CompileOptions,
 }
 
 impl Compiler {
@@ -217,7 +318,7 @@ impl Compiler {
         self.sources.insert(path.clone(), text.clone());
         let display = path.to_string_lossy().into_owned();
         self.files.push(display.clone());
-        for line in lexer::lex_source(&display, &text, &mut self.diags) {
+        for line in lexer::lex_source_with_options(&display, &text, &mut self.diags, self.options) {
             if let lexer::LineKind::Include {
                 path: include,
                 span,

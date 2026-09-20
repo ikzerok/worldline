@@ -1,6 +1,6 @@
 # worldline 共同契约：对象、展示文档与修改边界
 
-版本0.2，设计草案（0.2修订：M1矢量画布——地图自有坐标系、栅格图层化、基础线面前移；阈值单源登记）。本文中的新增文件、类型、CLI和语法都是待实现的提案，不能直接当成当前0.2.0的已支持能力。需求来源见[需求清单](../docs/design/shared/REQUIREMENTS.md)，事实依据编号见[研究记录](../docs/design/shared/RESEARCH.md)。
+版本0.2，设计草案（0.2修订：M1矢量画布——地图自有坐标系、栅格图层化、基础线面前移；阈值单源登记）。除明确标注为后续票据的部分外，本文的 M2 实体契约已由 worldline-core 实现；其余新增文件、类型、CLI和语法仍不能直接当成当前0.2.0的已支持能力。需求来源见[需求清单](../docs/design/shared/REQUIREMENTS.md)，事实依据编号见[研究记录](../docs/design/shared/RESEARCH.md)。
 
 ## 1. 不变量
 
@@ -83,8 +83,8 @@ M1支持现有kind；M2增加`entity`，实体的place/organization/culture等�
 
 M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument` 与
 `MapIndex`：地图 JSON 的格式、ID、坐标、图层、TargetRef、素材声明和导航
-引用都在 core 校验。`TargetRef` 只接受现有 1.9 kinds；`entity` 等 1.10
-能力必须经显式版本/能力协商后再启用。无效 JSON、重复键、越界/非有限坐标和
+引用都在 core 校验。`TargetRef` 在 1.9 只接受现有 kinds；`entity` 等 1.10
+能力由 Project 的显式语言版本启用。无效 JSON、重复键、越界/非有限坐标和
 自交多边形产生 `MAP` 域诊断，原始字节继续由 Project 保留；缺失素材、未解析
 对象和未注册导航目标作为可见的局部诊断，不阻止其他地图和源码读取。core 只
 提供素材声明、相对路径和 `available` 状态，不解码图片。
@@ -130,7 +130,9 @@ M1提供point、polyline与简单polygon的创建与编辑；M4增加展示预�
 
 ## 5. SemanticRelation与通用实体
 
-M2新增内容声明，保留旧人物关系兼容读取。以下是待评审的**语言1.10提案**，当前1.9不可执行；不得在M1以此为地图前置。
+M2新增内容声明，保留旧人物关系兼容读取。`entity` 的最小语法已在语言 1.10
+定稿并由 #6 实现；`relation_type` 与 `relation_def` 仍是 #7 的后续契约，当前
+1.9 不可执行；不得在 M1 以这些后续关系能力为地图前置。
 
 ```text
 entity lighthouse kind place as "雾港灯塔"
@@ -156,6 +158,22 @@ relation_def至少具有稳定ID、关系类型、from/to和可选说明。关�
 新关键字必须在显式language_version=1.10下启用；旧compile_source/compile_sources默认仍按1.9兼容语义，新入口提供CompileOptions。新声明不进入event执行体，不变成选择或效果。词法/解析/目录/导航/标记/删除重命名/语法高亮/CLI样例必须一起更新。
 
 复杂盟约等多方关系先建立独立entity，再用关系标注各参与者角色，不把所有多方语义硬塞成一条多端点边。
+
+### 5.0.1 M2 实体最小实现
+
+本节的 `entity` 声明已在语言 1.10 定稿；`relation_type` 与 `relation_def`
+仍属于后续票据。核心公开 `LanguageVersion::{V1_9,V1_10}` 与
+`CompileOptions`，旧 `compile_source`/`compile_sources` 默认使用 1.9。Project
+按 `.world/project.json` 的 `language_version` 选择编译选项，无清单或版本为
+1.9 的工程不会隐式升级。实体查询统一从 `Analysis.catalog` 派生：
+`catalog.entities` 是 ID 到 `EntityInfo` 的映射，同时在 `catalog.objects` 暴露
+`TargetRef(kind="entity", id)`。
+
+`EntityInfo` 只含稳定 ID、可变 `entity_type`、显示名、description、字面量
+properties 与源位置。创建、修改、改名（显示名或分类）和删除都通过 Project
+的源码编辑事务完成；删除沿用 `DeletionImpact` 的内容/地图引用检查。实体声明
+不加入事件执行 Program 的事件体，也不改变运行指纹。1.10 的正文链接、Wiki
+搜索、导航和 CLI catalog 读取同一 catalog，不在各层复制解析器。
 
 ### 5.1 旧人物关系
 

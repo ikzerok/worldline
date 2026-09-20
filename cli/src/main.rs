@@ -24,6 +24,9 @@ fn main() -> ExitCode {
             eprintln!(
                 "      wl catalog <目录或入口.wl> [--tag ID] [--recursive] [--kind 类型] [--json]"
             );
+            eprintln!(
+                "      wl entity create|update|delete <目录或入口> --id ID [--kind 类型] [--display 名称] [--json]"
+            );
             ExitCode::from(2)
         }
     }

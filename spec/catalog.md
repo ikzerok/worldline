@@ -20,7 +20,20 @@ mark character lin with harbor_place
 tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制内容,可通过其他 tag 间接引用。
 `tag <ID> [as "名称"]` 是全局唯一声明,可带 description 与字面量 property。
 `mark <类型> <对象ID或带引号路径> with <标签ID列表>` 是顶层标记,可放在任何被 include 的文件。
-类型包括 anchor、state、event、scene、character、world、storyline、period、variable、tag、asset、file。
+类型包括 anchor、state、event、scene、character、entity、world、storyline、period、variable、tag、asset、file。
+
+## 1.1 语言 1.10 实体
+
+显式启用语言 1.10 后，`entity ID kind TYPE as "显示名"` 声明通用作者资料。
+目录中的 `EntityInfo` 字段为 `id/entity_type/display/description/properties/file/line`，
+身份固定为 `TargetRef { kind: "entity", id }`。`entity_type` 是可变分类，修改
+它或显示名不修改 ID，也不改变地图标记的位置；同名的 character、tag 和 entity
+保持独立。实体只进入 `catalog.entities` 和统一 `catalog.objects`，不进入事件
+执行结构或运行指纹。description/property 的规则与 world 相同，属性值仍限于
+字符串、有限数值和布尔值。
+
+实体的正文链接写作 `[[entity:ID|显示文字]]`，并遵守正文链接的转义和目标存在
+检查。旧 1.9 工程不自动启用该目标类型，也不把同名旧对象迁移为 entity。
 同一对象可被多个标签引用,标签也可以被标签引用。重复标记合并为集合。
 文件对象的路径相对于标记所在文件,必须指向本工程已引用的源码。
 
@@ -75,7 +88,7 @@ mark anchor turning_point with harbor_place
 attach anchor turning_point with harbor_art
 ```
 
-`anchor_def ID as "名称"` 是顶层声明；可选缩进块只允许一个 `description "叙事意义"`，不接受 property。锚点 ID 在全工程的锚点命名空间唯一，与名称分离。`anchor_link ID KIND TARGET` 可放在任意引用文件，关联完整 character/event/state/anchor 对象；两端均须存在，重复锚点与未知关联对象报 A217。标记/附件本身的未知引用继续使用 A214。
+`anchor_def ID as "名称"` 是顶层声明；可选缩进块只允许一个 `description "叙事意义"`，不接受 property。锚点 ID 在全工程的锚点命名空间唯一，与名称分离。`anchor_link ID KIND TARGET` 可放在任意引用文件，1.9 关联完整 character/event/state/anchor 对象，1.10 另外允许 entity；两端均须存在，重复锚点与未知关联对象报 A217。标记/附件本身的未知引用继续使用 A214。
 
 `catalog.anchors: BTreeMap<String, AnchorInfo>` 保存 `id/display/description/file/line/links`；每条 `AnchorLink` 含 `anchor/target/file/line`。通用 objects、references、标签查询与附件查询均包括锚点。`Catalog::anchors_for(&TargetRef)` 反查直接关联某角色、事件、状态或锚点的独立锚点；不隐式沿角色的全部事件扩散关联。
 

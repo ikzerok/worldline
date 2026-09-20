@@ -1,6 +1,6 @@
 //! 状态声明、变更出处索引与结构编辑。时间线不隐式执行这些变更。
 use crate::ast::{Change, ChangeKind, Expr, Loc, Stmt};
-use crate::catalog::{Catalog, CatalogDecl, ReferenceInfo, TargetRef, TARGET_KINDS};
+use crate::catalog::{Catalog, CatalogDecl, ReferenceInfo, TargetRef};
 use crate::{Diagnostic, Program, Span};
 use serde::Serialize;
 
@@ -84,11 +84,12 @@ fn tags_and_note(tokens: &[(String, bool)], start: usize) -> Option<(Vec<String>
     Some((tags, note))
 }
 
-pub(crate) fn parse_declaration(
+pub(crate) fn parse_declaration_with_options(
     src: &str,
     file: &str,
     line: u32,
     diags: &mut Vec<Diagnostic>,
+    options: crate::compiler::CompileOptions,
 ) -> StateDecl {
     let tokens = crate::catalog_syntax::tokenize(src, file, line, diags);
     let get = |i| {
@@ -101,7 +102,7 @@ pub(crate) fn parse_declaration(
     if crate::authoring::identifier(get(0)).is_err()
         || tokens.first().is_some_and(|t| t.1)
         || get(1) != "on"
-        || !TARGET_KINDS.contains(&get(2))
+        || !crate::catalog::is_target_kind(get(2), options)
         || get(3).is_empty()
         || get(4) != "with"
         || content.is_none()

@@ -25,6 +25,7 @@ pub const TARGET_KINDS: &[&str] = &[
     "event",
     "scene",
     "character",
+    "entity",
     "world",
     "storyline",
     "period",
@@ -33,6 +34,11 @@ pub const TARGET_KINDS: &[&str] = &[
     "asset",
     "file",
 ];
+
+pub fn is_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
+    TARGET_KINDS.contains(&kind)
+        && (kind != "entity" || options.language_version.supports_entities())
+}
 
 #[derive(Debug, Clone)]
 pub enum CatalogDecl {
@@ -93,6 +99,17 @@ pub struct TagInfo {
     pub declared: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityInfo {
+    pub id: String,
+    pub entity_type: String,
+    pub display: String,
+    pub description: String,
+    pub properties: BTreeMap<String, PropertyValue>,
+    pub file: String,
+    pub line: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AssetInfo {
     pub id: String,
@@ -113,6 +130,7 @@ pub struct Catalog {
     pub states: BTreeMap<String, crate::states::StateInfo>,
     pub objects: Vec<CatalogObject>,
     pub tags: BTreeMap<String, TagInfo>,
+    pub entities: BTreeMap<String, EntityInfo>,
     pub assets: BTreeMap<String, AssetInfo>,
     pub marks: Vec<CatalogLink>,
     pub attachments: Vec<CatalogLink>,
@@ -238,6 +256,58 @@ pub(crate) fn analyze(
     }
     for (id, c) in &symbols.characters {
         catalog.add_object("character", id, &c.display, &c.decl_file, c.decl_span.line);
+    }
+    for entity in &program.entities {
+        if let Some(old) = catalog.entities.get(&entity.name) {
+            diags.push(
+                Diagnostic::error(
+                    "A104",
+                    &entity.file,
+                    Span::new(
+                        entity.loc.line,
+                        entity.loc.column,
+                        entity.name.chars().count() as u32,
+                    ),
+                    format!("实体 `{}` 重复定义", entity.name),
+                )
+                .with_related(
+                    &old.file,
+                    Span::new(
+                        old.line,
+                        entity.loc.column,
+                        entity.name.chars().count() as u32,
+                    ),
+                ),
+            );
+            continue;
+        }
+        let display = entity
+            .display
+            .clone()
+            .unwrap_or_else(|| entity.name.clone());
+        catalog.add_object(
+            "entity",
+            &entity.name,
+            &display,
+            &entity.file,
+            entity.loc.line,
+        );
+        catalog.entities.insert(
+            entity.name.clone(),
+            EntityInfo {
+                id: entity.name.clone(),
+                entity_type: entity.entity_type.clone(),
+                display,
+                description: entity.description.clone(),
+                properties: crate::analysis_metadata::properties(
+                    &entity.properties,
+                    &entity.file,
+                    diags,
+                ),
+                file: entity.file.clone(),
+                line: entity.loc.line,
+            },
+        );
     }
     for w in &program.worlds {
         catalog.add_object(

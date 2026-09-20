@@ -1,3 +1,4 @@
+use crate::compiler::LanguageVersion;
 use serde::de::{self, Deserializer as _, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -62,6 +63,7 @@ pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
+    pub(crate) language_version: LanguageVersion,
 }
 
 impl Registry {
@@ -89,7 +91,7 @@ pub(crate) fn manifest_path(root: &Path) -> PathBuf {
 /// 只读取明确指定的清单和清单声明的路径，不递归发现 JSON。
 pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let mut registry = Registry::default();
-    let manifest_read_only = manifest_capability_is_read_only(manifest);
+    let mut manifest_read_only = manifest_capability_is_read_only(manifest);
     registry
         .documents
         .insert(manifest_path(root), manifest_read_only);
@@ -103,6 +105,32 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let Some(object) = value.as_object() else {
         registry.report(root, "WS001", "清单 JSON 顶层必须是对象");
         return registry;
+    };
+
+    registry.language_version = match object.get("language_version") {
+        None => LanguageVersion::V1_9,
+        Some(Value::String(version)) => match version.as_str() {
+            "1.9" => LanguageVersion::V1_9,
+            "1.10" => LanguageVersion::V1_10,
+            _ => {
+                manifest_read_only = true;
+                registry.report(
+                    root,
+                    "WS003",
+                    format!("清单 language_version `{version}` 不受支持，按只读处理"),
+                );
+                LanguageVersion::V1_9
+            }
+        },
+        _ => {
+            manifest_read_only = true;
+            registry.report(
+                root,
+                "WS003",
+                "清单 language_version 必须是 \"1.9\" 或 \"1.10\"，按只读处理",
+            );
+            LanguageVersion::V1_9
+        }
     };
 
     if object.get("schema_version").and_then(Value::as_u64) != Some(1) {
@@ -227,10 +255,13 @@ fn manifest_capability_is_read_only(bytes: &[u8]) -> bool {
         .get("schema_version")
         .and_then(Value::as_u64)
         .is_some_and(|version| version == 1);
+    let language_ok = object
+        .get("language_version")
+        .is_none_or(|version| matches!(version.as_str(), Some("1.9") | Some("1.10")));
     let features_ok = object
         .get("required_features")
         .is_none_or(features_supported);
-    !(version_ok && features_ok)
+    !(version_ok && language_ok && features_ok)
 }
 
 pub(crate) fn features_supported(features: &Value) -> bool {
@@ -245,6 +276,7 @@ fn supported_feature(feature: &str) -> bool {
     matches!(
         feature,
         "presentation.maps.v1"
+            | "content.entities.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
     )

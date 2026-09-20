@@ -1,7 +1,7 @@
 //! 目录结构编辑与素材的可移植打包计划。
 use crate::authoring::{identifier, property_lines, quote, WorldDraft};
 use crate::catalog::{CatalogDecl, TargetRef};
-use crate::lexer::{lex_source, LineKind};
+use crate::lexer::LineKind;
 use crate::project::Project;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -91,12 +91,22 @@ impl Project {
         values: &[String],
         attach: bool,
     ) -> Result<(), String> {
+        if target.kind == "entity" && self.language_version_kind() != crate::LanguageVersion::V1_10
+        {
+            return Err("entity 需要工程显式启用语言 1.10".into());
+        }
         for value in values {
             identifier(value)?;
         }
+        let options = self.compile_options();
         let mut destination = self.entry.clone();
         for (path, document) in &mut self.documents {
-            let parsed = lex_source(&path.to_string_lossy(), &document.text, &mut Vec::new());
+            let parsed = crate::lexer::lex_source_with_options(
+                &path.to_string_lossy(),
+                &document.text,
+                &mut Vec::new(),
+                options,
+            );
             let remove: std::collections::BTreeSet<_> = parsed
                 .iter()
                 .filter_map(|line| {

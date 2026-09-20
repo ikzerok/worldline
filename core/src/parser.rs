@@ -2,8 +2,15 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
-use crate::expression::{parse_expr_src, parse_interpolations};
+use crate::expression::{parse_expr_src, parse_interpolations_with_options};
 use crate::lexer::{Line, LineKind};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataKind {
+    World,
+    Entity,
+    Character,
+}
 
 /// 从事件体顶层提取效果块;其余位置出现的 effect 报 P002。
 fn extract_effects(
@@ -64,15 +71,25 @@ pub struct Parser<'a> {
     diags: &'a mut Vec<Diagnostic>,
     /// 当前 storyline 块归属(块外为 None → main)。
     cur_storyline: Option<String>,
+    allow_entities: bool,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(lines: &'a [Line], diags: &'a mut Vec<Diagnostic>) -> Self {
+        Self::new_with_options(lines, diags, crate::compiler::CompileOptions::default())
+    }
+
+    pub fn new_with_options(
+        lines: &'a [Line],
+        diags: &'a mut Vec<Diagnostic>,
+        options: crate::compiler::CompileOptions,
+    ) -> Self {
         Parser {
             lines,
             pos: 0,
             diags,
             cur_storyline: None,
+            allow_entities: options.language_version.supports_entities(),
         }
     }
 
@@ -90,6 +107,14 @@ impl<'a> Parser<'a> {
 
     fn file_of(&self, line: &Line) -> String {
         line.file.clone()
+    }
+
+    fn options(&self) -> crate::compiler::CompileOptions {
+        crate::compiler::CompileOptions::new(if self.allow_entities {
+            crate::compiler::LanguageVersion::V1_10
+        } else {
+            crate::compiler::LanguageVersion::V1_9
+        })
     }
 
     /// 顶层解析。include 已在驱动层展开;入口 = 主文件第一个事件。
@@ -116,13 +141,13 @@ impl<'a> Parser<'a> {
                     self.next();
                     if let crate::catalog::CatalogDecl::Tag(tag) = &mut item {
                         let (properties, _, description) =
-                            self.parse_metadata(line.indent, &file, true);
+                            self.parse_metadata(line.indent, &file, MetadataKind::World);
                         tag.properties = properties;
                         tag.description = description;
                     }
                     if let crate::catalog::CatalogDecl::Anchor(anchor) = &mut item {
                         let (properties, _, description) =
-                            self.parse_metadata(line.indent, &file, true);
+                            self.parse_metadata(line.indent, &file, MetadataKind::World);
                         for property in properties {
                             self.diags.push(Diagnostic::error(
                                 "P002",
@@ -228,6 +253,15 @@ impl<'a> Parser<'a> {
                                 ));
                                 self.next();
                             }
+                            LineKind::Entity { loc: eloc, .. } => {
+                                self.diags.push(Diagnostic::error(
+                                    "P002",
+                                    &file,
+                                    *eloc,
+                                    "entity 只能出现在顶层,不能写入 storyline 块",
+                                ));
+                                self.next();
+                            }
                             LineKind::Storyline { loc: sloc, .. } => {
                                 self.diags.push(Diagnostic::error(
                                     "P002",
@@ -269,7 +303,8 @@ impl<'a> Parser<'a> {
                     let (name, display, loc, indent) =
                         (name.clone(), display.clone(), *loc, line.indent);
                     self.next();
-                    let (properties, _, description) = self.parse_metadata(indent, &file, true);
+                    let (properties, _, description) =
+                        self.parse_metadata(indent, &file, MetadataKind::World);
                     program.worlds.push(WorldDecl {
                         name,
                         display,
@@ -283,7 +318,8 @@ impl<'a> Parser<'a> {
                     let (name, display) = (name.clone(), display.clone());
                     let espan = *loc;
                     self.next();
-                    let (properties, relations, _) = self.parse_metadata(line.indent, &file, false);
+                    let (properties, relations, _) =
+                        self.parse_metadata(line.indent, &file, MetadataKind::Character);
                     program.characters.push(CharacterDecl {
                         name,
                         display,
@@ -291,6 +327,32 @@ impl<'a> Parser<'a> {
                         file: file.clone(),
                         properties,
                         relations,
+                    });
+                }
+                LineKind::Entity {
+                    name,
+                    entity_type,
+                    display,
+                    loc,
+                } => {
+                    let (name, entity_type, display, loc, indent) = (
+                        name.clone(),
+                        entity_type.clone(),
+                        display.clone(),
+                        *loc,
+                        line.indent,
+                    );
+                    self.next();
+                    let (properties, _, description) =
+                        self.parse_metadata(indent, &file, MetadataKind::Entity);
+                    program.entities.push(EntityDecl {
+                        name,
+                        entity_type,
+                        display,
+                        description,
+                        properties,
+                        file,
+                        loc: Loc::new(loc.line, loc.column),
                     });
                 }
                 LineKind::Event { .. } => self.parse_event_decl(&mut program, &main_file),
@@ -317,7 +379,7 @@ impl<'a> Parser<'a> {
                         "P002",
                         &file,
                         Span::new(line.no, line.indent + 1, 5),
-                        "顶层只能是 event / storyline / character / let / const / include;文本与选择必须写在事件块内",
+                        "顶层只能是 event / storyline / character / entity / let / const / include;文本与选择必须写在事件块内",
                     ));
                     self.next();
                 }
@@ -330,7 +392,7 @@ impl<'a> Parser<'a> {
         &mut self,
         indent: u32,
         file: &str,
-        world: bool,
+        kind: MetadataKind,
     ) -> (Vec<Property>, Vec<CharacterRelation>, String) {
         let mut properties = Vec::new();
         let mut relations = Vec::new();
@@ -381,10 +443,12 @@ impl<'a> Parser<'a> {
                         ));
                     }
                 }
-                LineKind::Relation { target, label, loc } if !world => {
+                LineKind::Relation { target, label, loc } if kind == MetadataKind::Character => {
                     relations.push(CharacterRelation { target, label, loc })
                 }
-                LineKind::Description { text, loc } if world && !has_description => {
+                LineKind::Description { text, loc }
+                    if kind != MetadataKind::Character && !has_description =>
+                {
                     let _ = loc;
                     description = text;
                     has_description = true;
@@ -393,10 +457,10 @@ impl<'a> Parser<'a> {
                     "P002",
                     file,
                     Span::new(line.no, 1, 1),
-                    if world {
-                        "世界观块内只允许一个 description 和 property"
-                    } else {
-                        "角色块内只允许 property 和 relation"
+                    match kind {
+                        MetadataKind::World => "世界观块内只允许一个 description 和 property",
+                        MetadataKind::Entity => "实体块内只允许一个 description 和 property",
+                        MetadataKind::Character => "角色块内只允许 property 和 relation",
                     },
                 )),
             }
@@ -584,8 +648,14 @@ impl<'a> Parser<'a> {
         match line.kind.clone() {
             LineKind::Text { content, loc } => {
                 let (text_part, glue, tags) = split_text_decorations(&content);
-                let parts =
-                    parse_interpolations(&text_part, &file, line.no, indent + 1, self.diags);
+                let parts = parse_interpolations_with_options(
+                    &text_part,
+                    &file,
+                    line.no,
+                    indent + 1,
+                    self.diags,
+                    self.options(),
+                );
                 Stmt::Text(TextStmt {
                     parts,
                     glue,
@@ -616,12 +686,13 @@ impl<'a> Parser<'a> {
                 loc,
                 label_span,
             } => {
-                let label = parse_interpolations(
+                let label = parse_interpolations_with_options(
                     &label_raw,
                     &file,
                     line.no,
                     indent + label_span.column,
                     self.diags,
+                    self.options(),
                 );
                 let cond = cond_src.map(|src| {
                     parse_expr_src(
@@ -847,13 +918,14 @@ impl<'a> Parser<'a> {
                 })
             }
             LineKind::Character { loc, .. }
+            | LineKind::Entity { loc, .. }
             | LineKind::World { loc, .. }
             | LineKind::Period { loc, .. } => {
                 self.diags.push(Diagnostic::error(
                     "P002",
                     &file,
                     loc,
-                    "character 只能出现在顶层,不能写入事件或故事线块内",
+                    "character / entity 只能出现在顶层,不能写入事件或故事线块内",
                 ));
                 Stmt::Text(TextStmt {
                     parts: vec![],

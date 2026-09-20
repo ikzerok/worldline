@@ -1,14 +1,15 @@
 //! 目录声明的词法入口,与主词法器共享字符串解码与诊断。
 use crate::ast::{Loc, WorldDecl};
-use crate::catalog::{AssetDecl, CatalogDecl, CatalogLink, TargetRef, TARGET_KINDS};
+use crate::catalog::{AssetDecl, CatalogDecl, CatalogLink, TargetRef};
 use crate::{Diagnostic, Span};
 
-pub(crate) fn parse(
+pub(crate) fn parse_with_options(
     word: &str,
     rest: &str,
     file: &str,
     line: u32,
     diags: &mut Vec<Diagnostic>,
+    options: crate::compiler::CompileOptions,
 ) -> CatalogDecl {
     let tokens = tokenize(rest, file, line, diags);
     let token = |i: usize| tokens.get(i).map(|t| t.0.as_str()).unwrap_or("");
@@ -22,7 +23,7 @@ pub(crate) fn parse(
     let decl = match word {
         "alias" => {
             bad = tokens.len() != 4
-                || !TARGET_KINDS.contains(&token(0))
+                || !crate::catalog::is_target_kind(token(0), options)
                 || tokens.first().is_some_and(|t| t.1)
                 || token(1).is_empty()
                 || token(2) != "as"
@@ -59,7 +60,7 @@ pub(crate) fn parse(
         "anchor_link" => {
             bad = tokens.len() != 3
                 || !id_valid(0)
-                || !crate::anchors::ANCHOR_TARGET_KINDS.contains(&token(1))
+                || !crate::anchors::is_anchor_target_kind(token(1), options)
                 || tokens.get(1).is_some_and(|t| t.1)
                 || !id_valid(2);
             CatalogDecl::AnchorLink(crate::anchors::AnchorLink {
@@ -87,7 +88,7 @@ pub(crate) fn parse(
             })
         }
         _ => {
-            bad |= !TARGET_KINDS.contains(&token(0))
+            bad |= !crate::catalog::is_target_kind(token(0), options)
                 || token(1).is_empty()
                 || token(2) != "with"
                 || tokens.len() < 4

@@ -8,6 +8,48 @@ fn temp_story(name: &str, src: &str) -> std::path::PathBuf {
     f
 }
 
+fn temp_workspace(name: &str, manifest: &str, source: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("wl_cli_workspace_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".world")).unwrap();
+    std::fs::write(root.join(".world/project.json"), manifest).unwrap();
+    std::fs::write(root.join("world.wl"), source).unwrap();
+    root
+}
+
+fn temp_entity_project(name: &str, source: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("wl_cli_entity_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".world")).unwrap();
+    std::fs::write(
+        root.join(".world/project.json"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("world.wl"), source).unwrap();
+    root
+}
+
+fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
+    let manifest_path = root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["maps"] = serde_json::json!({"overview": ".world/maps/overview.json"});
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let map_path = root.join(".world/maps/overview.json");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &map_path,
+        br#"{"schema_version":1,"required_features":[],"layers":[]}"#,
+    )
+    .unwrap();
+    map_path
+}
+
 #[test]
 fn check_json_output() {
     let f = temp_story("ok.wl", "event start\n  你好。\n  -> END\n");
@@ -26,6 +68,62 @@ fn check_json_output() {
     // JSON 必须可解析
     let v: serde_json::Value = serde_json::from_str(text.trim()).expect("输出应为合法 JSON");
     assert_eq!(v["ok"], serde_json::Value::Bool(true));
+}
+
+#[test]
+fn read_only_workspace_diagnostics_stay_separate_and_fail_check() {
+    let cases = [
+        (
+            "unknown-language",
+            r#"{"schema_version":1,"language_version":"2.0","required_features":[]}"#,
+        ),
+        (
+            "unknown-feature",
+            r#"{"schema_version":1,"language_version":"1.10","required_features":["future.entities.v2"]}"#,
+        ),
+    ];
+    for (name, manifest) in cases {
+        let root = temp_workspace(name, manifest, "event start\n  -> END\n");
+        let path = root.to_string_lossy().to_string();
+        let mut out = Vec::new();
+        let code = wl::run(
+            &["check".into(), path.clone(), "--json".into()],
+            &mut out,
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .unwrap();
+        let check: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(code, 1, "{name}: {check}");
+        assert_eq!(check["ok"], false, "{name}: {check}");
+        assert_eq!(check["read_only"], true, "{name}: {check}");
+        assert!(check["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(check["workspace_diagnostics"][0]["code"], "WS003");
+
+        let mut out = Vec::new();
+        let human_code = wl::run(
+            &["check".into(), path.clone()],
+            &mut out,
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .unwrap();
+        let human = String::from_utf8(out).unwrap();
+        assert_eq!(human_code, 1, "{name}: {human}");
+        assert!(human.contains("WS003"), "{name}: {human}");
+        assert!(human.contains("工作区只读"), "{name}: {human}");
+
+        let mut out = Vec::new();
+        let catalog_code = wl::run(
+            &["catalog".into(), path, "--json".into()],
+            &mut out,
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .unwrap();
+        let catalog: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(catalog_code, 0, "{name}: {catalog}");
+        assert_eq!(catalog["read_only"], true, "{name}: {catalog}");
+        assert!(catalog["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(catalog["workspace_diagnostics"][0]["code"], "WS003");
+    }
 }
 
 #[test]
@@ -355,9 +453,11 @@ fn catalog_json_exposes_full_index_and_source_locations() {
     let f = temp_story("catalog_index.wl", CATALOG_STORY);
     let (code, value) = catalog_json(&f, &[]);
     assert_eq!(code, 0);
-    assert_eq!(value.as_object().unwrap().len(), 4);
+    assert_eq!(value.as_object().unwrap().len(), 6);
     assert_eq!(value["ok"], true);
     assert!(value["diagnostics"].is_array());
+    assert!(value["workspace_diagnostics"].is_array());
+    assert_eq!(value["read_only"], false);
     let catalog = &value["catalog"];
     assert_eq!(value["matches"], catalog["objects"]);
     assert_eq!(catalog["tags"].as_object().unwrap().len(), 2);
@@ -442,10 +542,12 @@ fn catalog_compile_failure_keeps_catalog_json_contract() {
     );
     let (code, value) = catalog_json(&f, &[]);
     assert_eq!(code, 1);
-    assert_eq!(value.as_object().unwrap().len(), 4);
+    assert_eq!(value.as_object().unwrap().len(), 6);
     assert_eq!(value["ok"], false);
     assert!(value["catalog"].is_object());
     assert!(value["matches"].is_array());
+    assert!(value["workspace_diagnostics"].is_array());
+    assert_eq!(value["read_only"], false);
     assert!(value["diagnostics"]
         .as_array()
         .unwrap()
@@ -575,4 +677,156 @@ fn catalog_human_output_includes_labels_and_source() {
     for expected in ["1 个命中对象", "tag harbor", "港口", "catalog_human.wl:2"] {
         assert!(text.contains(expected), "{text}");
     }
+}
+
+#[test]
+fn catalog_entity_json_uses_manifest_language_and_target_identity() {
+    let root = temp_entity_project("catalog", "entity lighthouse kind place as \"雾港灯塔\"\n");
+    let (code, value) = catalog_json(&root, &["--kind", "entity"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["language_version"], "1.10");
+    assert_eq!(
+        value["matches"][0]["target"],
+        serde_json::json!({
+            "kind": "entity",
+            "id": "lighthouse"
+        })
+    );
+    assert_eq!(
+        value["catalog"]["entities"]["lighthouse"]["entity_type"],
+        "place"
+    );
+}
+
+#[test]
+fn entity_cli_crud_uses_baseline_and_preserves_zero_write_on_stale_request() {
+    let root = temp_entity_project("crud", "");
+    let path = root.to_string_lossy().to_string();
+    let run = |args: Vec<String>| {
+        let mut out = Vec::new();
+        let code = wl::run(&args, &mut out, &mut std::io::Cursor::new(Vec::new())).unwrap();
+        (
+            code,
+            serde_json::from_slice::<serde_json::Value>(&out).unwrap(),
+        )
+    };
+    let (code, created) = run(vec![
+        "entity".into(),
+        "create".into(),
+        path.clone(),
+        "--id=lighthouse".into(),
+        "--kind=place".into(),
+        "--display=雾港灯塔".into(),
+        "--property=height=38".into(),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 0, "{created}");
+    assert_eq!(created["entity"]["entity_type"], "place");
+    assert!(std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("entity lighthouse kind place"));
+    let baseline = created["baseline"].as_str().unwrap().to_string();
+    let (code, stale) = run(vec![
+        "entity".into(),
+        "update".into(),
+        path.clone(),
+        "--id=lighthouse".into(),
+        "--display=不应写入".into(),
+        "--baseline=stale".into(),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 1);
+    assert_eq!(stale["ok"], false);
+    assert_eq!(stale["error"]["code"], "STALE_BASELINE");
+    assert!(!std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("不应写入"));
+    let (code, updated) = run(vec![
+        "entity".into(),
+        "update".into(),
+        path.clone(),
+        "--id=lighthouse".into(),
+        "--display=新灯塔".into(),
+        format!("--baseline={baseline}"),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 0, "{updated}");
+    assert_eq!(updated["entity"]["display"], "新灯塔");
+    let baseline = updated["baseline"].as_str().unwrap().to_string();
+    let (code, deleted) = run(vec![
+        "entity".into(),
+        "delete".into(),
+        path,
+        "--id=lighthouse".into(),
+        format!("--baseline={baseline}"),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 0, "{deleted}");
+    assert!(deleted["entity"].is_null());
+    assert!(!std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("entity lighthouse"));
+}
+
+#[test]
+fn entity_cli_map_change_invalidates_baseline_before_write() {
+    let root = temp_entity_project("map-baseline", "event start\n  -> END\n");
+    let map_path = register_entity_test_map(&root);
+    let path = root.to_string_lossy().to_string();
+    let run = |args: Vec<String>| {
+        let mut out = Vec::new();
+        let code = wl::run(&args, &mut out, &mut std::io::Cursor::new(Vec::new())).unwrap();
+        (
+            code,
+            serde_json::from_slice::<serde_json::Value>(&out).unwrap(),
+        )
+    };
+    let (code, created) = run(vec![
+        "entity".into(),
+        "create".into(),
+        path.clone(),
+        "--id=dock".into(),
+        "--kind=place".into(),
+        "--display=码头".into(),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 0, "{created}");
+    let baseline = created["baseline"].as_str().unwrap().to_string();
+    let source_before = std::fs::read(root.join("world.wl")).unwrap();
+    std::fs::write(
+        &map_path,
+        r#"{"schema_version":1,"required_features":[],"layers":[],"extensions":{"note":"外部修改"}}"#.as_bytes(),
+    )
+    .unwrap();
+    let (code, stale) = run(vec![
+        "entity".into(),
+        "update".into(),
+        path,
+        "--id=dock".into(),
+        "--display=不应写入".into(),
+        format!("--baseline={baseline}"),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 1, "{stale}");
+    assert_eq!(stale["error"]["code"], "STALE_BASELINE");
+    assert_eq!(std::fs::read(root.join("world.wl")).unwrap(), source_before);
+}
+
+#[test]
+fn entity_only_play_is_story_failure_in_json_mode() {
+    let root = temp_entity_project("play", "entity lighthouse kind place as \"灯塔\"\n");
+    let mut out = Vec::new();
+    let code = wl::run(
+        &[
+            "play".into(),
+            root.to_string_lossy().into(),
+            "--json".into(),
+        ],
+        &mut out,
+        &mut std::io::Cursor::new(Vec::new()),
+    )
+    .unwrap();
+    assert_eq!(code, 1);
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["type"], "run_error");
 }

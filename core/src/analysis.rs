@@ -148,6 +148,7 @@ pub struct Stats {
     pub words: u32,
     pub storylines: u32,
     pub characters: u32,
+    pub entities: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +234,7 @@ pub fn analyze(program: &Program, parse_diags: Vec<Diagnostic>) -> (Analysis, Ve
         words: ctx.graph_nodes.iter().map(|n| n.word_count).sum(),
         storylines: ctx.symbols.storyline_order.len() as u32,
         characters: ctx.symbols.character_order.len() as u32,
+        entities: program.entities.len() as u32,
     };
     let entry = ctx.node_ids.get(&program.entry).copied().unwrap_or(0);
     let depth = ctx.compute_depth(entry);

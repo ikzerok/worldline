@@ -1,6 +1,6 @@
 //! 多文件文档缓冲、保存冲突检测与可移植目录导出。
 use crate::compiler::{entry_path, source_path};
-use crate::CompileResult;
+use crate::{CompileOptions, CompileResult, LanguageVersion};
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
@@ -35,6 +35,7 @@ pub struct Project {
     authoring_diagnostics: Vec<crate::Diagnostic>,
     refresh_generation: u64,
     recovery_conflicts: Vec<PathBuf>,
+    language_version: LanguageVersion,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +102,7 @@ impl Project {
             .as_deref()
             .map(|bytes| crate::workspace_documents::parse_registry(&self.root, bytes))
             .unwrap_or_default();
+        self.language_version = registry.language_version;
         self.authoring_diagnostics = registry.diagnostics.clone();
 
         let tracked_paths: std::collections::BTreeSet<_> = registry
@@ -303,9 +305,12 @@ impl Project {
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
             recovery_conflicts: recovery.conflicts,
+            language_version: LanguageVersion::V1_9,
         };
         project.refresh()?;
-        project.migrate_permissions()?;
+        if project.authoring_diagnostics.is_empty() {
+            project.migrate_permissions()?;
+        }
         Ok(project)
     }
 
@@ -350,6 +355,7 @@ impl Project {
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
             recovery_conflicts: Vec::new(),
+            language_version: LanguageVersion::V1_9,
         }
     }
 
@@ -410,6 +416,9 @@ impl Project {
 
     /// 将已授权的旧权限输入迁移到缓冲；返回修改文件数，不改变保存基线或磁盘。
     pub fn migrate_permissions(&mut self) -> Result<usize, String> {
+        if !self.authoring_diagnostics.is_empty() {
+            return Err("工作区清单含有不支持的能力，只能只读查看".into());
+        }
         let result = self.compile_current();
         let sources = crate::migration::rewrite_sources(&result)?;
         let changed = sources
@@ -457,12 +466,25 @@ impl Project {
             .collect()
     }
 
+    /// 当前工程清单选择的语言版本；无清单的旧工程固定返回 `"1.9"`。
+    pub fn language_version(&self) -> &'static str {
+        self.language_version.as_str()
+    }
+
+    pub fn language_version_kind(&self) -> LanguageVersion {
+        self.language_version
+    }
+
+    pub fn compile_options(&self) -> CompileOptions {
+        CompileOptions::new(self.language_version)
+    }
+
     pub(crate) fn compile_current(&self) -> CompileResult {
         self.compile_source_buffers(&self.sources())
     }
 
     fn compile_source_buffers(&self, sources: &BTreeMap<PathBuf, String>) -> CompileResult {
-        crate::compiler::compile_sources_excluding(
+        crate::compiler::compile_sources_excluding_with_options(
             &self.entry,
             sources,
             self.documents
@@ -470,6 +492,7 @@ impl Project {
                 .filter(|(_, document)| document.deleted)
                 .map(|(path, _)| path.clone())
                 .collect(),
+            self.compile_options(),
         )
     }
 
@@ -486,6 +509,7 @@ impl Project {
 
     /// 显式创建清单或清单已注册的新文档，不接管普通 JSON 文件。
     pub fn create_authoring_document(&mut self, path: &Path, bytes: Vec<u8>) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let path = source_path(path);
         crate::file_access::within(&self.root, &path)?;
         let manifest = crate::workspace_documents::manifest_path(&self.root);
@@ -533,9 +557,12 @@ impl Project {
             .get(&manifest)
             .filter(|d| !d.deleted)
         else {
+            self.language_version = LanguageVersion::V1_9;
+            self.authoring_diagnostics.clear();
             return;
         };
         let registry = crate::workspace_documents::parse_registry(&self.root, &document.bytes);
+        self.language_version = registry.language_version;
         self.authoring_diagnostics = registry.diagnostics;
         for (path, inherited) in registry.documents {
             let document = self
@@ -548,6 +575,7 @@ impl Project {
     }
 
     pub fn set_authoring_document(&mut self, path: &Path, bytes: Vec<u8>) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let path = source_path(path);
         let document = self
             .authoring_documents
@@ -570,18 +598,25 @@ impl Project {
 
     pub fn delete_authoring_document(&mut self, path: &Path) -> Result<(), String> {
         let path = source_path(path);
-        let document = self
-            .authoring_documents
-            .get_mut(&path)
-            .ok_or_else(|| format!("展示文档未注册:{}", path.display()))?;
-        if document.read_only {
-            return Err("展示文档格式或能力未知，只能只读查看".into());
+        self.ensure_workspace_writable()?;
+        {
+            let document = self
+                .authoring_documents
+                .get_mut(&path)
+                .ok_or_else(|| format!("展示文档未注册:{}", path.display()))?;
+            if document.read_only {
+                return Err("展示文档格式或能力未知，只能只读查看".into());
+            }
+            document.deleted = true;
         }
-        document.deleted = true;
+        if path == crate::workspace_documents::manifest_path(&self.root) {
+            self.update_authoring_registry();
+        }
         Ok(())
     }
 
     pub fn delete_document(&mut self, path: &Path) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let path = source_path(path);
         if let Some(document) = self.documents.get_mut(&path) {
             document.deleted = true;
@@ -699,7 +734,9 @@ impl Project {
         if self.root.exists() {
             self.refresh()?;
         }
-        self.migrate_permissions()?;
+        if self.authoring_diagnostics.is_empty() {
+            self.migrate_permissions()?;
+        }
         let root = source_path(destination);
         let portable = self.portable_assets()?;
         let mut documents = BTreeMap::new();
@@ -754,6 +791,7 @@ impl Project {
             authoring_diagnostics: self.authoring_diagnostics.clone(),
             refresh_generation: 0,
             recovery_conflicts: Vec::new(),
+            language_version: self.language_version,
         };
         candidate.save_buffers(true)?;
         for (relative, source) in portable.copies {
@@ -773,7 +811,16 @@ impl Project {
             .ok_or_else(|| format!("文件未载入:{}", path.display()))
     }
 
+    pub(crate) fn ensure_workspace_writable(&self) -> Result<(), String> {
+        if self.authoring_diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err("工作区清单含有不支持的能力，只能只读查看".into())
+        }
+    }
+
     pub fn set_text(&mut self, path: &Path, text: String) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let document = self
             .documents
             .get_mut(&source_path(path))
@@ -786,6 +833,7 @@ impl Project {
     }
 
     pub fn add_file(&mut self, relative: &Path) -> Result<PathBuf, String> {
+        self.ensure_workspace_writable()?;
         validate_relative(relative)?;
         let path = crate::file_access::within(&self.root, &self.root.join(relative))?;
         if self.documents.contains_key(&path) || path.exists() {
@@ -804,6 +852,7 @@ impl Project {
     }
 
     pub fn include_file(&mut self, path: &Path) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let path = crate::file_access::within(&self.root, path)?;
         let relative = path
             .strip_prefix(&self.root)
@@ -952,7 +1001,9 @@ impl Project {
         if migrated.root.exists() || cfg!(target_arch = "wasm32") {
             migrated.refresh()?;
         }
-        migrated.migrate_permissions()?;
+        if migrated.authoring_diagnostics.is_empty() {
+            migrated.migrate_permissions()?;
+        }
         let files = migrated.export_file_contents()?;
         let parent = destination.parent().ok_or("导出目录缺少父目录")?;
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -991,7 +1042,9 @@ impl Project {
         if migrated.root.exists() || cfg!(target_arch = "wasm32") {
             migrated.refresh()?;
         }
-        migrated.migrate_permissions()?;
+        if migrated.authoring_diagnostics.is_empty() {
+            migrated.migrate_permissions()?;
+        }
         let contents = migrated.export_file_contents()?;
         let mut files: BTreeMap<_, _> = contents
             .sources

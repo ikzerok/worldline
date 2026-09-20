@@ -180,6 +180,19 @@ pub struct CharacterDecl {
     pub relations: Vec<CharacterRelation>,
 }
 
+/// 1.10 通用实体作者资料。实体不会成为事件、场景或运行时状态，
+/// 仅由分析目录和结构编辑 API 消费。
+#[derive(Debug, Clone)]
+pub struct EntityDecl {
+    pub name: String,
+    pub entity_type: String,
+    pub display: Option<String>,
+    pub description: String,
+    pub properties: Vec<Property>,
+    pub file: String,
+    pub loc: Loc,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(untagged)]
 pub enum PropertyValue {
@@ -408,6 +421,8 @@ pub struct Program {
     pub storylines: Vec<StorylineDecl>,
     /// 角色声明。
     pub characters: Vec<CharacterDecl>,
+    /// 1.10 实体作者资料；不参与事件执行和运行指纹。
+    pub entities: Vec<EntityDecl>,
     pub worlds: Vec<WorldDecl>,
     pub periods: Vec<PeriodDecl>,
     pub events: Vec<Event>,

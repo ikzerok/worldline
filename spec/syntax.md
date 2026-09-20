@@ -1,6 +1,6 @@
 # worldline 语法规范
 
-**版本:** 1.9
+**版本:** 1.9（1.10 扩展见 §1.1、§7）
 **真源:** 本文档 + `worldline/core` 参考实现
 **扩展名:** `.wl`
 
@@ -17,22 +17,23 @@ worldline 是面向协作世界构建与叙事创作的文本优先语言。所�
 
 ```text
 story       := item*
-item        := include | worldDecl | periodDecl | globalDecl | storylineDecl | characterDecl | eventDecl | tagDecl | stateDecl | anchorDef | anchorLink | assetDecl | mark | attach | aliasDecl | 注释 | 空行
+item        := include | worldDecl | periodDecl | globalDecl | storylineDecl | characterDecl | entityDecl | eventDecl | tagDecl | stateDecl | anchorDef | anchorLink | assetDecl | mark | attach | aliasDecl | 注释 | 空行
 include     := 'include' STRING
 globalDecl  := ('let' | 'const') IDENT '=' expr
 storylineDecl := 'storyline' IDENT ('as' STRING)? block(event*)
 characterDecl := 'character' IDENT ('as' STRING)? block(property* relation*)?
+entityDecl   := 'entity' IDENT 'kind' IDENT ('as' STRING)? block(description? property*)?
 worldDecl   := 'world' IDENT ('as' STRING)? block(description? property*)?
 periodDecl  := 'period' IDENT ('as' STRING)? ('within' IDENT)?
 tagDecl     := 'tag' IDENT ('as' STRING)? block(description? property*)?
 stateDecl   := 'state' IDENT 'on' targetKind (qualifiedName | STRING) 'with' tags ('as' STRING)?
 tags        := '[]' | IDENT (',' IDENT)*
 anchorDef   := 'anchor_def' IDENT 'as' STRING block(description)?
-anchorLink  := 'anchor_link' IDENT ('character' | 'event' | 'state' | 'anchor') IDENT
+anchorLink  := 'anchor_link' IDENT ('character' | 'event' | 'state' | 'entity' | 'anchor') IDENT
 assetDecl   := 'asset' IDENT ('image' | 'audio' | 'file') STRING ('as' STRING)?
 mark        := 'mark' targetKind (qualifiedName | STRING) 'with' IDENT (',' IDENT)*
 attach      := 'attach' targetKind (qualifiedName | STRING) 'with' IDENT (',' IDENT)*
-targetKind  := 'anchor' | 'state' | 'event' | 'scene' | 'character' | 'world' | 'storyline' | 'period' | 'variable' | 'tag' | 'asset' | 'file'
+targetKind  := 'anchor' | 'state' | 'event' | 'scene' | 'character' | 'entity' | 'world' | 'storyline' | 'period' | 'variable' | 'tag' | 'asset' | 'file'
 aliasDecl   := 'alias' targetKind TARGET 'as' STRING
 description := 'description' STRING
 property    := 'property' IDENT '=' (STRING | NUMBER | BOOL)
@@ -49,6 +50,31 @@ qualifiedName := IDENT ('.' IDENT)*
   所有变量都是故事全局的——状态模型从第一天就全局化、可存档。
 - `event` 定义事件。`event market.entry` 在事件 `market` 下定义场景
   `entry`(等价于嵌套声明,见 §3)。
+
+### 1.1 语言 1.10 的实体资料
+
+工程清单的 `language_version` 为 `"1.10"`，或调用方显式使用
+`CompileOptions { language_version: V1_10 }` 时，才启用 `entity`。默认
+`compile_source`、`compile_sources` 和没有清单的旧工程始终按 1.9 编译；
+1.9 中行首的 `entity` 继续按旧文本/顶层结构处理，不会被隐式升级。
+
+```wl
+entity lighthouse kind place as "雾港灯塔"
+  description "由作者编写的地点资料。"
+  property height = 38
+  property open = true
+```
+
+`entity` 的第一个标识符是稳定 ID，`kind` 后的标识符是可修改的
+`entity_type`（例如 `place`、`organization` 或 `culture`），显示名与 ID
+分离。实体的 `description` 最多出现一次，`property` 值只能是字符串、有限
+数值或布尔字面量；属性名在一个实体中不能重复。实体是作者资料，不是事件、
+选择、效果或运行状态，也不进入运行指纹。实体 ID 与 `character`、`tag` 等
+不同类型的 ID 可以相同；同名资料不会自动合并。
+
+实体可作为 `TargetRef { kind: "entity", id }` 出现在正文链接、目录查询、展示
+标记和语言 1.10 的独立锚点关联中。修改显示名或 `entity_type` 保留 ID 和所有展示
+坐标；删除前必须通过引用影响查询处理正文、别名、分类、锚点及地图引用。
 
 ## 2. 块与缩进
 
@@ -206,7 +232,9 @@ primary := NUMBER | STRING | 'true' | 'false' | IDENT
 
 ## 7. 关键字与保留字
 
-`event scene choice once if else let const set include and or not true false END storyline character world period tag asset mark attach state become anchor_def anchor_link description property relation effect grant revoke meet part anchor`
+`event scene choice once if else let const set include and or not true false END storyline character entity world period tag asset mark attach state become anchor_def anchor_link description property relation effect grant revoke meet part anchor`
+
+其中 `entity` 仅是语言 1.10 的关键字；1.9 的词法和解析入口不为它保留关键字。
 
 `END` 仅在 `->` 之后有意义。文本行不得以上述关键字开头(需转义)。
 
@@ -393,7 +421,10 @@ anchor_link turning_point event cellar
 anchor_link turning_point state identity
 ```
 
-关联目标须存在；`anchor_link` 支持 character/event/state/anchor。独立锚点有稳定 ID，可被 mark/attach；通过关联状态与关联事件的交集读取变化出处，不复制状态，不使用行号作身份。独立锚点不生成演练记录、不改变指纹或时间顺序。完整目录和编辑 API 见 [catalog.md](catalog.md) §4。
+关联目标须存在；1.9 的 `anchor_link` 支持 character/event/state/anchor，1.10
+另外支持 entity。独立锚点有稳定 ID，可被 mark/attach；通过关联状态与关联事件的
+交集读取变化出处，不复制状态，不使用行号作身份。独立锚点不生成演练记录、不改变
+指纹或时间顺序。完整目录和编辑 API 见 [catalog.md](catalog.md) §4。
 
 ## 12. 多文件世界工程与交付目录
 

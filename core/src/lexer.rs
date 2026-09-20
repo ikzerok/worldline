@@ -56,6 +56,12 @@ pub enum LineKind {
         display: Option<String>,
         loc: Span,
     },
+    Entity {
+        name: String,
+        entity_type: String,
+        display: Option<String>,
+        loc: Span,
+    },
     World {
         name: String,
         display: Option<String>,
@@ -385,6 +391,17 @@ fn parse_as_note(
 
 /// 词法入口:一个源文件 → 物理行序列(空行与纯注释行已剔除)。
 pub fn lex_source(file: &str, src: &str, diags: &mut Vec<Diagnostic>) -> Vec<Line> {
+    lex_source_with_options(file, src, diags, crate::compiler::CompileOptions::default())
+}
+
+/// 依据显式语言版本进行词法分类。1.9 保持 `entity` 为普通文本，避免
+/// 新关键字改变旧正文的解释。
+pub fn lex_source_with_options(
+    file: &str,
+    src: &str,
+    diags: &mut Vec<Diagnostic>,
+    options: crate::compiler::CompileOptions,
+) -> Vec<Line> {
     let cleaned = strip_comments(src);
     let mut lines = Vec::new();
     for (idx, raw_line) in cleaned.lines().enumerate() {
@@ -423,7 +440,7 @@ pub fn lex_source(file: &str, src: &str, diags: &mut Vec<Diagnostic>) -> Vec<Lin
             continue;
         }
         let chars: Vec<char> = content_trim.chars().collect();
-        let kind = classify(file, no, &chars, diags);
+        let kind = classify(file, no, &chars, diags, options);
         lines.push(Line {
             file: file.to_string(),
             no,
@@ -434,7 +451,13 @@ pub fn lex_source(file: &str, src: &str, diags: &mut Vec<Diagnostic>) -> Vec<Lin
     lines
 }
 
-fn classify(file: &str, no: u32, chars: &[char], diags: &mut Vec<Diagnostic>) -> LineKind {
+fn classify(
+    file: &str,
+    no: u32,
+    chars: &[char],
+    diags: &mut Vec<Diagnostic>,
+    options: crate::compiler::CompileOptions,
+) -> LineKind {
     // 转义开头:`\choice ...` 视为文本
     if chars[0] == '\\' {
         let content: String = chars[1..].iter().collect();
@@ -513,8 +536,8 @@ fn classify(file: &str, no: u32, chars: &[char], diags: &mut Vec<Diagnostic>) ->
     let word_col = (content.len() - rest.len() - word.len()) as u32 + 1;
     match word {
         "tag" | "asset" | "mark" | "attach" | "anchor_def" | "anchor_link" | "alias" => {
-            LineKind::Catalog(crate::catalog_syntax::parse(
-                word, rest_trim, file, no, diags,
+            LineKind::Catalog(crate::catalog_syntax::parse_with_options(
+                word, rest_trim, file, no, diags, options,
             ))
         }
         "property" => {
@@ -968,8 +991,60 @@ fn classify(file: &str, no: u32, chars: &[char], diags: &mut Vec<Diagnostic>) ->
                 LineKind::Character { name, display, loc }
             }
         }
+        "entity" if options.language_version.supports_entities() => {
+            let rc = rest_trim.chars().collect::<Vec<char>>();
+            let mut cursor = 0;
+            let (name, end) = match scan_qualified(&rc, cursor) {
+                Some((n, end)) if !n.contains('.') && !n.is_empty() => (n, end),
+                _ => {
+                    diags.push(Diagnostic::error(
+                        "P004",
+                        file,
+                        Span::new(no, word_col, 6),
+                        "entity 后需要实体 ID(标识符)",
+                    ));
+                    (String::new(), 0)
+                }
+            };
+            cursor = skip_spaces(&rc, end);
+            let (kind_word, kind_end) = scan_word(&rc, cursor);
+            if kind_word != "kind" {
+                diags.push(Diagnostic::error(
+                    "P004",
+                    file,
+                    Span::new(no, word_col, 6),
+                    "entity ID 后需要 `kind 实体分类`",
+                ));
+            } else {
+                cursor = skip_spaces(&rc, kind_end);
+            }
+            let (entity_type, type_end) = scan_word(&rc, cursor);
+            if entity_type.is_empty() || !valid_identifier(&entity_type) {
+                diags.push(Diagnostic::error(
+                    "P004",
+                    file,
+                    Span::new(no, word_col, 6),
+                    "entity 的 kind 后需要实体分类标识符",
+                ));
+            }
+            let (display, consumed) = parse_as_note(&rc, type_end, file, no, diags);
+            if skip_spaces(&rc, consumed) != rc.len() {
+                diags.push(Diagnostic::error(
+                    "P004",
+                    file,
+                    Span::new(no, word_col, 6),
+                    "entity 声明末尾只能是 as \"显示名\"",
+                ));
+            }
+            LineKind::Entity {
+                name,
+                entity_type,
+                display,
+                loc: Span::new(no, word_col, 6),
+            }
+        }
         "state" => LineKind::Catalog(crate::catalog::CatalogDecl::State(
-            crate::states::parse_declaration(rest_trim, file, no, diags),
+            crate::states::parse_declaration_with_options(rest_trim, file, no, diags, options),
         )),
         "become" => LineKind::Become(crate::states::parse_change(rest_trim, file, no, diags)),
         "effect" => {

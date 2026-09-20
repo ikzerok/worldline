@@ -40,10 +40,14 @@ pub struct TextLinkInfo {
     pub column: u32,
 }
 
-pub(crate) fn parse_link(inner: &str) -> Option<(TargetRef, String)> {
+pub(crate) fn parse_link_with_options(
+    inner: &str,
+    options: crate::compiler::CompileOptions,
+) -> Option<(TargetRef, String)> {
     let (destination, label) = inner.split_once('|')?;
     let (kind, id) = destination.split_once(':')?;
-    if !TARGET_KINDS.contains(&kind)
+    if (!TARGET_KINDS.contains(&kind)
+        || (kind == "entity" && !options.language_version.supports_entities()))
         || id.is_empty()
         || label.trim().is_empty()
         || inner.contains(['[', ']', '{', '}', '\\', '"', '#', '~', '\n', '\r'])
@@ -77,7 +81,12 @@ pub fn link_source(target: &TargetRef, label: &str, file: &str) -> Result<String
         target.id.clone()
     };
     let inner = format!("{}:{id}|{label}", target.kind);
-    parse_link(&inner).ok_or("显示文字含有链接分隔符，请使用普通文字")?;
+    let options = if target.kind == "entity" {
+        crate::compiler::CompileOptions::v1_10()
+    } else {
+        crate::compiler::CompileOptions::default()
+    };
+    parse_link_with_options(&inner, options).ok_or("显示文字含有链接分隔符，请使用普通文字")?;
     Ok(format!("[[{inner}]]"))
 }
 
@@ -217,11 +226,18 @@ pub struct ReadingPart {
     pub target: Option<TargetRef>,
 }
 
-fn linked_parts(raw: &str, file: &str) -> Vec<ReadingPart> {
+fn linked_parts(raw: &str, file: &str, options: crate::CompileOptions) -> Vec<ReadingPart> {
     let chars: Vec<_> = raw.chars().collect();
     let mut out = Vec::new();
     let mut start = 0;
-    for part in crate::expression::parse_interpolations(raw, file, 1, 1, &mut Vec::new()) {
+    for part in crate::expression::parse_interpolations_with_options(
+        raw,
+        file,
+        1,
+        1,
+        &mut Vec::new(),
+        options,
+    ) {
         if let TextPart::Link(link) = part {
             if link.start > start {
                 out.push(ReadingPart {
@@ -246,7 +262,15 @@ fn linked_parts(raw: &str, file: &str) -> Vec<ReadingPart> {
 }
 
 pub fn reading_lines(source: &str, file: &str) -> Vec<Vec<ReadingPart>> {
-    let parsed = lex_source(file, source, &mut Vec::new());
+    reading_lines_with_options(source, file, crate::CompileOptions::default())
+}
+
+pub fn reading_lines_with_options(
+    source: &str,
+    file: &str,
+    options: crate::CompileOptions,
+) -> Vec<Vec<ReadingPart>> {
+    let parsed = crate::lexer::lex_source_with_options(file, source, &mut Vec::new(), options);
     source
         .lines()
         .enumerate()
@@ -261,7 +285,7 @@ pub fn reading_lines(source: &str, file: &str) -> Vec<Vec<ReadingPart>> {
                         text: raw.chars().take_while(|c| c.is_whitespace()).collect(),
                         target: None,
                     }];
-                    parts.extend(linked_parts(content, file));
+                    parts.extend(linked_parts(content, file, options));
                     parts
                 }
                 Some(LineKind::Choice {
@@ -275,7 +299,7 @@ pub fn reading_lines(source: &str, file: &str) -> Vec<Vec<ReadingPart>> {
                         text: format!("{indent}choice {}\"", if *once { "once " } else { "" }),
                         target: None,
                     }];
-                    parts.extend(linked_parts(label_raw, file));
+                    parts.extend(linked_parts(label_raw, file, options));
                     parts.push(ReadingPart {
                         text: format!(
                             "\"{}",
@@ -347,19 +371,24 @@ impl crate::project::Project {
         if self.compile().analysis.catalog.object(target).is_none() {
             return Err("别名目标不存在".into());
         }
+        let options = self.compile_options();
         for (path, document) in &mut self.documents {
-            let removed: std::collections::BTreeSet<_> =
-                lex_source(&path.to_string_lossy(), &document.text, &mut Vec::new())
-                    .into_iter()
-                    .filter_map(|line| match line.kind {
-                        LineKind::Catalog(CatalogDecl::Alias(alias))
-                            if resolve(alias.target.clone(), &alias.file) == *target =>
-                        {
-                            Some(line.no as usize)
-                        }
-                        _ => None,
-                    })
-                    .collect();
+            let removed: std::collections::BTreeSet<_> = crate::lexer::lex_source_with_options(
+                &path.to_string_lossy(),
+                &document.text,
+                &mut Vec::new(),
+                options,
+            )
+            .into_iter()
+            .filter_map(|line| match line.kind {
+                LineKind::Catalog(CatalogDecl::Alias(alias))
+                    if resolve(alias.target.clone(), &alias.file) == *target =>
+                {
+                    Some(line.no as usize)
+                }
+                _ => None,
+            })
+            .collect();
             document.text = document
                 .text
                 .split_inclusive('\n')

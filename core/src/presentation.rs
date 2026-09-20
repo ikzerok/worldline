@@ -4,7 +4,7 @@
 //! `Project` 注册的地图，使用内容分析得到的 1.9 `TargetRef` 与素材目录做
 //! 引用校验，不把地图内容并入 `Program` 或运行指纹。
 
-use crate::catalog::{AssetInfo, Catalog, TargetRef, TARGET_KINDS};
+use crate::catalog::{AssetInfo, Catalog, TargetRef};
 use crate::diagnostic::{sort_diagnostics, Diagnostic, Span};
 use crate::project::Project;
 use crate::workspace_documents::{manifest_path, parse_registry, parse_unique_json, valid_id};
@@ -209,6 +209,7 @@ pub(crate) fn build_map_index(project: &Project, content: &CompileResult) -> Map
             &registered_id,
             &content.analysis.catalog,
             &map_ids,
+            content.options,
         );
         index.diagnostics.extend(parsed.diagnostics);
         let Some(map) = parsed.document else {
@@ -256,6 +257,7 @@ pub(crate) fn parse_map_document(
     registered_id: &str,
     catalog: &Catalog,
     map_ids: &BTreeSet<String>,
+    options: crate::CompileOptions,
 ) -> MapParseResult {
     let file = file.to_string_lossy();
     let mut diagnostics = Vec::new();
@@ -378,6 +380,7 @@ pub(crate) fn parse_map_document(
         &layers,
         catalog,
         map_ids,
+        options,
         &mut diagnostics,
     );
     structural_error |= placements.is_none();
@@ -692,6 +695,7 @@ fn parse_placements(
     layers: &BTreeMap<String, MapLayer>,
     catalog: &Catalog,
     map_ids: &BTreeSet<String>,
+    options: crate::CompileOptions,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<BTreeMap<String, MapPlacement>> {
     let object = required_object(value, "placements", file, "MAP006", diagnostics)?;
@@ -736,6 +740,7 @@ fn parse_placements(
             true,
             file,
             &format!("placements.{id}.target_ref"),
+            options,
             diagnostics,
         ) {
             Ok(target) => target,
@@ -796,6 +801,7 @@ fn parse_placements(
             placement.get("scope_refs"),
             file,
             &format!("placements.{id}.scope_refs"),
+            options,
             diagnostics,
         ) {
             Ok(scope_refs) => {
@@ -1020,6 +1026,7 @@ fn parse_target(
     nullable: bool,
     file: &str,
     path: &str,
+    options: crate::CompileOptions,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Option<TargetRef>, ()> {
     if value.is_none() || value.is_some_and(Value::is_null) {
@@ -1039,7 +1046,10 @@ fn parse_target(
     };
     let kind = object.get("kind").and_then(Value::as_str);
     let id = object.get("id").and_then(Value::as_str);
-    if kind.is_none() || id.is_none_or(str::is_empty) || !TARGET_KINDS.contains(&kind.unwrap()) {
+    if kind.is_none()
+        || id.is_none_or(str::is_empty)
+        || !crate::catalog::is_target_kind(kind.unwrap(), options)
+    {
         diagnostics.push(map_error(
             file,
             "MAP007",
@@ -1054,6 +1064,7 @@ fn parse_target_array(
     value: Option<&Value>,
     file: &str,
     path: &str,
+    options: crate::CompileOptions,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Vec<TargetRef>, ()> {
     let Some(array) = value else {
@@ -1074,6 +1085,7 @@ fn parse_target_array(
             false,
             file,
             &format!("{path}.{index}"),
+            options,
             diagnostics,
         ) {
             Ok(Some(target)) => refs.push(target),

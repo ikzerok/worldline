@@ -32,6 +32,18 @@ wl catalog "D:/作品/我的世界" --json
 wl play "D:/作品/我的世界"
 ```
 
+清单 `.world/project.json` 可将 `language_version` 设为 `"1.10"`，例如：
+
+```json
+{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.entities.v1"]}
+```
+
+没有清单时仍使用 1.9；一次性检查也可显式写 `--language-version=1.10`。
+`wl check --json` 将故事编译诊断放在 `diagnostics`，将清单和工作区能力诊断放在
+`workspace_diagnostics`；后者非空时 `read_only` 为 `true`，`check` 返回非零并提示
+工作区只读。未知语言版本或 `required_features`（例如 `future.entities.v2`）会报告
+`WS003`。此时 `wl catalog --json` 仍可读取目录，但不会伪装成可写工程。
+
 给 CLI 传目录获得完整工作区分析；给 CLI 传单个文件则只分析该入口及 include，适合独立示例。编辑器总是把所选目录当作工程。
 
 ## 2. 最小故事
@@ -72,6 +84,29 @@ character lin as "林舟"
 character mei as "梅"
 alias character lin as "阿舟"
 ```
+
+1.10 工程可以声明通用实体。实体的 `id` 是稳定引用，`kind` 是可修改的资料
+分类，显示名、description 和静态 property 不进入故事运行状态：
+
+```wl
+entity lighthouse kind place as "雾港灯塔"
+  description "由作者编写的地点资料。"
+  property height = 38
+  property lit = true
+```
+
+实体工程的清单还应声明 `content.entities.v1`；机器脚本可用目录查询和结构编辑命令：
+
+```powershell
+wl catalog "D:/作品/我的世界" --kind entity --json
+wl entity create "D:/作品/我的世界" --id lighthouse --kind place --display "雾港灯塔" --json
+wl entity update "D:/作品/我的世界" --id lighthouse --display "新灯塔" --baseline <上次结果中的值> --json
+wl entity delete "D:/作品/我的世界" --id lighthouse --baseline <上次结果中的值> --json
+```
+
+编辑命令要求清单明确启用 1.10，并在写盘前验证当前源码和引用；过期
+`--baseline` 返回 `ok:false`，不会覆盖外部修改。实体只允许在顶层声明，不能
+作为事件正文中的可执行语句。
 
 世界可省略，但一个工程最多声明一次。人物、事件、变量等分别按各自类型的命名空间检查重复。属性是字符串、有限数值或布尔字面量，不执行表达式；同一对象的属性名不能重复。人物关系有方向，`lin relation mei` 不自动写出反向关系。相同目标和关系名称的重复定义会报错。
 

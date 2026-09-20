@@ -400,6 +400,24 @@ pub fn parse_interpolations(
     base_col: u32,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<TextPart> {
+    parse_interpolations_with_options(
+        raw,
+        file,
+        line,
+        base_col,
+        diags,
+        crate::compiler::CompileOptions::default(),
+    )
+}
+
+pub fn parse_interpolations_with_options(
+    raw: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
+    options: crate::compiler::CompileOptions,
+) -> Vec<TextPart> {
     let chars: Vec<char> = raw.chars().collect();
     let mut parts = Vec::new();
     let mut lit = String::new();
@@ -440,7 +458,9 @@ pub fn parse_interpolations(
                 break;
             };
             let inner: String = chars[i + 2..end].iter().collect();
-            if let Some((target, label)) = crate::navigation::parse_link(&inner) {
+            if let Some((target, label)) =
+                crate::navigation::parse_link_with_options(&inner, options)
+            {
                 if !lit.is_empty() {
                     parts.push(TextPart::Str(std::mem::take(&mut lit)));
                 }

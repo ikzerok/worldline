@@ -46,6 +46,15 @@ pub struct WorldDraft {
     pub properties: Vec<(String, PropertyValue)>,
 }
 
+#[derive(Clone, Default)]
+pub struct EntityDraft {
+    pub id: String,
+    pub entity_type: String,
+    pub display: String,
+    pub description: String,
+    pub properties: Vec<(String, PropertyValue)>,
+}
+
 pub fn quote(text: &str) -> String {
     format!(
         "\"{}\"",
@@ -276,6 +285,7 @@ impl Project {
         &mut self,
         operation: impl FnOnce(&mut Project) -> Result<(), String>,
     ) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
         let mut candidate = self.clone();
         operation(&mut candidate)?;
         let result = candidate.compile();
@@ -632,6 +642,105 @@ impl Project {
         self.replace_metadata(&path, world.as_ref().map(|w| w.id.as_str()), "world", &out)
     }
 
+    /// 创建或修改 1.10 实体作者资料。实体 ID 是稳定身份，修改资料时必须保留。
+    pub fn write_entity(
+        &mut self,
+        path: &Path,
+        original: Option<&str>,
+        draft: &EntityDraft,
+    ) -> Result<(), String> {
+        if self.language_version_kind() != crate::LanguageVersion::V1_10 {
+            return Err("entity 需要工程显式启用语言 1.10".into());
+        }
+        identifier(&draft.id)?;
+        identifier(&draft.entity_type)?;
+        if draft.display.trim().is_empty() {
+            return Err("实体显示名不能为空".into());
+        }
+        if original.is_some_and(|id| id != draft.id) {
+            return Err("实体 ID 是引用身份,修改名称和资料时请保留 ID".into());
+        }
+        let result = self.compile_current();
+        let existing = result.analysis.catalog.entities.get(&draft.id);
+        if original.is_some() && existing.is_none() {
+            return Err("待修改的实体不存在".into());
+        }
+        if original.is_none() && existing.is_some() {
+            return Err("实体 ID 已存在".into());
+        }
+        let path = existing
+            .map(|entity| PathBuf::from(&entity.file))
+            .unwrap_or_else(|| path.to_path_buf());
+        let out = format!(
+            "entity {} kind {} as {}\n  description {}\n{}",
+            draft.id,
+            draft.entity_type,
+            quote(&draft.display),
+            quote(&draft.description),
+            property_lines(&draft.properties)?
+        );
+        self.replace_metadata(&path, original, "entity", &out)
+    }
+
+    /// 删除实体前重新生成影响计划，引用或地图标记未解除时拒绝写入。
+    pub fn remove_entity(&mut self, id: &str) -> Result<(), String> {
+        if self.language_version_kind() != crate::LanguageVersion::V1_10 {
+            return Err("entity 需要工程显式启用语言 1.10".into());
+        }
+        let target = crate::catalog::TargetRef::new("entity", id);
+        let impact = self.deletion_impact(&target);
+        if !impact.complete {
+            return Err("引用检查不完整，请先修复内容或地图诊断，再删除实体".into());
+        }
+        if !impact.can_delete() {
+            let mut locations = impact
+                .content_references
+                .iter()
+                .map(|reference| {
+                    format!(
+                        "{}:{}（{}）",
+                        reference.file, reference.line, reference.kind
+                    )
+                })
+                .collect::<Vec<_>>();
+            locations.extend(
+                impact
+                    .map_placements
+                    .iter()
+                    .chain(&impact.map_scopes)
+                    .map(|placement| format!("{} / {}", placement.map_id, placement.placement_id)),
+            );
+            return Err(format!(
+                "实体 `{id}` 仍有引用，请先明确解除或重新绑定这些引用：{}",
+                locations.join("、")
+            ));
+        }
+        let entity = self
+            .compile_current()
+            .analysis
+            .catalog
+            .entities
+            .get(id)
+            .cloned()
+            .ok_or("实体不存在")?;
+        let path = PathBuf::from(entity.file);
+        let text = self.document(&path)?.to_string();
+        let parsed = crate::lexer::lex_source_with_options(
+            &path.to_string_lossy(),
+            &text,
+            &mut Vec::new(),
+            self.compile_options(),
+        );
+        let index = parsed
+            .iter()
+            .position(|line| matches!(&line.kind, LineKind::Entity { name, .. } if name == id))
+            .ok_or("实体声明源位置不存在")?;
+        let block = block_at(&text, &parsed, index);
+        let mut text = text;
+        text.replace_range(block.range, "");
+        self.set_text(&path, text)
+    }
+
     pub(crate) fn replace_metadata(
         &mut self,
         path: &Path,
@@ -641,7 +750,16 @@ impl Project {
     ) -> Result<(), String> {
         let mut text = self.document(path)?.to_string();
         if let Some(id) = original {
-            let lines = lines(&text, path);
+            let lines = if kind == "entity" {
+                crate::lexer::lex_source_with_options(
+                    &path.to_string_lossy(),
+                    &text,
+                    &mut Vec::new(),
+                    self.compile_options(),
+                )
+            } else {
+                lines(&text, path)
+            };
             let i = lines
                 .iter()
                 .position(|l| match &l.kind {
@@ -650,6 +768,7 @@ impl Project {
                     LineKind::Catalog(crate::catalog::CatalogDecl::Tag(tag)) if kind == "tag" => {
                         tag.name == id
                     }
+                    LineKind::Entity { name, .. } if kind == "entity" => name == id,
                     _ => false,
                 })
                 .ok_or("声明不存在")?;

@@ -11,6 +11,19 @@ use std::path::PathBuf;
 
 pub const ANCHOR_TARGET_KINDS: &[&str] = &["character", "event", "state", "anchor"];
 
+/// 当前语言版本允许的锚点目标类型，供验证与对象选择器共用。
+pub fn anchor_target_kinds(options: crate::CompileOptions) -> &'static [&'static str] {
+    if options.language_version.supports_entities() {
+        &["character", "event", "state", "anchor", "entity"]
+    } else {
+        ANCHOR_TARGET_KINDS
+    }
+}
+
+pub(crate) fn is_anchor_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
+    anchor_target_kinds(options).contains(&kind)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AnchorLink {
     pub anchor: String,
@@ -149,10 +162,13 @@ pub(crate) fn collect_links(program: &Program, catalog: &mut Catalog, diags: &mu
     }
 }
 
-fn validate_targets(targets: &[TargetRef]) -> Result<(), String> {
+fn validate_targets(
+    targets: &[TargetRef],
+    options: crate::compiler::CompileOptions,
+) -> Result<(), String> {
     for target in targets {
-        if !ANCHOR_TARGET_KINDS.contains(&target.kind.as_str()) {
-            return Err("锚点只能关联角色、事件、状态或独立锚点".into());
+        if !is_anchor_target_kind(&target.kind, options) {
+            return Err("锚点只能关联角色、事件、状态、实体或独立锚点".into());
         }
         identifier(&target.id)?;
     }
@@ -167,7 +183,7 @@ impl Project {
         draft: &AnchorDraft,
     ) -> Result<(), String> {
         identifier(&draft.id)?;
-        validate_targets(&draft.targets)?;
+        validate_targets(&draft.targets, self.compile_options())?;
         if original.is_some_and(|id| id != draft.id) {
             return Err("锚点 ID 是引用身份，请保留 ID，修改显示名称与叙事意义".into());
         }
@@ -220,7 +236,7 @@ impl Project {
     /// 替换此锚点在全部工程缓冲中的关联；注释与其他锚点保持存在。
     pub fn set_anchor_links(&mut self, id: &str, targets: &[TargetRef]) -> Result<(), String> {
         identifier(id)?;
-        validate_targets(targets)?;
+        validate_targets(targets, self.compile_options())?;
         let result = self.compile();
         let anchor = result
             .analysis

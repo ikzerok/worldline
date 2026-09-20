@@ -1,6 +1,7 @@
 //! wl-agent 协议集成测试:直接驱动 lib 层 run(),不启动进程。
 
-use std::io::Cursor;
+use std::io::{BufRead, Cursor, Read};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -31,6 +32,102 @@ fn req(id: u64, method: &str, params: Value) -> Value {
 }
 
 const STORY: &str = "event start\n  开场。\n  choice \"甲\"\n    甲线。\n    -> END\n  choice \"乙\"\n    乙线。\n    -> END\n";
+
+fn temp_workspace(name: &str, manifest: &str, source: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("worldline_agent_workspace_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".world")).unwrap();
+    std::fs::write(root.join(".world/project.json"), manifest).unwrap();
+    std::fs::write(root.join("world.wl"), source).unwrap();
+    root
+}
+
+fn temp_entity_project(name: &str, source: &str) -> std::path::PathBuf {
+    temp_workspace(
+        &format!("entity-{name}"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":[]}"#,
+        source,
+    )
+}
+
+fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
+    let manifest_path = root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["maps"] = serde_json::json!({"overview": ".world/maps/overview.json"});
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let map_path = root.join(".world/maps/overview.json");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &map_path,
+        br#"{"schema_version":1,"required_features":[],"layers":[]}"#,
+    )
+    .unwrap();
+    map_path
+}
+
+struct MapMutatingReader {
+    lines: Vec<Vec<u8>>,
+    next: usize,
+    buffer: Vec<u8>,
+    map_path: std::path::PathBuf,
+    replacement: Vec<u8>,
+    mutated: bool,
+}
+
+impl MapMutatingReader {
+    fn new(lines: &[Value], map_path: &Path, replacement: &[u8]) -> Self {
+        Self {
+            lines: lines
+                .iter()
+                .map(|line| format!("{line}\n").into_bytes())
+                .collect(),
+            next: 0,
+            buffer: Vec::new(),
+            map_path: map_path.to_path_buf(),
+            replacement: replacement.to_vec(),
+            mutated: false,
+        }
+    }
+
+    fn load_next(&mut self) {
+        if self.next == 1 && !self.mutated {
+            std::fs::write(&self.map_path, &self.replacement).unwrap();
+            self.mutated = true;
+        }
+        if let Some(line) = self.lines.get(self.next) {
+            self.buffer = line.clone();
+            self.next += 1;
+        }
+    }
+}
+
+impl Read for MapMutatingReader {
+    fn read(&mut self, target: &mut [u8]) -> std::io::Result<usize> {
+        if self.buffer.is_empty() {
+            self.load_next();
+        }
+        let size = target.len().min(self.buffer.len());
+        target[..size].copy_from_slice(&self.buffer[..size]);
+        self.consume(size);
+        Ok(size)
+    }
+}
+
+impl BufRead for MapMutatingReader {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.buffer.is_empty() {
+            self.load_next();
+        }
+        Ok(&self.buffer)
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.buffer.drain(..amount.min(self.buffer.len()));
+    }
+}
 
 #[test]
 fn navigation_metadata_and_unknown_links_use_story_results() {
@@ -209,6 +306,201 @@ fn analyze_and_export() {
         .as_str()
         .unwrap()
         .contains("flowchart LR"));
+}
+
+#[test]
+fn compile_accepts_explicit_110_and_analyze_exposes_entities() {
+    let source = "entity lighthouse kind place as \"雾港灯塔\"\n";
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": source, "language_version": "1.10" }),
+        ),
+        req(2, "analyze", json!({ "story_id": "s1" })),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[0]["result"]["ok"], true);
+    assert_eq!(responses[0]["result"]["language_version"], "1.10");
+    assert_eq!(responses[1]["result"]["language_version"], "1.10");
+    assert_eq!(
+        responses[1]["result"]["catalog"]["entities"]["lighthouse"]["entity_type"],
+        "place"
+    );
+}
+
+#[test]
+fn project_read_only_workspace_diagnostics_are_separate_and_repeatable() {
+    let unknown_language = temp_workspace(
+        "unknown-language",
+        r#"{"schema_version":1,"language_version":"2.0","required_features":[]}"#,
+        "event start\n  -> END\n",
+    );
+    let unknown_feature = temp_workspace(
+        "unknown-feature",
+        r#"{"schema_version":1,"language_version":"1.10","required_features":["future.entities.v2"]}"#,
+        "event start\n  -> END\n",
+    );
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "project.open",
+            json!({ "path": unknown_language.to_string_lossy() }),
+        ),
+        req(
+            2,
+            "project.open",
+            json!({ "path": unknown_feature.to_string_lossy() }),
+        ),
+        req(3, "project.analyze", json!({ "project_id": "p1" })),
+        req(4, "project.analyze", json!({ "project_id": "p2" })),
+        req(
+            5,
+            "compile",
+            json!({ "path": unknown_language.to_string_lossy() }),
+        ),
+        req(
+            6,
+            "compile",
+            json!({ "path": unknown_feature.to_string_lossy() }),
+        ),
+        req(7, "shutdown", json!({})),
+    ]);
+    for (index, response) in [0, 1, 2, 3].map(|index| (index, &responses[index])) {
+        let result = &response["result"];
+        assert_eq!(result["ok"], true, "{index}: {responses:?}");
+        assert_eq!(result["read_only"], true, "{index}: {responses:?}");
+        assert!(result["project_id"].is_string() || index >= 2);
+        assert!(result["catalog"].is_object(), "{index}: {responses:?}");
+        assert!(result["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(result["workspace_diagnostics"][0]["code"], "WS003");
+    }
+    let compile = &responses[4]["result"];
+    assert_eq!(compile["ok"], true);
+    assert_eq!(compile["read_only"], true);
+    assert_eq!(compile["workspace_diagnostics"][0]["code"], "WS003");
+    let compile_feature = &responses[5]["result"];
+    assert_eq!(compile_feature["ok"], true);
+    assert_eq!(compile_feature["read_only"], true);
+    assert_eq!(compile_feature["diagnostics"].as_array().unwrap().len(), 0);
+    assert_eq!(compile_feature["workspace_diagnostics"][0]["code"], "WS003");
+}
+
+#[test]
+fn project_entity_crud_returns_baseline_and_rejects_stale_write() {
+    let root = temp_entity_project("crud", "");
+    let path = root.to_string_lossy().to_string();
+    let (_, opened) = exchange(&[
+        req(1, "project.open", json!({ "path": path.clone() })),
+        req(2, "shutdown", json!({})),
+    ]);
+    assert_eq!(opened[0]["result"]["ok"], true);
+    assert_eq!(opened[0]["result"]["language_version"], "1.10");
+    let baseline = opened[0]["result"]["baseline"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({ "path": path.clone() })),
+        req(
+            2,
+            "entity.create",
+            json!({
+                "project_id": "p1",
+                "baseline": baseline,
+                "entity": {
+                    "id": "lighthouse",
+                    "entity_type": "place",
+                    "display": "雾港灯塔",
+                    "description": "静态资料",
+                    "properties": { "height": 38, "lit": true }
+                }
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], true, "{responses:?}");
+    let baseline = responses[1]["result"]["baseline"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("entity lighthouse kind place"));
+
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({ "path": path })),
+        req(
+            2,
+            "entity.update",
+            json!({
+                "project_id": "p1",
+                "baseline": "stale",
+                "entity": { "id": "lighthouse", "display": "不应写入" }
+            }),
+        ),
+        req(
+            3,
+            "entity.delete",
+            json!({
+                "project_id": "p1",
+                "baseline": baseline,
+                "id": "lighthouse"
+            }),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], false);
+    assert_eq!(responses[1]["result"]["error"]["code"], "STALE_BASELINE");
+    assert_eq!(responses[2]["result"]["ok"], true, "{responses:?}");
+    assert!(!std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("entity lighthouse"));
+}
+
+#[test]
+fn project_entity_map_change_rejects_stale_baseline_before_write() {
+    let root = temp_entity_project(
+        "map-baseline",
+        "entity lighthouse kind place as \"灯塔\"\nevent start\n  -> END\n",
+    );
+    let map_path = register_entity_test_map(&root);
+    let path = root.to_string_lossy().to_string();
+    let baseline = worldline_core::project::Project::open(&root)
+        .unwrap()
+        .content_baseline();
+    let source_before = std::fs::read(root.join("world.wl")).unwrap();
+    let replacement = r#"{"schema_version":1,"id":"overview","title":"Overview","canvas":{"width":100,"height":100,"unit":"normalized"},"layer_order":["places"],"layers":{"places":{"title":"Places","visible_default":true,"locked":false}},"placements":{"lighthouse_marker":{"layer_id":"places","annotation":"Lighthouse","role":"reference","target_ref":{"kind":"entity","id":"lighthouse"},"geometry":{"kind":"point","position":[0.2,0.3]}}}}"#;
+    let lines = vec![
+        req(1, "project.open", json!({ "path": path.clone() })),
+        req(2, "project.analyze", json!({ "project_id": "p1" })),
+        req(
+            3,
+            "entity.delete",
+            json!({
+                "project_id": "p1",
+                "baseline": baseline,
+                "id": "lighthouse"
+            }),
+        ),
+        req(4, "shutdown", json!({})),
+    ];
+    let mut input = MapMutatingReader::new(&lines, &map_path, replacement.as_bytes());
+    let mut output = Vec::new();
+    let code = worldline_agent::run(&mut input, &mut output);
+    let responses: Vec<Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(code, 0);
+    assert_eq!(responses[0]["result"]["ok"], true);
+    assert_eq!(responses[1]["result"]["ok"], true);
+    assert_ne!(responses[1]["result"]["baseline"], baseline);
+    assert_eq!(responses[2]["result"]["ok"], false);
+    assert_eq!(responses[2]["result"]["error"]["code"], "STALE_BASELINE");
+    assert_eq!(std::fs::read(root.join("world.wl")).unwrap(), source_before);
 }
 
 #[test]

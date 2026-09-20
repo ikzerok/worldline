@@ -13,7 +13,8 @@
 | 一次检查 | `wl check DIR --json` | 完整目录；退出码 0/1/2 |
 | 执行关系 | `wl graph DIR --json` | 节点、边、条件上下文、目标准入 |
 | 时间偏序 | `wl timeline DIR --json` | 时段、事件、follows 与图 |
-| 作者资料查询 | `wl catalog DIR --json` | 人物、标签、状态、锚点、附件、别名、链接 |
+| 作者资料查询 | `wl catalog DIR --json` | 人物、1.10 实体、标签、状态、锚点、附件、别名、链接 |
+| 作者资料编辑 | `wl entity create\|update\|delete DIR ... --json` | 1.10 实体的创建、资料更新与安全删除 |
 | 终端演练 | `wl play DIR` | 人类选择序号从 1 起 |
 | 脚本演练 | `wl play DIR --json` | 输入使用输出给出的 index，从 0 起 |
 | 多轮机器会话 | `wl-agent` | 每行一个 JSON-RPC 请求，保持进程存活 |
@@ -23,13 +24,47 @@ JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不
 
 ## 编译与文档缓冲
 
+`compile_source(file, text)`、`compile_path(path)` 和 `compile_sources(entry, ...)` 保持
+1.9 默认；需要解析 entity 时使用对应的 `*_with_options` 入口并传入
+`CompileOptions::v1_10()`。CLI 目录若有 `.world/project.json` 会读取清单版本，
+也可传 `--language-version=1.10`。`CompileResult.options` 记录最终选择的版本。
+
 `compile_source(file, text)` 处理单源，不读取 include；`compile_path(path)` 读取磁盘，目录路径递归载入工作区；`compile_sources(entry, &BTreeMap<PathBuf,String>)` 优先使用内存覆盖并加载工作区内 include，同时分析提供的其他内存源码。外部路径不进入编译结果。
 
 返回 CompileResult 包含 program、analysis、diagnostics、sources。即使有错误也可能返回尽力解析的数据；执行前检查 has_errors，不能因为 program 非空就运行。
+`CompileResult.diagnostics` 只属于故事编译域。打开工程时，清单版本、
+`required_features` 和注册展示文档的作者诊断由 `Project::authoring_diagnostics()`
+单独提供；CLI JSON 与 `wl-agent` 将它们序列化为同名的
+`workspace_diagnostics`，并以 `read_only` 表示是否禁止作者写入。未知语言版本或
+必需能力报告 `WS003`，不会污染 `CompileResult.diagnostics`。
 
 `Project::open` 打开工作区、先恢复 `.world/.transactions/` 中的未完成保存，再将旧权限迁移到缓冲；`Project::new(root)` 建立未保存的雾港示例。`documents` 保存源码与保存基线，`sources` 返回当前文本映射。`refresh` 更新磁盘变化并返回冲突路径；`search` 搜索缓冲，每个命中行返回一次，列号按 Unicode 字符。`save` 以逐文件可恢复事务写入，跨文件不宣称原子性；打开时若目标同时不同于事务前后 hash，会保留第三方值与事务草稿，`recovery_conflicts` 返回冲突路径，普通保存、另存和导出等待人工处理；recovery_drafts 返回含事务身份、前后/当前 hash 与原始字节（或删除意图）的救援记录，export_recovery_drafts 显式写入工程外新目录并附 recovery.json，原工程及事务不变。`save_as` 建立新工作区，`export` 输出经校验的新目录，`export_files` 返回相对路径到字节的映射供 ZIP 使用。
 
 调用结构编辑先准备草稿，再放进 `Project::edit` 事务；错误时全部缓冲回滚。直接 `set_text` 允许未完成源码，编辑器据此显示诊断。事务不等于多文件磁盘原子提交：保存逐个文件替换，IO 中断可能已经保存一部分，后续依保存基线恢复。
+
+1.10 工程的 `EntityDraft` 由 `Project::write_entity` 创建或更新，
+`Project::remove_entity` 删除前重新计算 `TargetRef { kind: "entity", id }`
+的源码和地图引用影响；两者都应放入 `Project::edit`。显示名和分类可修改，ID
+保持稳定。`wl-agent` 的 `project.open` 返回内容基线，后续 entity 编辑可回传
+`baseline` 拒绝陈旧请求；CLI 的 `--baseline` 具有相同语义。两者都使用
+`Project::content_baseline()`，覆盖源码、工程清单和已注册展示文档的相对路径、原始
+字节与删除状态，不使用运行时 fingerprint；实体作者资料也不会改变运行 fingerprint。
+声明实体的工程清单应同时声明能力，例如：
+
+```json
+{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.entities.v1"]}
+```
+
+长生命周期的 `project_id` 请求在 `project.analyze` 和 `entity.*` 前先刷新磁盘源码及
+清单注册的展示文档，并返回刷新后的 `baseline`。分析遇到刷新冲突仍提供目录和
+`conflicts` 供恢复；刷新读取失败返回 `ok:false` 的 `IO_ERROR`，实体写入遇到刷新
+冲突返回 `ok:false` 的 `CONFLICT`，调用方应处理后使用新基线重试。
+`project.open` 和 `project.analyze` 即使遇到工作区只读诊断，仍返回可读的
+`project_id`/`catalog`；这时 `diagnostics` 仍只放故事编译诊断，新增的
+`workspace_diagnostics` 会列出 `WS003` 等原因，`read_only` 为 `true`，后续
+`entity.*` 以故事层失败返回而不写盘。`wl check --json` 对同一状态返回
+`ok:false` 和退出码 1，并在人类模式打印中文只读提示；`wl catalog --json`
+可继续返回目录并保留 `ok:true` 与 `read_only:true`。
 
 ## 分析与创作模块
 
