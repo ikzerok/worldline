@@ -19,6 +19,7 @@ pub mod migration;
 pub mod navigation;
 pub mod parser;
 pub mod presentation;
+pub mod presentation_commands;
 pub mod project;
 pub mod recovery;
 pub mod relation_context;

@@ -194,6 +194,8 @@ CommandResult { new_revision, changed_files, affected_refs, undo_record, diagnos
 
 `expected_revision`是当前进程的乐观并发令牌，不是Git提交；`expected_documents`包含文档内容hash，用于保存、外部修改和提案检查。Git提交只能作为已保存协作基线的附加信息。
 
+撤销也是新的用户意图：调用方从当前历史栈选取逆操作记录，并在发起时捕获 `expected_revision`，不得在延迟执行时补填最新修订。逆操作记录描述要恢复的字节，不自动授予当前写入权限；执行须同时检查意图修订和记录的修改后字节，防止后续编辑改回相同字节时旧意图误生效。连续撤销逐次捕获新基线，每次仍推进展示修订。
+
 内容/版式命令共用事务边界，但使用不同验证集。展示命令不必通过全工程可运行检查；已损坏声明导致目标身份无法确认时，可以移动现有图形位置，但不能据此新建不确定引用。原始编辑模式允许保存未完成文本，结构化命令不写出新结构错误。
 
 错误至少区分：InvalidSchema、InvalidGeometry、MissingReference、UnresolvedReference、StaleRevision、ExternalConflict、ReadOnlyFeature、AssetLimit、StorageFailure。Missing是确认不存在，Unresolved是来源尚未解析成功；二者不能混为删除事实。
