@@ -1179,7 +1179,10 @@ fn recovery_distinguishes_missing_from_empty_files() {
     .unwrap();
     let reopened = Project::open(&root).unwrap();
     assert_eq!(fs::read(root.join("new.wl")).unwrap(), b"third-party");
-    assert_eq!(reopened.recovery_conflicts(), &[reopened.root.join("new.wl")]);
+    assert_eq!(
+        reopened.recovery_conflicts(),
+        &[reopened.root.join("new.wl")]
+    );
     assert!(root.join(".world/.transactions").is_dir());
 }
 
