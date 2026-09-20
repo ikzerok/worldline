@@ -21,6 +21,7 @@ fn project_with_map(name: &str) -> (Project, PathBuf) {
     let root = temp_root(name);
     let _ = fs::remove_dir_all(&root);
     let mut project = Project::new(&root);
+    let root = project.root.clone();
     project
         .create_authoring_document(
             &root.join(".world/project.json"),
