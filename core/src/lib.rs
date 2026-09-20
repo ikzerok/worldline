@@ -28,6 +28,7 @@ mod storage;
 pub mod timeline;
 pub mod wiki;
 mod workspace_documents;
+pub mod workspace_snapshot;
 
 pub use analysis::{Analysis, Stats, Symbols};
 pub use ast::{Program, ValueKind};
