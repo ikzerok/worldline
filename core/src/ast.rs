@@ -215,6 +215,34 @@ pub struct CharacterRelation {
     pub loc: Loc,
 }
 
+/// 1.10 语义关系类型。关系类型是作者资料，不是执行动作。
+#[derive(Debug, Clone)]
+pub struct RelationTypeDecl {
+    pub name: String,
+    pub display: Option<String>,
+    pub inverse_display: Option<String>,
+    pub direction: crate::relations::RelationDirection,
+    pub from_kind: Option<String>,
+    pub to_kind: Option<String>,
+    pub file: String,
+    pub loc: Loc,
+}
+
+/// 1.10 语义关系实例。端点按完整 TargetRef 保存，不能按显示名合并。
+#[derive(Debug, Clone)]
+pub struct RelationDef {
+    pub id: String,
+    pub relation_type: String,
+    pub from: crate::catalog::TargetRef,
+    pub to: crate::catalog::TargetRef,
+    pub description: String,
+    pub source_note: Option<String>,
+    pub scope_refs: Vec<crate::catalog::TargetRef>,
+    pub properties: Vec<Property>,
+    pub file: String,
+    pub loc: Loc,
+}
+
 #[derive(Debug, Clone)]
 pub struct WorldDecl {
     pub name: String,
@@ -423,6 +451,9 @@ pub struct Program {
     pub characters: Vec<CharacterDecl>,
     /// 1.10 实体作者资料；不参与事件执行和运行指纹。
     pub entities: Vec<EntityDecl>,
+    /// 1.10 语义关系类型与实例；不进入事件执行和运行指纹。
+    pub relation_types: Vec<RelationTypeDecl>,
+    pub relations: Vec<RelationDef>,
     pub worlds: Vec<WorldDecl>,
     pub periods: Vec<PeriodDecl>,
     pub events: Vec<Event>,

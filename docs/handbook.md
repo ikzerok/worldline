@@ -29,6 +29,9 @@
 ```powershell
 wl check "D:/作品/我的世界" --json
 wl catalog "D:/作品/我的世界" --json
+wl workspace check "D:/作品/我的世界" --json
+wl maps list "D:/作品/我的世界" --json
+wl relations "D:/作品/我的世界" --target entity:keepers --offset 0 --depth 1 --json
 wl play "D:/作品/我的世界"
 ```
 
@@ -39,12 +42,53 @@ wl play "D:/作品/我的世界"
 ```
 
 没有清单时仍使用 1.9；一次性检查也可显式写 `--language-version=1.10`。
+使用关系资料编辑命令时，在 `required_features` 中另列 `content.relations.v1`；
+展示地图则列 `presentation.maps.v1` 并注册 `maps` 路径。
 `wl check --json` 将故事编译诊断放在 `diagnostics`，将清单和工作区能力诊断放在
 `workspace_diagnostics`；后者非空时 `read_only` 为 `true`，`check` 返回非零并提示
 工作区只读。未知语言版本或 `required_features`（例如 `future.entities.v2`）会报告
 `WS003`。此时 `wl catalog --json` 仍可读取目录，但不会伪装成可写工程。
 
 给 CLI 传目录获得完整工作区分析；给 CLI 传单个文件则只分析该入口及 include，适合独立示例。编辑器总是把所选目录当作工程。
+
+`wl workspace check` 是工作区级只读检查，输出语言版本、内容基线、统计以及分开的
+故事诊断和工作区诊断。`wl maps list` 从清单注册的地图生成 core MapIndex，同时返回
+按完整 `TargetRef` 组织的 placement 引用；它不会把普通 JSON 文件当成地图，也不会写回
+地图文档。`wl relations` 查询作者明确声明的语义关系，`--target` 使用对象类型和稳定
+ID，`--offset` 默认 0、`--depth` 默认 1 且最多 2；结果中的 `truncated` 与
+`continuation` 表示展示上限，不代表源码关系被删除。续查时复用同一工作区基线与筛选，
+基线变化后从 0 重新查询。反向读取只是同一条边的投影，不会创建新的关系或传递结论。
+TargetRef 字符串只按第一个冒号分隔；`file` 目标会保留 ID 余串中的冒号，Windows
+规范路径可直接写成 `file:C:/作品/章节/第一章.wl`。
+
+关系资料可以通过 CLI 写入。先创建关系类型，再创建关系实例；更新时保留 ID，删除
+由 core 检查关系端点和地图引用：
+
+```powershell
+wl relation-type create "D:/作品/我的世界" --id knows --display 认识 --direction directed --json
+wl relation create "D:/作品/我的世界" --id lin_knows_mei --type knows --from entity:lin --to entity:mei --description "林舟认识梅" --json
+wl relation update "D:/作品/我的世界" --id lin_knows_mei --description "林舟与梅相识" --json
+wl relation delete "D:/作品/我的世界" --id lin_knows_mei --json
+```
+
+编辑命令可带上 `--baseline` 保护长生命周期工具的陈旧请求；命令每次先刷新工程
+内容，外部修改或工作区只读时返回可解析的失败结果，不覆盖磁盘内容。旧人物关系
+没有稳定 ID，需要保存为独立关系时先预览再提交：
+
+更新关系类型时用 `--clear-inverse-display`、`--clear-from-kind` 或
+`--clear-to-kind` 清空可选字段；更新关系实例时用 `--clear-source-note`、
+`--clear-scope` 或 `--clear-properties` 清空来源、作用域或属性。清空标记只用于
+`update`，不能和同一字段的设置参数并用，create 会明确报错。关系资料的完整可运行
+示例见 [examples/relations-world/README.md](../examples/relations-world/README.md)。
+
+```powershell
+wl relations promote preview "D:/作品/我的世界" --source character:lin --target character:mei --label 同伴 --id lin_mei --type knows --scope character:mei --property strength=3 --json
+wl relations promote commit "D:/作品/我的世界" --source character:lin --target character:mei --label 同伴 --id lin_mei --type knows --scope character:mei --property strength=3 --json
+```
+
+预览会报告迁移前后的运行 fingerprint 差异并保持源码不变；提交前 core 会重新确认
+旧关系句柄、完整 draft 和内容基线仍有效。`--scope` 可重复传入关系作用域，
+`--property name=value` 可重复传入字符串、有限数值或布尔属性。
 
 ## 2. 最小故事
 

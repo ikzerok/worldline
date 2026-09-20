@@ -130,9 +130,10 @@ M1提供point、polyline与简单polygon的创建与编辑；M4增加展示预�
 
 ## 5. SemanticRelation与通用实体
 
-M2新增内容声明，保留旧人物关系兼容读取。`entity` 的最小语法已在语言 1.10
-定稿并由 #6 实现；`relation_type` 与 `relation_def` 仍是 #7 的后续契约，当前
-1.9 不可执行；不得在 M1 以这些后续关系能力为地图前置。
+M2新增内容声明，保留旧人物关系兼容读取。`entity`、`relation_type` 与
+`relation_def` 在语言 1.10 下启用；1.9 默认入口仍不识别这些关键字。关系类型、
+关系实例和受限局部查询由 `worldline-core` 生成，地图只可引用已存在的关系 ID，
+不得因图形线或导航自动创建关系。
 
 ```text
 entity lighthouse kind place as "雾港灯塔"
@@ -153,16 +154,15 @@ relation_def rel_keepers_lighthouse type maintains from entity keepers to entity
 
 实体首版复用字符串、数值、布尔属性和多行description，不马上引入通用可执行属性系统。模板字段引用其他对象时，优先生成明确关系或使用后续单独评审的引用值；不能把一个恰好同名的字符串当成强引用。
 
-relation_def至少具有稳定ID、关系类型、from/to和可选说明。关系类型定义方向、显示名、反向显示名及可选端点约束。不要求所有创作关系具有数值强度。关系实例可附作者明确的范围、来源、相关事件和任意非执行资料。
+relation_def至少具有稳定ID、关系类型、from/to和可选说明。关系类型定义方向、显示名、反向显示名及可选端点约束。不要求所有创作关系具有数值强度。关系实例可附作者明确的范围、来源、相关事件和任意非执行资料。`from` 与 `to` 端点使用完整 `TargetRef`，关系 ID 本身可作为 `TargetRef(kind="relation")` 被展示文档引用。
 
 新关键字必须在显式language_version=1.10下启用；旧compile_source/compile_sources默认仍按1.9兼容语义，新入口提供CompileOptions。新声明不进入event执行体，不变成选择或效果。词法/解析/目录/导航/标记/删除重命名/语法高亮/CLI样例必须一起更新。
 
-复杂盟约等多方关系先建立独立entity，再用关系标注各参与者角色，不把所有多方语义硬塞成一条多端点边。
+复杂盟约等多方关系先建立独立entity，再用关系标注各参与者角色，不把所有多方语义硬塞成一条多端点边。`Catalog::query_relations` 默认深度1、最多深度2，最多250节点/500边；结果带稳定顺序、关系 ID、端点、显示方向与 `truncated`/continuation，不做反向或传递推断。
 
 ### 5.0.1 M2 实体最小实现
 
-本节的 `entity` 声明已在语言 1.10 定稿；`relation_type` 与 `relation_def`
-仍属于后续票据。核心公开 `LanguageVersion::{V1_9,V1_10}` 与
+本节的 `entity`、`relation_type` 与 `relation_def` 声明在语言 1.10 定稿。核心公开 `LanguageVersion::{V1_9,V1_10}` 与
 `CompileOptions`，旧 `compile_source`/`compile_sources` 默认使用 1.9。Project
 按 `.world/project.json` 的 `language_version` 选择编译选项，无清单或版本为
 1.9 的工程不会隐式升级。实体查询统一从 `Analysis.catalog` 派生：
@@ -177,9 +177,9 @@ properties 与源位置。创建、修改、改名（显示名或分类）和删
 
 ### 5.1 旧人物关系
 
-旧CharacterRelation没有独立ID。[R16] 为显示可生成临时LegacyRelationHandle，含来源对象、目标、标签及区分重复项的信息；它不是稳定可持久化身份，不能被批注或地图永久引用。
+旧CharacterRelation没有独立ID。[R16] 为显示可生成临时LegacyRelationHandle，含来源对象、目标、标签及区分重复项的信息；它不是稳定可持久化身份，不能被批注或地图永久引用。核心公开 `Catalog::legacy_relation_handles` 与关系提升预览/提交接口。
 
-需要持久引用时，显式“提升为独立关系”：预览新relation_def与旧项移除，整批提交，保留作者说明。不能以源行号伪装永久ID。旧人物关系原本参与指纹规则；提升可能影响旧档，必须提示和测试，不能未经证明宣称等价迁移。
+需要持久引用时，显式“提升为独立关系”：预览新relation_def与旧项移除，整批提交，保留作者说明。预览携带 `Project::content_baseline()` 和完整草稿，包含 scope 与 properties；提交按内容基线拒绝陈旧请求并保持零写入。不能以源行号伪装永久ID。旧人物关系原本参与指纹规则；提升可能影响旧档，必须提示和测试，不能未经证明宣称等价迁移。
 
 ### 5.2 范围不是模拟状态
 
@@ -189,7 +189,7 @@ M4的范围引用可以指作者定义的period、作品条目或版本条目。
 
 ## 6. GraphViewDocument
 
-只保存专题标题、中心对象、筛选、已展开节点、固定位置、隐藏显示项和可选初始镜头。边来自内容关系查询，不在视图文件重存一份语义。
+只保存专题标题、中心对象、筛选、已展开节点、固定位置、隐藏显示项和可选初始镜头。中心对象使用完整 `TargetRef`，也可指向 `relation` 对象；边来自内容关系查询，不在视图文件重存一份语义。
 
 隐藏节点/边只修改视图；删除关系必须显式执行DeleteRelation并显示影响。自动布局是无语义副作用的计算，其结果先在个人工作状态；作者确认“保存布局”后才进入共享文件。
 

@@ -47,7 +47,8 @@ pub(crate) fn parse_link_with_options(
     let (destination, label) = inner.split_once('|')?;
     let (kind, id) = destination.split_once(':')?;
     if (!TARGET_KINDS.contains(&kind)
-        || (kind == "entity" && !options.language_version.supports_entities()))
+        || ((kind == "entity" || kind == "relation")
+            && !options.language_version.supports_relations()))
         || id.is_empty()
         || label.trim().is_empty()
         || inner.contains(['[', ']', '{', '}', '\\', '"', '#', '~', '\n', '\r'])
@@ -81,7 +82,7 @@ pub fn link_source(target: &TargetRef, label: &str, file: &str) -> Result<String
         target.id.clone()
     };
     let inner = format!("{}:{id}|{label}", target.kind);
-    let options = if target.kind == "entity" {
+    let options = if target.kind == "entity" || target.kind == "relation" {
         crate::compiler::CompileOptions::v1_10()
     } else {
         crate::compiler::CompileOptions::default()

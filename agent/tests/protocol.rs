@@ -33,6 +33,8 @@ fn req(id: u64, method: &str, params: Value) -> Value {
 
 const STORY: &str = "event start\n  开场。\n  choice \"甲\"\n    甲线。\n    -> END\n  choice \"乙\"\n    乙线。\n    -> END\n";
 
+const RELATION_STORY: &str = "entity lighthouse kind place as \"灯塔\"\nentity keepers kind organization as \"守灯会\"\nrelation_type maintains as \"维护\"\n  inverse \"由其维护\"\n  direction directed\nrelation_def rel_keepers_lighthouse type maintains from entity keepers to entity lighthouse\n  description \"守灯会维护灯塔\"\nevent start\n  -> END\n";
+
 fn temp_workspace(name: &str, manifest: &str, source: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir()
         .join("worldline_agent_workspace_tests")
@@ -52,6 +54,14 @@ fn temp_entity_project(name: &str, source: &str) -> std::path::PathBuf {
     )
 }
 
+fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
+    temp_workspace(
+        &format!("relation-{name}"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.relations.v1"]}"#,
+        source,
+    )
+}
+
 fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
     let manifest_path = root.join(".world/project.json");
     let mut manifest: serde_json::Value =
@@ -66,6 +76,104 @@ fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
     )
     .unwrap();
     map_path
+}
+
+#[test]
+fn workspace_check_and_maps_list_share_a_refreshed_snapshot() {
+    let root = temp_entity_project(
+        "workspace-query",
+        "entity lighthouse kind place as \"灯塔\"\nevent start\n  -> END\n",
+    );
+    let map_path = register_entity_test_map(&root);
+    std::fs::write(
+        map_path,
+        br#"{"schema_version":1,"id":"overview","title":"Overview","canvas":{"width":100,"height":100,"unit":"normalized"},"layer_order":["places"],"layers":{"places":{"title":"Places","visible_default":true,"locked":false}},"placements":{"lighthouse_marker":{"layer_id":"places","annotation":"Lighthouse","role":"reference","target_ref":{"kind":"entity","id":"lighthouse"},"geometry":{"kind":"point","position":[0.2,0.3]}}}}"#,
+    )
+    .unwrap();
+    let path = root.to_string_lossy().to_string();
+    let (_, responses) = exchange(&[
+        req(1, "workspace.check", json!({ "path": path.clone() })),
+        req(2, "project.open", json!({ "path": path.clone() })),
+        req(3, "workspace.check", json!({ "project_id": "p1" })),
+        req(4, "maps.list", json!({ "path": path.clone() })),
+        req(5, "maps.list", json!({ "project_id": "p1" })),
+        req(6, "project.analyze", json!({ "project_id": "p1" })),
+        req(7, "shutdown", json!({})),
+    ]);
+
+    for index in [0, 2, 3, 4] {
+        let result = &responses[index]["result"];
+        assert_eq!(result["ok"], true, "{index}: {responses:?}");
+        assert_eq!(result["schema_version"], 1, "{index}: {responses:?}");
+        assert_eq!(result["language_version"], "1.10", "{index}: {responses:?}");
+        assert!(
+            result["workspace_revision"].is_string(),
+            "{index}: {responses:?}"
+        );
+        assert!(result["diagnostics"].is_array(), "{index}: {responses:?}");
+        assert!(
+            result["workspace_diagnostics"].is_array(),
+            "{index}: {responses:?}"
+        );
+        assert_eq!(result["read_only"], false, "{index}: {responses:?}");
+        assert_eq!(result["truncated"], false, "{index}: {responses:?}");
+        assert!(result["continuation"].is_null(), "{index}: {responses:?}");
+    }
+    assert_eq!(responses[0]["result"]["stats"]["events"], 1);
+    assert_eq!(responses[3]["result"]["maps"]["overview"]["id"], "overview");
+    assert_eq!(
+        responses[3]["result"]["references"][0]["target"],
+        json!({"kind":"entity","id":"lighthouse"})
+    );
+    assert_eq!(
+        responses[3]["result"]["references"][0]["placements"][0],
+        json!({"map_id":"overview","placement_id":"lighthouse_marker"})
+    );
+    assert_eq!(
+        responses[4]["result"]["maps"],
+        responses[3]["result"]["maps"]
+    );
+    assert_eq!(
+        responses[5]["result"]["maps"],
+        responses[3]["result"]["maps"]
+    );
+    assert_eq!(
+        responses[5]["result"]["references"],
+        responses[3]["result"]["references"]
+    );
+}
+
+#[test]
+fn workspace_queries_keep_read_only_diagnostics_separate() {
+    let root = temp_workspace(
+        "query-read-only",
+        r#"{"schema_version":1,"language_version":"1.10","required_features":["future.entities.v2"]}"#,
+        "event start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let (_, responses) = exchange(&[
+        req(1, "workspace.check", json!({ "path": path.clone() })),
+        req(2, "maps.list", json!({ "path": path.clone() })),
+        req(3, "project.open", json!({ "path": path })),
+        req(4, "workspace.check", json!({ "project_id": "p1" })),
+        req(5, "maps.list", json!({ "project_id": "p1" })),
+        req(6, "shutdown", json!({})),
+    ]);
+    for index in [0, 1, 3, 4] {
+        let result = &responses[index]["result"];
+        assert_eq!(result["ok"], true, "{index}: {responses:?}");
+        assert_eq!(result["read_only"], true, "{index}: {responses:?}");
+        assert!(
+            result["workspace_revision"].is_string(),
+            "{index}: {responses:?}"
+        );
+        assert!(result["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(result["workspace_diagnostics"][0]["code"], "WS003");
+    }
+    for index in [1, 4] {
+        assert!(responses[index]["result"]["maps"].is_object());
+        assert!(responses[index]["result"]["references"].is_array());
+    }
 }
 
 struct MapMutatingReader {
@@ -327,6 +435,359 @@ fn compile_accepts_explicit_110_and_analyze_exposes_entities() {
         responses[1]["result"]["catalog"]["entities"]["lighthouse"]["entity_type"],
         "place"
     );
+}
+
+#[test]
+fn relation_query_uses_catalog_index_and_returns_truncation_fields() {
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": RELATION_STORY, "language_version": "1.10" }),
+        ),
+        req(
+            2,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": {"kind":"entity","id":"keepers"},
+                "depth": 1,
+                "direction": "both"
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[0]["result"]["ok"], true, "{responses:?}");
+    let result = &responses[1]["result"];
+    assert_eq!(result["ok"], true, "{responses:?}");
+    assert_eq!(result["schema_version"], 1);
+    assert_eq!(result["target"], json!({"kind":"entity","id":"keepers"}));
+    assert_eq!(result["edges"][0]["id"], "rel_keepers_lighthouse");
+    assert_eq!(result["truncated"], false);
+    assert!(result["workspace_revision"].is_null());
+}
+
+#[test]
+fn relation_query_rejects_unknown_target_as_jsonrpc_parameter_error() {
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": RELATION_STORY, "language_version": "1.10" }),
+        ),
+        req(
+            2,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": "entity:missing"
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["error"]["code"], -32602, "{responses:?}");
+}
+
+#[test]
+fn relation_query_accepts_nonnegative_offset_and_rejects_negative_offset() {
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": RELATION_STORY, "language_version": "1.10" }),
+        ),
+        req(
+            2,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": "entity:keepers",
+                "offset": 1
+            }),
+        ),
+        req(
+            3,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": "entity:keepers",
+                "offset": -1
+            }),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], true, "{responses:?}");
+    assert!(responses[1]["result"]["edges"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(responses[2]["error"]["code"], -32602, "{responses:?}");
+}
+
+#[test]
+fn relation_rpc_accepts_windows_file_targets_for_query_and_edit() {
+    let root = temp_relation_project(
+        "file-target",
+        "entity a kind place\nrelation_type records as \"记载\"\nrelation_def record type records from entity a to file \"chapters/record one.wl\"\n  source_note \"来源\"\n  scope file \"chapters/record one.wl\"\nevent start\n  -> END\n",
+    );
+    let target_file = root.join("chapters/record one.wl");
+    std::fs::create_dir_all(target_file.parent().unwrap()).unwrap();
+    std::fs::write(&target_file, "tag notes\n").unwrap();
+    let file_id = std::fs::canonicalize(&target_file)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let file_id = file_id.strip_prefix(r"\\?\").unwrap_or(&file_id).to_owned();
+    let target_text = format!("file:{file_id}");
+    let target_object = json!({"kind": "file", "id": file_id});
+    let path = root.to_string_lossy().to_string();
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({"path": path})),
+        req(
+            2,
+            "relation.query",
+            json!({"project_id":"p1", "target":target_text}),
+        ),
+        req(
+            3,
+            "relation.update",
+            json!({
+                "project_id":"p1",
+                "relation": {
+                    "id":"record",
+                    "to":target_object,
+                    "source_note":null,
+                    "scope_refs":[],
+                    "properties":{}
+                }
+            }),
+        ),
+        req(
+            4,
+            "relation.query",
+            json!({"project_id":"p1", "target":target_object}),
+        ),
+        req(5, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], true, "{responses:?}");
+    assert_eq!(responses[1]["result"]["target"]["id"], file_id);
+    assert_eq!(responses[2]["result"]["ok"], true, "{responses:?}");
+    assert_eq!(responses[2]["result"]["relation"]["to_ref"]["id"], file_id);
+    assert_eq!(
+        responses[2]["result"]["relation"]["source_note"],
+        Value::Null
+    );
+    assert_eq!(responses[2]["result"]["relation"]["scope_refs"], json!([]));
+    assert_eq!(responses[2]["result"]["relation"]["properties"], json!({}));
+    assert_eq!(responses[3]["result"]["ok"], true, "{responses:?}");
+}
+
+#[test]
+fn project_relation_crud_uses_core_drafts_and_preserves_baseline() {
+    let root = temp_relation_project(
+        "crud",
+        "entity a kind place as \"甲\"\nentity b kind place as \"乙\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({ "path": path })),
+        req(
+            2,
+            "relation.type.create",
+            json!({
+                "project_id": "p1",
+                "relation_type": {
+                    "id": "knows",
+                    "display": "认识",
+                    "inverse_display": "被认识",
+                    "direction": "directed",
+                    "from_kind": "entity",
+                    "to_kind": "entity"
+                }
+            }),
+        ),
+        req(
+            3,
+            "relation.create",
+            json!({
+                "project_id": "p1",
+                "relation": {
+                    "id": "a_knows_b",
+                    "relation_type": "knows",
+                    "from": {"kind": "entity", "id": "a"},
+                    "to": {"kind": "entity", "id": "b"},
+                    "description": "甲认识乙"
+                }
+            }),
+        ),
+        req(
+            4,
+            "relation.update",
+            json!({
+                "project_id": "p1",
+                "relation": {"id": "a_knows_b", "description": "甲已经认识乙"}
+            }),
+        ),
+        req(
+            5,
+            "relation.query",
+            json!({"project_id":"p1","target":"entity:a"}),
+        ),
+        req(
+            6,
+            "relation.delete",
+            json!({"project_id":"p1","id":"a_knows_b"}),
+        ),
+        req(
+            7,
+            "relation.type.delete",
+            json!({"project_id":"p1","id":"knows"}),
+        ),
+        req(8, "shutdown", json!({})),
+    ]);
+    for response in [
+        &responses[1],
+        &responses[2],
+        &responses[3],
+        &responses[5],
+        &responses[6],
+    ] {
+        assert_eq!(response["result"]["ok"], true, "{responses:?}");
+        assert!(response["result"]["baseline"].is_string(), "{responses:?}");
+    }
+    assert_eq!(responses[2]["result"]["relation"]["id"], "a_knows_b");
+    assert_eq!(
+        responses[3]["result"]["relation"]["description"],
+        "甲已经认识乙"
+    );
+    assert_eq!(responses[4]["result"]["edges"].as_array().unwrap().len(), 1);
+    assert_eq!(responses[5]["result"]["operation"], "delete");
+    assert_eq!(responses[6]["result"]["operation"], "delete");
+    let source = std::fs::read_to_string(root.join("world.wl")).unwrap();
+    assert!(!source.contains("relation_def"), "{source}");
+    assert!(!source.contains("relation_type"), "{source}");
+}
+
+#[test]
+fn project_relation_write_rejects_stale_content_baseline_without_writing() {
+    let root = temp_relation_project(
+        "stale",
+        "entity a kind place as \"甲\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let baseline = worldline_core::project::Project::open(&root)
+        .unwrap()
+        .content_baseline();
+    let source_before = std::fs::read(root.join("world.wl")).unwrap();
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({"path":path})),
+        req(
+            2,
+            "relation.type.create",
+            json!({
+                "project_id":"p1",
+                "baseline":format!("{baseline}-stale"),
+                "relation_type":{"id":"knows","display":"认识"}
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], false, "{responses:?}");
+    assert_eq!(responses[1]["result"]["error"]["code"], "STALE_BASELINE");
+    assert_eq!(std::fs::read(root.join("world.wl")).unwrap(), source_before);
+}
+
+#[test]
+fn project_relation_promotion_preview_then_commit_is_explicit() {
+    let root = temp_relation_project(
+        "promotion",
+        "character a\n  relation b as \"旧关系\"\ncharacter b\nrelation_type knows as \"认识\"\n  inverse \"被认识\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let legacy = json!({
+        "source": {"kind":"character","id":"a"},
+        "target": {"kind":"character","id":"b"},
+        "label": "旧关系",
+        "occurrence": 1
+    });
+    let relation = json!({
+        "id": "promoted",
+        "relation_type": "knows",
+        "description": "旧关系",
+        "source_note": "由旧人物关系提升",
+        "scope_refs": [{"kind":"character","id":"b"}],
+        "properties": {"weight": 3, "active": true}
+    });
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({ "path": path })),
+        req(
+            2,
+            "relation.promote.preview",
+            json!({"project_id":"p1","legacy":legacy,"relation":relation}),
+        ),
+        req(
+            3,
+            "relation.promote.commit",
+            json!({"project_id":"p1","legacy":legacy,"relation":relation}),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[1]["result"]["ok"], true, "{responses:?}");
+    assert_eq!(responses[1]["result"]["operation"], "preview");
+    assert_eq!(
+        responses[1]["result"]["preview"]["fingerprint_changed"],
+        true
+    );
+    assert!(responses[1]["result"]["preview"]["content_baseline"].is_string());
+    assert!(responses[1]["result"]["preview"]["draft"].is_object());
+    assert_eq!(
+        responses[1]["result"]["preview"]["draft"]["scope_refs"],
+        json!([{"kind":"character","id":"b"}])
+    );
+    assert_eq!(
+        responses[1]["result"]["preview"]["draft"]["properties"],
+        json!([["active", true], ["weight", 3.0]])
+    );
+    assert_eq!(responses[2]["result"]["ok"], true, "{responses:?}");
+    assert_eq!(responses[2]["result"]["operation"], "commit");
+    let source = std::fs::read_to_string(root.join("world.wl")).unwrap();
+    assert!(source.contains("relation_def promoted"), "{source}");
+    assert!(!source.contains("relation b as"), "{source}");
+    assert!(source.contains("scope character b"), "{source}");
+    assert!(source.contains("property active = true"), "{source}");
+    assert!(source.contains("property weight = 3"), "{source}");
+}
+
+#[test]
+fn project_relation_promotion_commit_accepts_core_preview_payload() {
+    let root = temp_relation_project(
+        "promotion-payload",
+        "character a\n  relation b as \"旧关系\"\ncharacter b\nrelation_type knows as \"认识\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let (_, first) = exchange(&[
+        req(1, "project.open", json!({ "path": path.clone() })),
+        req(
+            2,
+            "relation.promote.preview",
+            json!({
+                "project_id":"p1",
+                "legacy": {"source":"character:a","target":"character:b","label":"旧关系","occurrence":1},
+                "relation": {"id":"promoted","relation_type":"knows"}
+            }),
+        ),
+    ]);
+    let preview = first[1]["result"]["preview"].clone();
+    let (_, second) = exchange(&[
+        req(
+            1,
+            "relation.promote.commit",
+            json!({"path":path,"preview":preview}),
+        ),
+        req(2, "shutdown", json!({})),
+    ]);
+    assert_eq!(second[0]["result"]["ok"], true, "{second:?}");
+    assert_eq!(second[0]["result"]["operation"], "commit");
 }
 
 #[test]

@@ -277,6 +277,7 @@ fn supported_feature(feature: &str) -> bool {
         feature,
         "presentation.maps.v1"
             | "content.entities.v1"
+            | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
     )

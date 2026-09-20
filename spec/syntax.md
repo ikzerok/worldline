@@ -17,12 +17,19 @@ worldline 是面向协作世界构建与叙事创作的文本优先语言。所�
 
 ```text
 story       := item*
-item        := include | worldDecl | periodDecl | globalDecl | storylineDecl | characterDecl | entityDecl | eventDecl | tagDecl | stateDecl | anchorDef | anchorLink | assetDecl | mark | attach | aliasDecl | 注释 | 空行
+item        := include | worldDecl | periodDecl | globalDecl | storylineDecl | characterDecl | entityDecl | relationTypeDecl | relationDefDecl | eventDecl | tagDecl | stateDecl | anchorDef | anchorLink | assetDecl | mark | attach | aliasDecl | 注释 | 空行
 include     := 'include' STRING
 globalDecl  := ('let' | 'const') IDENT '=' expr
 storylineDecl := 'storyline' IDENT ('as' STRING)? block(event*)
 characterDecl := 'character' IDENT ('as' STRING)? block(property* relation*)?
 entityDecl   := 'entity' IDENT 'kind' IDENT ('as' STRING)? block(description? property*)?
+relationTypeDecl := 'relation_type' IDENT ('as' STRING)? block(inverse? direction? endpointConstraint*)?
+relationDefDecl := 'relation_def' IDENT 'type' IDENT 'from' targetKind IDENT 'to' targetKind IDENT block(description? sourceNote? scopeRef* property*)?
+inverse       := 'inverse' STRING
+direction     := 'direction' ('directed' | 'undirected')
+endpointConstraint := ('from' | 'from_kind' | 'to' | 'to_kind') targetKind
+sourceNote    := 'source_note' STRING
+scopeRef      := ('scope' | 'scope_ref') targetKind IDENT
 worldDecl   := 'world' IDENT ('as' STRING)? block(description? property*)?
 periodDecl  := 'period' IDENT ('as' STRING)? ('within' IDENT)?
 tagDecl     := 'tag' IDENT ('as' STRING)? block(description? property*)?
@@ -33,7 +40,7 @@ anchorLink  := 'anchor_link' IDENT ('character' | 'event' | 'state' | 'entity' |
 assetDecl   := 'asset' IDENT ('image' | 'audio' | 'file') STRING ('as' STRING)?
 mark        := 'mark' targetKind (qualifiedName | STRING) 'with' IDENT (',' IDENT)*
 attach      := 'attach' targetKind (qualifiedName | STRING) 'with' IDENT (',' IDENT)*
-targetKind  := 'anchor' | 'state' | 'event' | 'scene' | 'character' | 'entity' | 'world' | 'storyline' | 'period' | 'variable' | 'tag' | 'asset' | 'file'
+targetKind  := 'anchor' | 'state' | 'event' | 'scene' | 'character' | 'entity' | 'relation' | 'world' | 'storyline' | 'period' | 'variable' | 'tag' | 'asset' | 'file'
 aliasDecl   := 'alias' targetKind TARGET 'as' STRING
 description := 'description' STRING
 property    := 'property' IDENT '=' (STRING | NUMBER | BOOL)
@@ -234,7 +241,41 @@ primary := NUMBER | STRING | 'true' | 'false' | IDENT
 
 `event scene choice once if else let const set include and or not true false END storyline character entity world period tag asset mark attach state become anchor_def anchor_link description property relation effect grant revoke meet part anchor`
 
-其中 `entity` 仅是语言 1.10 的关键字；1.9 的词法和解析入口不为它保留关键字。
+其中 `entity`、`relation_type` 与 `relation_def` 仅是语言 1.10 的关键字；1.9 的词法和解析入口不为它们保留关键字。
+
+### 1.2 语言 1.10 的独立关系
+
+```wl
+relation_type maintains as "维护"
+  inverse "由其维护"
+  direction directed
+  from entity
+  to entity
+
+relation_def rel_keepers_lighthouse type maintains from entity keepers to entity lighthouse
+  description "守灯会负责灯塔的日常维护。"
+  source_note "共同设定记录第3项"
+  scope period modern
+  property confidence = "作者明确"
+```
+
+`relation_type` 的 `display` 是正向显示名；`inverse` 只在从 `to` 端读取时
+作为显示投影，不会另存一条反向关系。省略 `direction` 默认为 `directed`；
+`undirected` 允许从两端读取同一条边，但仍只保存一个 `relation_def`。
+`from`/`to` 约束是可选的单个 `TargetRef.kind`，用于检查关系定义两端，
+不是新的对象身份。
+
+`relation_def` 的 ID、类型 ID、from/to 端点均为稳定引用。端点使用完整的
+`targetKind IDENT`，允许 `character`、`entity`、`relation`、`tag`、`world`、
+`event`、`scene`、`storyline`、`period`、`state`、`anchor`、`asset`、`variable`、
+`file` 等已存在对象类型；关系实例可引用另一个已声明或同批声明的关系对象。
+文件端点及 scope 写作 `file "相对路径.wl"`，相对当前声明所在源文件解析，
+必须命中工程已索引的源码文件；不会自动读取、引入或允许工作区外文件。
+Catalog/Project API 使用文件的规范路径身份，结构写入转换为相对路径并加引号。
+`description`、`source_note`、`scope` 和字面量
+`property` 都是作者资料，不执行事件，也不参与运行指纹；scope 在当前版本
+只保存明确的对象引用，不展开时期或推导历史范围。未知类型、端点、scope、
+重复 ID 和不满足端点约束分别产生关系诊断，编译产物仍保留可查询的尽力结果。
 
 `END` 仅在 `->` 之后有意义。文本行不得以上述关键字开头(需转义)。
 

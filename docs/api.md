@@ -14,6 +14,12 @@
 | 执行关系 | `wl graph DIR --json` | 节点、边、条件上下文、目标准入 |
 | 时间偏序 | `wl timeline DIR --json` | 时段、事件、follows 与图 |
 | 作者资料查询 | `wl catalog DIR --json` | 人物、1.10 实体、标签、状态、锚点、附件、别名、链接 |
+| 工作区检查 | `wl workspace check DIR --json` | 分域诊断、语言版本、内容基线和统计；只读诊断时退出码为 1 |
+| 地图资料查询 | `wl maps list DIR --json` | core MapIndex、地图文档和完整 TargetRef 的 placement 反查 |
+| 语义关系查询 | `wl relations DIR --target KIND:ID --offset 0 --depth 1 --json` | core 局部关系索引；默认偏移 0、深度 1，最多深度 2，带截断续查字段 |
+| 关系类型编辑 | `wl relation-type create\|update\|delete DIR ... --json` | 1.10 关系类型资料；ID 稳定，删除由 core 检查引用 |
+| 关系实例编辑 | `wl relation create\|update\|delete DIR ... --json` | 1.10 独立关系资料；写入带内容基线和工作区诊断 |
+| 旧关系提升 | `wl relations promote preview\|commit DIR ... --json` | 临时旧人物关系句柄先预览，再显式提交为独立关系 |
 | 作者资料编辑 | `wl entity create\|update\|delete DIR ... --json` | 1.10 实体的创建、资料更新与安全删除 |
 | 终端演练 | `wl play DIR` | 人类选择序号从 1 起 |
 | 脚本演练 | `wl play DIR --json` | 输入使用输出给出的 index，从 0 起 |
@@ -21,6 +27,37 @@
 | Rust 结构编辑 | `Project::edit` 与各 draft 方法 | 全工程校验，失败回滚 |
 
 JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不意味着输出无法解析。每个子命令的 JSON 形状不同，完整方法、字段、错误码和示例见 [agent-protocol.md](../spec/agent-protocol.md)。CLI 当前没有通用 `--help` 子命令；无参数会输出用法并返回 2。
+
+`workspace check`、`maps list` 和不带 `promote` 的 `relations` 查询都是只读操作，返回 `schema_version`、
+`language_version`、`workspace_revision`、`diagnostics`、`workspace_diagnostics`、
+`read_only`、`truncated` 与 `continuation`。工作区诊断不会混入故事编译诊断；查询可以在
+`read_only: true` 时继续返回资料。`workspace_revision` 是 `Project::content_baseline()`
+的机器投影，不能拿来替代保存冲突检查或运行 fingerprint。关系查询的 `edges`、端点、
+来源和稳定 ID 由 `Catalog::query_relations` 直接提供，CLI/agent 不另建解析器或图索引。
+
+`wl-agent` 对应只读方法为 `workspace.check`、`maps.list` 与 `relation.query`。
+前两者接受 `path` 或已打开工程的 `project_id`，每次刷新当前 Project，分别返回
+`stats` 或 core MapIndex 的 `maps`/`references`；外部刷新冲突会附在 `conflicts`，
+仍返回可读资料和最新 `workspace_revision`。`relation.query` 接受 `story_id` 或
+`project_id`，`target` 可写成 `{ "kind": "entity", "id": "keepers" }` 或
+`"entity:keepers"`，并支持非负 `offset`、`depth`、`direction` 和 `relation_type`。
+字符串 TargetRef 按第一个冒号分隔；`kind` 为 `file` 时保留 ID 余串中的冒号，
+因此 Windows 规范路径可写成 `file:C:/作品/章节/第一章.wl`。
+续查必须复用同一筛选和未变化的 `workspace_revision`；基线变化后从 `offset: 0` 重新查询。
+
+作者资料写入使用 `relation.type.create/update/delete`、`relation.create/update/delete`
+以及 `relation.promote.preview/commit`。它们接受 `project_id` 或一次性 `path`，每次
+先刷新工作区再检查 `baseline`；成功返回新的 `baseline`，外部变更、只读诊断、编译
+错误和引用影响都会在 result 中返回 `ok:false`。可写工程需在 1.10 清单中声明
+`content.relations.v1`；缺少能力时 core 拒绝结构写入并保持零改动。关系提升的 `legacy` 只包含
+`source`、`target`、`label`、`occurrence`，对应 core 的临时 `LegacyRelationHandle`；
+preview 不写盘，`relation` 可带 `scope_refs` 与 `properties`，commit 会再次验证该句柄、
+`content_baseline` 和完整 draft。运行 fingerprint 只用于兼容预览差异检查。
+CLI 的 `relation-type update` 可用 `--clear-inverse-display`、`--clear-from-kind`、
+`--clear-to-kind` 清空对应可选字段；`relation update` 可用 `--clear-source-note`、
+`--clear-scope`、`--clear-properties` 清空来源、作用域和属性。清空标记只接受 update，
+不能与同一字段的设置参数同时使用；create 会明确拒绝这些标记。JSON-RPC 更新则用
+`null`、空数组或空对象表达相同的清空意图。
 
 ## 编译与文档缓冲
 

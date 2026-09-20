@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct TargetRef {
     pub kind: String,
     pub id: String,
@@ -33,11 +33,13 @@ pub const TARGET_KINDS: &[&str] = &[
     "tag",
     "asset",
     "file",
+    "relation",
 ];
 
 pub fn is_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
     TARGET_KINDS.contains(&kind)
-        && (kind != "entity" || options.language_version.supports_entities())
+        && ((kind != "entity" && kind != "relation")
+            || options.language_version.supports_relations())
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +137,28 @@ pub struct Catalog {
     pub marks: Vec<CatalogLink>,
     pub attachments: Vec<CatalogLink>,
     pub references: Vec<ReferenceInfo>,
+    pub relation_types: BTreeMap<String, crate::relations::RelationTypeInfo>,
+    pub relations: BTreeMap<String, crate::relations::SemanticRelationInfo>,
+    pub legacy_relations: Vec<crate::relations::LegacyRelationInfo>,
+    /// 对象到关系 ID 的稳定邻接索引；查询只从这里展开局部边。
+    #[serde(serialize_with = "serialize_relation_index")]
+    pub relation_index: BTreeMap<TargetRef, Vec<String>>,
+}
+
+fn serialize_relation_index<S: serde::Serializer>(
+    index: &BTreeMap<TargetRef, Vec<String>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    #[derive(Serialize)]
+    struct Entry<'a> {
+        target: &'a TargetRef,
+        relations: &'a [String],
+    }
+    serializer.collect_seq(
+        index
+            .iter()
+            .map(|(target, relations)| Entry { target, relations }),
+    )
 }
 
 impl Catalog {
@@ -458,6 +482,10 @@ pub(crate) fn analyze(
     }
     crate::anchors::collect_declarations(program, &mut catalog, diags);
     crate::states::collect_declarations(program, &mut catalog, diags);
+    // 关系对象必须先于 mark/attach、正文链接和地图引用进入统一目录；否则
+    // 这些消费者会把合法的 relation TargetRef 误报为未知对象。关系端点和
+    // scope 也可能指向 anchor/state，因此要在它们的声明进入目录后收集。
+    crate::relations::collect(program, &mut catalog, diags);
     crate::anchors::collect_links(program, &mut catalog, diags);
     for decl in &program.catalog {
         let (link, attach) = match decl {

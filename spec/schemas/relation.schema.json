@@ -2,9 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": true,
-  "title": "SemanticRelation query DTO v1 — proposed normalized representation",
+  "title": "SemanticRelationInfo — language 1.10 catalog entry",
   "required": [
-    "schema_version",
     "id",
     "relation_type",
     "from_ref",
@@ -18,11 +17,11 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
     "relation_type": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
     },
     "from_ref": {
       "type": "object",
@@ -46,7 +45,8 @@
             "asset",
             "variable",
             "file",
-            "entity"
+            "entity",
+            "relation"
           ]
         },
         "id": {
@@ -78,7 +78,8 @@
             "asset",
             "variable",
             "file",
-            "entity"
+            "entity",
+            "relation"
           ]
         },
         "id": {
@@ -92,7 +93,10 @@
       "type": "string"
     },
     "source_note": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "scope_refs": {
       "type": "array",
@@ -118,7 +122,8 @@
               "asset",
               "variable",
               "file",
-              "entity"
+              "entity",
+              "relation"
             ]
           },
           "id": {
@@ -131,6 +136,24 @@
     },
     "extensions": {
       "type": "object"
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "file": {
+      "type": "string"
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1
     }
-  }
+  },
+  "description": "独立关系目录对象。schema_version 由查询外层携带；旧设计样例中的逐项版本字段继续接受。"
 }

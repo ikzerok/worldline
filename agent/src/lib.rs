@@ -9,10 +9,13 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 use worldline_core::ast::PropertyValue;
 use worldline_core::authoring::EntityDraft;
+use worldline_core::catalog::TargetRef;
 use worldline_core::project::Project;
 use worldline_core::{
     compile_path_with_options, compile_source, compile_source_with_options, Analysis,
-    CompileOptions, CompileResult, Diagnostic, LanguageVersion, Program,
+    CompileOptions, CompileResult, Diagnostic, LanguageVersion, LegacyRelationHandle, Program,
+    RelationDirection, RelationDraft, RelationPromotionPreview, RelationQueryDirection,
+    RelationQueryOptions, RelationTypeDraft,
 };
 use worldline_runtime::Story;
 
@@ -70,6 +73,14 @@ struct ProjectUnit {
 struct CompileInput {
     result: CompileResult,
     workspace_diagnostics: Vec<Diagnostic>,
+}
+
+struct WorkspaceSnapshot {
+    result: CompileResult,
+    map_index: worldline_core::MapIndex,
+    workspace_diagnostics: Vec<Diagnostic>,
+    baseline: String,
+    conflicts: Vec<PathBuf>,
 }
 
 impl CompileInput {
@@ -160,7 +171,7 @@ impl Server {
                     "stats": unit.analysis.stats,
                     "world": unit.analysis.world,
                     "timeline": unit.analysis.timeline,
-                    "catalog": unit.analysis.catalog,
+                    "catalog": &unit.analysis.catalog,
                     "language_version": unit.language_version.as_str(),
                 }))
             }
@@ -246,6 +257,37 @@ impl Server {
             }
             "project.open" => self.project_open(params),
             "project.analyze" => self.project_analyze(params),
+            "workspace.check" => self.workspace_check(params),
+            "maps.list" => self.maps_list(params),
+            "relation.query" | "relations.query" => self.relation_query(params),
+            "relation.type.create" | "relation_type.create" => {
+                self.relation_type_mutation(params, RelationTypeOperation::Create)
+            }
+            "relation.type.update" | "relation_type.update" => {
+                self.relation_type_mutation(params, RelationTypeOperation::Update)
+            }
+            "relation.type.delete" | "relation_type.delete" => {
+                self.relation_type_mutation(params, RelationTypeOperation::Delete)
+            }
+            "relation.create" | "relations.create" => {
+                self.relation_mutation(params, RelationOperation::Create)
+            }
+            "relation.update" | "relations.update" => {
+                self.relation_mutation(params, RelationOperation::Update)
+            }
+            "relation.delete" | "relations.delete" => {
+                self.relation_mutation(params, RelationOperation::Delete)
+            }
+            "relation.promote.preview"
+            | "relation.promotion.preview"
+            | "relations.promote.preview" => {
+                self.relation_promotion(params, PromotionOperation::Preview)
+            }
+            "relation.promote.commit"
+            | "relation.promotion.commit"
+            | "relations.promote.commit" => {
+                self.relation_promotion(params, PromotionOperation::Commit)
+            }
             "entity.create" => self.entity_mutation(params, EntityOperation::Create),
             "entity.update" => self.entity_mutation(params, EntityOperation::Update),
             "entity.delete" => self.entity_mutation(params, EntityOperation::Delete),
@@ -364,6 +406,179 @@ impl Server {
             .insert(session_id.clone(), Session { story_id, story });
         Ok(json!({ "session_id": session_id, "state": state }))
     }
+
+    fn relation_query(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        let target = relation_target(params)?;
+        let options = relation_query_options(params)?;
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            let conflicts = match unit.project.refresh() {
+                Ok(conflicts) => conflicts,
+                Err(error) => {
+                    let result = unit.project.compile();
+                    return Ok(project_failure_with_workspace(
+                        "IO_ERROR",
+                        format!("刷新工程失败：{error}"),
+                        Some(&result.diagnostics),
+                        Some(unit.project.content_baseline()),
+                        Some(result.options.language_version.as_str()),
+                        unit.project.authoring_diagnostics(),
+                    ));
+                }
+            };
+            let result = unit.project.compile();
+            if result.has_errors() {
+                return Ok(relation_compile_failure(
+                    &result,
+                    unit.project.authoring_diagnostics(),
+                    Some(unit.project.content_baseline()),
+                ));
+            }
+            let baseline = unit.project.content_baseline();
+            let mut response = relation_query_value(
+                &result.analysis,
+                &result.diagnostics,
+                unit.project.authoring_diagnostics(),
+                result.options.language_version,
+                Some(&baseline),
+                &target,
+                options,
+            )?;
+            if !conflicts.is_empty() {
+                response["conflicts"] = json!(conflicts);
+            }
+            return Ok(response);
+        }
+        let story_id = param_str(params, "story_id")?;
+        let unit = self.story(story_id)?;
+        relation_query_value(
+            unit.analysis,
+            &[],
+            &[],
+            unit.language_version,
+            None,
+            &target,
+            options,
+        )
+    }
+}
+
+fn relation_target(params: &Value) -> Result<TargetRef, ProtoError> {
+    let value = params
+        .get("target")
+        .ok_or_else(|| ProtoError::new(-32602, "关系查询需要 `target`"))?;
+    relation_target_value(value, "target")
+}
+
+fn relation_query_options(params: &Value) -> Result<RelationQueryOptions, ProtoError> {
+    let offset = match params.get("offset") {
+        None => 0,
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| ProtoError::new(-32602, "`offset` 必须是非负整数"))?
+            .try_into()
+            .map_err(|_| ProtoError::new(-32602, "`offset` 超出平台整数范围"))?,
+    };
+    let depth = match params.get("depth") {
+        None => 1,
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| ProtoError::new(-32602, "`depth` 必须是整数 1 或 2"))?
+            .try_into()
+            .map_err(|_| ProtoError::new(-32602, "`depth` 必须是整数 1 或 2"))?,
+    };
+    if !matches!(depth, 1 | 2) {
+        return Err(ProtoError::new(-32602, "`depth` 只能是 1 或 2"));
+    }
+    let direction = match params.get("direction").and_then(Value::as_str) {
+        None | Some("both") => RelationQueryDirection::Both,
+        Some("outgoing") => RelationQueryDirection::Outgoing,
+        Some("incoming") => RelationQueryDirection::Incoming,
+        Some(value) => {
+            return Err(ProtoError::new(
+                -32602,
+                format!("未知关系方向 `{value}`(可用: outgoing / incoming / both)"),
+            ))
+        }
+    };
+    let relation_type = params
+        .get("relation_type")
+        .or_else(|| params.get("type"))
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| ProtoError::new(-32602, "`relation_type` 必须是字符串"))
+        })
+        .transpose()?;
+    Ok(RelationQueryOptions {
+        offset,
+        depth,
+        relation_type,
+        direction,
+        ..RelationQueryOptions::default()
+    })
+}
+
+fn relation_compile_failure(
+    result: &CompileResult,
+    workspace_diagnostics: &[Diagnostic],
+    baseline: Option<String>,
+) -> Value {
+    json!({
+        "ok": false,
+        "schema_version": 1,
+        "diagnostics": result.diagnostics,
+        "workspace_diagnostics": workspace_diagnostics,
+        "read_only": !workspace_diagnostics.is_empty(),
+        "language_version": result.options.language_version.as_str(),
+        "workspace_revision": baseline,
+        "truncated": false,
+        "continuation": Value::Null,
+    })
+}
+
+fn relation_query_value(
+    analysis: &Analysis,
+    diagnostics: &[Diagnostic],
+    workspace_diagnostics: &[Diagnostic],
+    language_version: LanguageVersion,
+    baseline: Option<&str>,
+    target: &TargetRef,
+    options: RelationQueryOptions,
+) -> Result<Value, ProtoError> {
+    if analysis.catalog.object(target).is_none() {
+        return Err(ProtoError::new(
+            -32602,
+            format!("关系查询目标不存在 {}:{}", target.kind, target.id),
+        ));
+    }
+    if let Some(relation_type) = options.relation_type.as_deref() {
+        if !analysis.catalog.relation_types.contains_key(relation_type) {
+            return Err(ProtoError::new(
+                -32602,
+                format!("未知关系类型 `{relation_type}`"),
+            ));
+        }
+    }
+    let query = analysis.catalog.query_relations(target, options);
+    let mut payload = serde_json::to_value(query)
+        .expect("关系查询结果可序列化")
+        .as_object()
+        .cloned()
+        .expect("关系查询结果必须是对象");
+    payload.insert("ok".into(), json!(true));
+    payload.insert("language_version".into(), json!(language_version.as_str()));
+    payload.insert(
+        "workspace_revision".into(),
+        baseline.map_or(Value::Null, |value| json!(value)),
+    );
+    payload.insert("diagnostics".into(), json!(diagnostics));
+    payload.insert("workspace_diagnostics".into(), json!(workspace_diagnostics));
+    payload.insert("read_only".into(), json!(!workspace_diagnostics.is_empty()));
+    Ok(Value::Object(payload))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,6 +586,26 @@ enum EntityOperation {
     Create,
     Update,
     Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelationTypeOperation {
+    Create,
+    Update,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelationOperation {
+    Create,
+    Update,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromotionOperation {
+    Preview,
+    Commit,
 }
 
 fn compile_options(params: &Value) -> Result<CompileOptions, ProtoError> {
@@ -468,8 +703,8 @@ impl Server {
             .projects
             .get_mut(id)
             .ok_or_else(|| ProtoError::new(-32602, format!("未知 project_id `{id}`")))?;
-        let conflicts = match unit.project.refresh() {
-            Ok(conflicts) => conflicts,
+        let snapshot = match refreshed_workspace(&mut unit.project) {
+            Ok(snapshot) => snapshot,
             Err(error) => {
                 let result = unit.project.compile();
                 return Ok(project_failure_with_workspace(
@@ -482,18 +717,66 @@ impl Server {
                 ));
             }
         };
-        let mut project = unit.project.clone();
-        let result = project.compile();
         let mut response = project_view(
-            &result,
+            &snapshot.result,
             None,
-            unit.project.content_baseline(),
-            unit.project.authoring_diagnostics(),
+            snapshot.baseline,
+            &snapshot.workspace_diagnostics,
         );
-        if !conflicts.is_empty() {
-            response["conflicts"] = json!(conflicts);
+        response["maps"] = json!(&snapshot.map_index.maps);
+        response["references"] = json!(map_references(&snapshot.map_index));
+        if !snapshot.conflicts.is_empty() {
+            response["conflicts"] = json!(snapshot.conflicts);
         }
         Ok(response)
+    }
+
+    fn workspace_check(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            return Ok(workspace_check_project(&mut unit.project));
+        }
+        let path = param_str(params, "path")?;
+        let mut project = match Project::open(Path::new(path)) {
+            Ok(project) => project,
+            Err(error) => {
+                return Ok(query_failure(
+                    "IO_ERROR",
+                    error.to_string(),
+                    None,
+                    None,
+                    None,
+                    &[],
+                ))
+            }
+        };
+        Ok(workspace_check_project(&mut project))
+    }
+
+    fn maps_list(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            return Ok(maps_list_project(&mut unit.project));
+        }
+        let path = param_str(params, "path")?;
+        let mut project = match Project::open(Path::new(path)) {
+            Ok(project) => project,
+            Err(error) => {
+                return Ok(query_failure(
+                    "IO_ERROR",
+                    error.to_string(),
+                    None,
+                    None,
+                    None,
+                    &[],
+                ))
+            }
+        };
+        Ok(maps_list_project(&mut project))
     }
 
     fn entity_mutation(
@@ -532,6 +815,197 @@ impl Server {
         };
         mutate_entity_project(&mut project, &entry, params, operation, expected)
     }
+
+    fn relation_type_mutation(
+        &mut self,
+        params: &Value,
+        operation: RelationTypeOperation,
+    ) -> Result<Value, ProtoError> {
+        let expected = baseline_param(params)?;
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            return mutate_relation_type_project(&mut unit.project, params, operation, expected);
+        }
+        let path = param_str(params, "path")?;
+        let mut project = match Project::open(Path::new(path)) {
+            Ok(project) => project,
+            Err(error) => return Ok(project_failure("IO_ERROR", error, None, None, None)),
+        };
+        mutate_relation_type_project(&mut project, params, operation, expected)
+    }
+
+    fn relation_mutation(
+        &mut self,
+        params: &Value,
+        operation: RelationOperation,
+    ) -> Result<Value, ProtoError> {
+        let expected = baseline_param(params)?;
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            return mutate_relation_project(&mut unit.project, params, operation, expected);
+        }
+        let path = param_str(params, "path")?;
+        let mut project = match Project::open(Path::new(path)) {
+            Ok(project) => project,
+            Err(error) => return Ok(project_failure("IO_ERROR", error, None, None, None)),
+        };
+        mutate_relation_project(&mut project, params, operation, expected)
+    }
+
+    fn relation_promotion(
+        &mut self,
+        params: &Value,
+        operation: PromotionOperation,
+    ) -> Result<Value, ProtoError> {
+        let expected = baseline_param(params)?;
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            return promote_relation_project(&mut unit.project, params, operation, expected);
+        }
+        let path = param_str(params, "path")?;
+        let mut project = match Project::open(Path::new(path)) {
+            Ok(project) => project,
+            Err(error) => return Ok(project_failure("IO_ERROR", error, None, None, None)),
+        };
+        promote_relation_project(&mut project, params, operation, expected)
+    }
+}
+
+fn refreshed_workspace(project: &mut Project) -> Result<WorkspaceSnapshot, String> {
+    let conflicts = project.refresh().map_err(|error| error.to_string())?;
+    let result = project.compile();
+    let map_index = project.map_index();
+    let mut workspace_diagnostics = project.authoring_diagnostics().to_vec();
+    for diagnostic in &map_index.diagnostics {
+        if !workspace_diagnostics.iter().any(|existing| {
+            existing.severity == diagnostic.severity
+                && existing.code == diagnostic.code
+                && existing.message == diagnostic.message
+                && existing.file == diagnostic.file
+                && existing.span == diagnostic.span
+        }) {
+            workspace_diagnostics.push(diagnostic.clone());
+        }
+    }
+    Ok(WorkspaceSnapshot {
+        baseline: project.content_baseline(),
+        result,
+        map_index,
+        workspace_diagnostics,
+        conflicts,
+    })
+}
+
+fn query_payload_base(snapshot: &WorkspaceSnapshot) -> serde_json::Map<String, Value> {
+    let read_only = !snapshot.workspace_diagnostics.is_empty();
+    serde_json::Map::from_iter([
+        ("schema_version".into(), json!(1)),
+        (
+            "language_version".into(),
+            json!(snapshot.result.options.language_version.as_str()),
+        ),
+        ("workspace_revision".into(), json!(snapshot.baseline)),
+        ("diagnostics".into(), json!(snapshot.result.diagnostics)),
+        (
+            "workspace_diagnostics".into(),
+            json!(snapshot.workspace_diagnostics),
+        ),
+        ("read_only".into(), json!(read_only)),
+        ("truncated".into(), json!(false)),
+        ("continuation".into(), Value::Null),
+    ])
+}
+
+fn query_failure(
+    code: &str,
+    message: String,
+    diagnostics: Option<&Vec<Diagnostic>>,
+    baseline: Option<String>,
+    language_version: Option<&str>,
+    workspace_diagnostics: &[Diagnostic],
+) -> Value {
+    json!({
+        "ok": false,
+        "schema_version": 1,
+        "error": {"code": code, "message": message},
+        "language_version": language_version,
+        "workspace_revision": baseline,
+        "diagnostics": diagnostics.cloned().unwrap_or_default(),
+        "workspace_diagnostics": workspace_diagnostics,
+        "read_only": !workspace_diagnostics.is_empty(),
+        "truncated": false,
+        "continuation": Value::Null,
+    })
+}
+
+fn map_references(index: &worldline_core::MapIndex) -> Vec<Value> {
+    index
+        .placements_by_target
+        .iter()
+        .map(|(target, placements)| json!({"target": target, "placements": placements}))
+        .collect()
+}
+
+fn workspace_check_project(project: &mut Project) -> Value {
+    let snapshot = match refreshed_workspace(project) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let result = project.compile();
+            return query_failure(
+                "IO_ERROR",
+                format!("刷新工程失败：{error}"),
+                Some(&result.diagnostics),
+                Some(project.content_baseline()),
+                Some(result.options.language_version.as_str()),
+                project.authoring_diagnostics(),
+            );
+        }
+    };
+    let ok = !snapshot.result.has_errors();
+    let mut payload = query_payload_base(&snapshot);
+    payload.insert("ok".into(), json!(ok));
+    payload.insert("stats".into(), json!(snapshot.result.analysis.stats));
+    if !snapshot.conflicts.is_empty() {
+        payload.insert("conflicts".into(), json!(snapshot.conflicts));
+    }
+    Value::Object(payload)
+}
+
+fn maps_list_project(project: &mut Project) -> Value {
+    let snapshot = match refreshed_workspace(project) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let result = project.compile();
+            let mut response = query_failure(
+                "IO_ERROR",
+                format!("刷新工程失败：{error}"),
+                Some(&result.diagnostics),
+                Some(project.content_baseline()),
+                Some(result.options.language_version.as_str()),
+                project.authoring_diagnostics(),
+            );
+            response["maps"] = json!({});
+            response["references"] = json!([]);
+            return response;
+        }
+    };
+    let mut payload = query_payload_base(&snapshot);
+    payload.insert("ok".into(), json!(!snapshot.result.has_errors()));
+    payload.insert("maps".into(), json!(&snapshot.map_index.maps));
+    payload.insert(
+        "references".into(),
+        json!(map_references(&snapshot.map_index)),
+    );
+    if !snapshot.conflicts.is_empty() {
+        payload.insert("conflicts".into(), json!(snapshot.conflicts));
+    }
+    Value::Object(payload)
 }
 
 fn project_view(
@@ -543,7 +1017,7 @@ fn project_view(
     let mut payload = json!({
         "language_version": result.options.language_version.as_str(),
         "baseline": baseline,
-        "catalog": result.analysis.catalog,
+        "catalog": &result.analysis.catalog,
         "diagnostics": result.diagnostics,
         "workspace_diagnostics": workspace_diagnostics,
         "read_only": !workspace_diagnostics.is_empty(),
@@ -582,6 +1056,897 @@ fn project_failure_with_workspace(
         "baseline": baseline,
         "language_version": language_version,
     })
+}
+
+fn baseline_param(params: &Value) -> Result<Option<&str>, ProtoError> {
+    params
+        .get("baseline")
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| ProtoError::new(-32602, "`baseline` 必须是字符串"))
+        })
+        .transpose()
+}
+
+/// 关系写入共享工作区边界:刷新外部文件、检查内容基线、故事诊断、工作区诊断
+/// 和语言版本。所有关系写入入口都在这里之后才调用 core 的 Project 编辑 API。
+fn prepare_relation_project(
+    project: &mut Project,
+    expected: Option<&str>,
+) -> Result<(CompileResult, String, Vec<Diagnostic>), Value> {
+    let conflicts = match project.refresh() {
+        Ok(conflicts) => conflicts,
+        Err(error) => {
+            let result = project.compile();
+            return Err(project_failure_with_workspace(
+                "IO_ERROR",
+                format!("刷新工程失败：{error}"),
+                Some(&result.diagnostics),
+                Some(project.content_baseline()),
+                Some(result.options.language_version.as_str()),
+                project.authoring_diagnostics(),
+            ));
+        }
+    };
+    let workspace_diagnostics = project.authoring_diagnostics().to_vec();
+    let before = project.compile();
+    let baseline = project.content_baseline();
+    if !conflicts.is_empty() {
+        return Err(project_failure_with_workspace(
+            "CONFLICT",
+            format!(
+                "工程存在外部修改冲突，拒绝覆盖：{}",
+                conflicts
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("、")
+            ),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if expected.is_some_and(|value| value != baseline) {
+        return Err(project_failure_with_workspace(
+            "STALE_BASELINE",
+            format!("工程基线已变化，拒绝覆盖；当前基线为 {baseline}"),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if before.has_errors() {
+        return Err(project_failure_with_workspace(
+            "COMPILE_FAILED",
+            "当前工程存在错误诊断，关系编辑未提交".into(),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if !workspace_diagnostics.is_empty() {
+        return Err(project_failure_with_workspace(
+            "READ_ONLY",
+            "工程清单或展示文档包含当前工具不支持的格式，只能只读查看".into(),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if before.options.language_version != LanguageVersion::V1_10
+        || project.language_version_kind() != LanguageVersion::V1_10
+    {
+        return Err(project_failure_with_workspace(
+            "LANGUAGE_VERSION_REQUIRED",
+            "关系编辑要求工程清单明确选择语言版本 1.10".into(),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    Ok((before, baseline, workspace_diagnostics))
+}
+
+fn relation_type_id(
+    params: &Value,
+    operation: RelationTypeOperation,
+) -> Result<String, ProtoError> {
+    let id = params
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            params
+                .get("relation_type")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+        })
+        .ok_or_else(|| ProtoError::new(-32602, "关系类型参数需要字符串 `id`"))?;
+    if id.is_empty() {
+        return Err(ProtoError::new(-32602, "关系类型 `id` 不能为空"));
+    }
+    if operation == RelationTypeOperation::Delete {
+        return Ok(id.to_string());
+    }
+    if params
+        .get("relation_type")
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        return Err(ProtoError::new(-32602, "需要对象参数 `relation_type`"));
+    }
+    Ok(id.to_string())
+}
+
+fn relation_type_draft(
+    params: &Value,
+    existing: Option<&worldline_core::RelationTypeInfo>,
+) -> Result<RelationTypeDraft, ProtoError> {
+    let object = params
+        .get("relation_type")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "需要对象参数 `relation_type`"))?;
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| existing.map(|value| value.id.as_str()))
+        .ok_or_else(|| ProtoError::new(-32602, "关系类型参数需要字符串 `id`"))?;
+    let display = object
+        .get("display")
+        .and_then(Value::as_str)
+        .or_else(|| existing.map(|value| value.display.as_str()))
+        .ok_or_else(|| ProtoError::new(-32602, "关系类型参数需要字符串 `display`"))?;
+    let inverse_display = if object.contains_key("inverse_display") {
+        nullable_string(object.get("inverse_display"), "inverse_display")?
+    } else {
+        existing.and_then(|value| value.inverse_display.clone())
+    };
+    let direction = if let Some(value) = object.get("direction") {
+        relation_direction(value)?
+    } else {
+        existing.map_or(RelationDirection::Directed, |value| value.direction)
+    };
+    let from_kind = if object.contains_key("from_kind") {
+        nullable_string(object.get("from_kind"), "from_kind")?
+    } else {
+        existing.and_then(|value| value.from_kind.clone())
+    };
+    let to_kind = if object.contains_key("to_kind") {
+        nullable_string(object.get("to_kind"), "to_kind")?
+    } else {
+        existing.and_then(|value| value.to_kind.clone())
+    };
+    Ok(RelationTypeDraft {
+        id: id.to_string(),
+        display: display.to_string(),
+        inverse_display,
+        direction,
+        from_kind,
+        to_kind,
+    })
+}
+
+fn nullable_string(value: Option<&Value>, key: &str) -> Result<Option<String>, ProtoError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(ProtoError::new(
+            -32602,
+            format!("`{key}` 必须是字符串或 null"),
+        )),
+    }
+}
+
+fn relation_direction(value: &Value) -> Result<RelationDirection, ProtoError> {
+    match value.as_str() {
+        Some("directed") => Ok(RelationDirection::Directed),
+        Some("undirected") => Ok(RelationDirection::Undirected),
+        Some(value) => Err(ProtoError::new(
+            -32602,
+            format!("未知关系方向 `{value}`(可用: directed / undirected)"),
+        )),
+        None => Err(ProtoError::new(-32602, "`direction` 必须是字符串")),
+    }
+}
+
+fn mutate_relation_type_project(
+    project: &mut Project,
+    params: &Value,
+    operation: RelationTypeOperation,
+    expected: Option<&str>,
+) -> Result<Value, ProtoError> {
+    let (before, baseline, workspace_diagnostics) =
+        match prepare_relation_project(project, expected) {
+            Ok(value) => value,
+            Err(failure) => return Ok(failure),
+        };
+    let id = relation_type_id(params, operation)?;
+    let existing = before.analysis.catalog.relation_types.get(&id).cloned();
+    if operation == RelationTypeOperation::Create && existing.is_some() {
+        return Ok(project_failure_with_workspace(
+            "RELATION_TYPE_EXISTS",
+            format!("关系类型 `{id}` 已存在"),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if matches!(
+        operation,
+        RelationTypeOperation::Update | RelationTypeOperation::Delete
+    ) && existing.is_none()
+    {
+        return Ok(project_failure_with_workspace(
+            "RELATION_TYPE_NOT_FOUND",
+            format!("关系类型 `{id}` 不存在"),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    let snapshot = project.clone();
+    if operation == RelationTypeOperation::Delete {
+        if let Err(error) = project.remove_relation_type(&id) {
+            *project = snapshot;
+            return Ok(project_failure_with_workspace(
+                "EDIT_FAILED",
+                error,
+                Some(&before.diagnostics),
+                Some(baseline),
+                Some(before.options.language_version.as_str()),
+                &workspace_diagnostics,
+            ));
+        }
+    } else {
+        let draft = relation_type_draft(params, existing.as_ref())?;
+        let original = (operation == RelationTypeOperation::Update).then_some(id.as_str());
+        if let Err(error) = project.write_relation_type(original, &draft) {
+            *project = snapshot;
+            return Ok(project_failure_with_workspace(
+                "EDIT_FAILED",
+                error,
+                Some(&before.diagnostics),
+                Some(baseline),
+                Some(before.options.language_version.as_str()),
+                &workspace_diagnostics,
+            ));
+        }
+    }
+    if let Err(error) = project.save() {
+        *project = snapshot;
+        return Ok(project_failure_with_workspace(
+            "CONFLICT",
+            error,
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    let after = project.compile();
+    let relation_type = if operation == RelationTypeOperation::Delete {
+        Value::Null
+    } else {
+        serde_json::to_value(after.analysis.catalog.relation_types.get(&id))
+            .expect("RelationTypeInfo 可序列化")
+    };
+    Ok(relation_type_success(
+        relation_type,
+        operation_name(operation),
+        &after,
+        project.content_baseline(),
+        &workspace_diagnostics,
+    ))
+}
+
+fn relation_id(params: &Value, operation: RelationOperation) -> Result<String, ProtoError> {
+    let id = params
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            params
+                .get("relation")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+        })
+        .ok_or_else(|| ProtoError::new(-32602, "关系参数需要字符串 `id`"))?;
+    if id.is_empty() {
+        return Err(ProtoError::new(-32602, "关系 `id` 不能为空"));
+    }
+    if operation != RelationOperation::Delete
+        && params.get("relation").and_then(Value::as_object).is_none()
+    {
+        return Err(ProtoError::new(-32602, "需要对象参数 `relation`"));
+    }
+    Ok(id.to_string())
+}
+
+fn relation_target_value(value: &Value, key: &str) -> Result<TargetRef, ProtoError> {
+    let (kind, id) = if let Some(text) = value.as_str() {
+        text.split_once(':')
+            .ok_or_else(|| ProtoError::new(-32602, format!("`{key}` 字符串格式必须为 KIND:ID")))?
+    } else {
+        let object = value.as_object().ok_or_else(|| {
+            ProtoError::new(-32602, format!("`{key}` 必须是 KIND:ID 字符串或对象"))
+        })?;
+        (
+            object
+                .get("kind")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ProtoError::new(-32602, format!("`{key}.kind` 必须是字符串")))?,
+            object
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ProtoError::new(-32602, format!("`{key}.id` 必须是字符串")))?,
+        )
+    };
+    let kind = kind.trim();
+    let id = id.trim();
+    if kind.is_empty() || id.is_empty() || (kind != "file" && id.contains(':')) {
+        return Err(ProtoError::new(
+            -32602,
+            format!("`{key}` 必须包含非空 KIND 和 ID"),
+        ));
+    }
+    Ok(TargetRef::new(kind, id))
+}
+
+fn relation_draft(
+    params: &Value,
+    existing: Option<&worldline_core::SemanticRelationInfo>,
+) -> Result<RelationDraft, ProtoError> {
+    let object = params
+        .get("relation")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "需要对象参数 `relation`"))?;
+    relation_draft_object(object, existing, "relation")
+}
+
+fn relation_draft_object(
+    object: &serde_json::Map<String, Value>,
+    existing: Option<&worldline_core::SemanticRelationInfo>,
+    label: &str,
+) -> Result<RelationDraft, ProtoError> {
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .or_else(|| existing.map(|value| value.id.as_str()))
+        .ok_or_else(|| ProtoError::new(-32602, "关系参数需要字符串 `id`"))?;
+    let relation_type = object
+        .get("relation_type")
+        .and_then(Value::as_str)
+        .or_else(|| existing.map(|value| value.relation_type.as_str()))
+        .ok_or_else(|| ProtoError::new(-32602, "关系参数需要字符串 `relation_type`"))?;
+    let from = if let Some(value) = object.get("from") {
+        relation_target_value(value, &format!("{label}.from"))?
+    } else {
+        existing
+            .map(|value| value.from_ref.clone())
+            .ok_or_else(|| ProtoError::new(-32602, "创建关系需要 `from`"))?
+    };
+    let to = if let Some(value) = object.get("to") {
+        relation_target_value(value, &format!("{label}.to"))?
+    } else {
+        existing
+            .map(|value| value.to_ref.clone())
+            .ok_or_else(|| ProtoError::new(-32602, "创建关系需要 `to`"))?
+    };
+    let description = object
+        .get("description")
+        .and_then(Value::as_str)
+        .or_else(|| existing.map(|value| value.description.as_str()))
+        .unwrap_or_default();
+    let source_note = if object.contains_key("source_note") {
+        nullable_string(object.get("source_note"), "source_note")?
+    } else {
+        existing.and_then(|value| value.source_note.clone())
+    };
+    let scope_refs = if let Some(value) = object.get("scope_refs") {
+        let values = value
+            .as_array()
+            .ok_or_else(|| ProtoError::new(-32602, format!("`{label}.scope_refs` 必须是数组")))?;
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                relation_target_value(value, &format!("{label}.scope_refs[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        existing.map_or_else(Vec::new, |value| value.scope_refs.clone())
+    };
+    let properties = if let Some(value) = object.get("properties") {
+        relation_properties_value(value, label)?
+    } else {
+        existing.map_or_else(Vec::new, |value| {
+            value
+                .properties
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+    };
+    Ok(RelationDraft {
+        id: id.to_string(),
+        relation_type: relation_type.to_string(),
+        from,
+        to,
+        description: description.to_string(),
+        source_note,
+        scope_refs,
+        properties,
+    })
+}
+
+fn relation_properties_value(
+    value: &Value,
+    label: &str,
+) -> Result<Vec<(String, PropertyValue)>, ProtoError> {
+    if let Some(values) = value.as_object() {
+        return values
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), property_value(value)?)))
+            .collect::<Result<Vec<_>, ProtoError>>();
+    }
+    let Some(values) = value.as_array() else {
+        return Err(ProtoError::new(
+            -32602,
+            format!("`{label}.properties` 必须是对象或键值数组"),
+        ));
+    };
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let pair = item.as_array().ok_or_else(|| {
+                ProtoError::new(
+                    -32602,
+                    format!("`{label}.properties[{index}]` 必须是 [name, value]"),
+                )
+            })?;
+            if pair.len() != 2 {
+                return Err(ProtoError::new(
+                    -32602,
+                    format!("`{label}.properties[{index}]` 必须是 [name, value]"),
+                ));
+            }
+            let name = pair[0].as_str().ok_or_else(|| {
+                ProtoError::new(
+                    -32602,
+                    format!("`{label}.properties[{index}][0]` 必须是字符串"),
+                )
+            })?;
+            Ok((name.to_string(), property_value(&pair[1])?))
+        })
+        .collect()
+}
+
+fn mutate_relation_project(
+    project: &mut Project,
+    params: &Value,
+    operation: RelationOperation,
+    expected: Option<&str>,
+) -> Result<Value, ProtoError> {
+    let (before, baseline, workspace_diagnostics) =
+        match prepare_relation_project(project, expected) {
+            Ok(value) => value,
+            Err(failure) => return Ok(failure),
+        };
+    let id = relation_id(params, operation)?;
+    let existing = before.analysis.catalog.relations.get(&id).cloned();
+    if operation == RelationOperation::Create && existing.is_some() {
+        return Ok(project_failure_with_workspace(
+            "RELATION_EXISTS",
+            format!("关系 `{id}` 已存在"),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if matches!(
+        operation,
+        RelationOperation::Update | RelationOperation::Delete
+    ) && existing.is_none()
+    {
+        return Ok(project_failure_with_workspace(
+            "RELATION_NOT_FOUND",
+            format!("关系 `{id}` 不存在"),
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    let snapshot = project.clone();
+    if operation == RelationOperation::Delete {
+        if let Err(error) = project.remove_relation(&id) {
+            *project = snapshot;
+            return Ok(project_failure_with_workspace(
+                "EDIT_FAILED",
+                error,
+                Some(&before.diagnostics),
+                Some(baseline),
+                Some(before.options.language_version.as_str()),
+                &workspace_diagnostics,
+            ));
+        }
+    } else {
+        let draft = relation_draft(params, existing.as_ref())?;
+        let original = (operation == RelationOperation::Update).then_some(id.as_str());
+        if let Err(error) = project.write_relation(original, &draft) {
+            *project = snapshot;
+            return Ok(project_failure_with_workspace(
+                "EDIT_FAILED",
+                error,
+                Some(&before.diagnostics),
+                Some(baseline),
+                Some(before.options.language_version.as_str()),
+                &workspace_diagnostics,
+            ));
+        }
+    }
+    if let Err(error) = project.save() {
+        *project = snapshot;
+        return Ok(project_failure_with_workspace(
+            "CONFLICT",
+            error,
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    let after = project.compile();
+    let relation = if operation == RelationOperation::Delete {
+        Value::Null
+    } else {
+        serde_json::to_value(after.analysis.catalog.relations.get(&id))
+            .expect("SemanticRelationInfo 可序列化")
+    };
+    Ok(relation_success(
+        relation,
+        operation_name(operation),
+        &after,
+        project.content_baseline(),
+        &workspace_diagnostics,
+    ))
+}
+
+fn operation_name<T>(operation: T) -> &'static str
+where
+    T: IntoOperationName,
+{
+    operation.into_operation_name()
+}
+
+trait IntoOperationName {
+    fn into_operation_name(self) -> &'static str;
+}
+
+impl IntoOperationName for RelationOperation {
+    fn into_operation_name(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+impl IntoOperationName for RelationTypeOperation {
+    fn into_operation_name(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+fn relation_success(
+    relation: Value,
+    operation: &str,
+    result: &CompileResult,
+    baseline: String,
+    workspace_diagnostics: &[Diagnostic],
+) -> Value {
+    json!({
+        "ok": true,
+        "operation": operation,
+        "relation": relation,
+        "catalog": &result.analysis.catalog,
+        "diagnostics": result.diagnostics,
+        "language_version": result.options.language_version.as_str(),
+        "baseline": baseline,
+        "workspace_diagnostics": workspace_diagnostics,
+        "read_only": false,
+    })
+}
+
+fn relation_type_success(
+    relation_type: Value,
+    operation: &str,
+    result: &CompileResult,
+    baseline: String,
+    workspace_diagnostics: &[Diagnostic],
+) -> Value {
+    json!({
+        "ok": true,
+        "operation": operation,
+        "relation_type": relation_type,
+        "catalog": &result.analysis.catalog,
+        "diagnostics": result.diagnostics,
+        "language_version": result.options.language_version.as_str(),
+        "baseline": baseline,
+        "workspace_diagnostics": workspace_diagnostics,
+        "read_only": false,
+    })
+}
+
+fn promotion_legacy_handle(
+    params: &Value,
+    catalog: &worldline_core::Catalog,
+) -> Result<LegacyRelationHandle, ProtoError> {
+    let object = params
+        .get("legacy")
+        .or_else(|| params.get("handle"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "需要对象参数 `legacy`"))?;
+    let source = object
+        .get("source")
+        .ok_or_else(|| ProtoError::new(-32602, "旧关系句柄需要 `source`"))
+        .and_then(|value| relation_target_value(value, "legacy.source"))?;
+    let target = object
+        .get("target")
+        .ok_or_else(|| ProtoError::new(-32602, "旧关系句柄需要 `target`"))
+        .and_then(|value| relation_target_value(value, "legacy.target"))?;
+    let label = object
+        .get("label")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "旧关系句柄需要字符串 `label`"))?;
+    let occurrence = object
+        .get("occurrence")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ProtoError::new(-32602, "旧关系句柄需要整数 `occurrence`"))?;
+    let occurrence =
+        u32::try_from(occurrence).map_err(|_| ProtoError::new(-32602, "`occurrence` 超出范围"))?;
+    catalog
+        .legacy_relation_handles()
+        .into_iter()
+        .find(|handle| {
+            handle.source == source
+                && handle.target == target
+                && handle.label == label
+                && handle.occurrence == occurrence
+        })
+        .ok_or_else(|| ProtoError::new(-32602, "指定的旧人物关系句柄不存在"))
+}
+
+fn promotion_preview_value(params: &Value) -> Result<RelationPromotionPreview, ProtoError> {
+    let value = params
+        .get("preview")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "提交关系提升需要对象参数 `preview`"))?;
+    let handle = value
+        .get("handle")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要对象参数 `preview.handle`"))?;
+    let source = handle
+        .get("source")
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要 `source`"))
+        .and_then(|value| relation_target_value(value, "preview.handle.source"))?;
+    let target = handle
+        .get("target")
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要 `target`"))
+        .and_then(|value| relation_target_value(value, "preview.handle.target"))?;
+    let label = handle
+        .get("label")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要字符串 `label`"))?;
+    let occurrence = handle
+        .get("occurrence")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要整数 `occurrence`"))?;
+    let occurrence =
+        u32::try_from(occurrence).map_err(|_| ProtoError::new(-32602, "`occurrence` 超出范围"))?;
+    let file = handle
+        .get("file")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要字符串 `file`"))?;
+    let line = handle
+        .get("line")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ProtoError::new(-32602, "提升句柄需要整数 `line`"))?;
+    let line = u32::try_from(line).map_err(|_| ProtoError::new(-32602, "`line` 超出范围"))?;
+    let relation_id = value
+        .get("relation_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要字符串 `relation_id`"))?;
+    let content_baseline = value
+        .get("content_baseline")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要字符串 `content_baseline`"))?;
+    let draft_value = value
+        .get("draft")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要对象参数 `draft`"))?;
+    let draft = relation_draft_object(draft_value, None, "preview.draft")?;
+    let relation_type = value
+        .get("relation_type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要字符串 `relation_type`"))?;
+    let description = value
+        .get("description")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要字符串 `description`"))?;
+    let source_note = nullable_string(value.get("source_note"), "source_note")?;
+    let before_fingerprint = value
+        .get("before_fingerprint")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要整数 `before_fingerprint`"))?;
+    let after_fingerprint = value
+        .get("after_fingerprint")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要整数 `after_fingerprint`"))?;
+    let fingerprint_changed = value
+        .get("fingerprint_changed")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| ProtoError::new(-32602, "提升预览需要布尔值 `fingerprint_changed`"))?;
+    Ok(RelationPromotionPreview {
+        handle: LegacyRelationHandle {
+            source,
+            target,
+            label: label.to_string(),
+            occurrence,
+            file: file.to_string(),
+            line,
+        },
+        content_baseline: content_baseline.to_string(),
+        draft,
+        relation_id: relation_id.to_string(),
+        relation_type: relation_type.to_string(),
+        description: description.to_string(),
+        source_note,
+        before_fingerprint,
+        after_fingerprint,
+        fingerprint_changed,
+    })
+}
+
+fn promotion_draft(
+    params: &Value,
+    handle: &LegacyRelationHandle,
+) -> Result<RelationDraft, ProtoError> {
+    let source = params
+        .get("relation")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ProtoError::new(-32602, "需要对象参数 `relation`"))?
+        .clone();
+    let mut object = source;
+    object.insert(
+        "from".into(),
+        json!({"kind": handle.source.kind, "id": handle.source.id}),
+    );
+    object.insert(
+        "to".into(),
+        json!({"kind": handle.target.kind, "id": handle.target.id}),
+    );
+    if !object.contains_key("relation_type") {
+        if let Some(relation_type) = object.remove("type") {
+            object.insert("relation_type".into(), relation_type);
+        }
+    }
+    if !object.contains_key("description") {
+        object.insert("description".into(), json!(handle.label));
+    }
+    relation_draft_object(&object, None, "relation")
+}
+
+fn promote_relation_project(
+    project: &mut Project,
+    params: &Value,
+    operation: PromotionOperation,
+    expected: Option<&str>,
+) -> Result<Value, ProtoError> {
+    let (before, baseline, workspace_diagnostics) =
+        match prepare_relation_project(project, expected) {
+            Ok(value) => value,
+            Err(failure) => return Ok(failure),
+        };
+    let (preview, relation_id) =
+        if operation == PromotionOperation::Commit && params.get("preview").is_some() {
+            let preview = promotion_preview_value(params)?;
+            let relation_id = preview.relation_id.clone();
+            (preview, relation_id)
+        } else {
+            let handle = match promotion_legacy_handle(params, &before.analysis.catalog) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    return Ok(project_failure_with_workspace(
+                        "LEGACY_RELATION_NOT_FOUND",
+                        error.message,
+                        Some(&before.diagnostics),
+                        Some(baseline),
+                        Some(before.options.language_version.as_str()),
+                        &workspace_diagnostics,
+                    ));
+                }
+            };
+            let draft = promotion_draft(params, &handle)?;
+            let preview = match project.preview_promote_legacy_relation(&handle, &draft) {
+                Ok(preview) => preview,
+                Err(error) => {
+                    return Ok(project_failure_with_workspace(
+                        "EDIT_FAILED",
+                        error,
+                        Some(&before.diagnostics),
+                        Some(baseline),
+                        Some(before.options.language_version.as_str()),
+                        &workspace_diagnostics,
+                    ));
+                }
+            };
+            let relation_id = draft.id;
+            (preview, relation_id)
+        };
+    if operation == PromotionOperation::Preview {
+        return Ok(json!({
+            "ok": true,
+            "operation": "preview",
+            "preview": preview,
+            "catalog": &before.analysis.catalog,
+            "diagnostics": before.diagnostics,
+            "language_version": before.options.language_version.as_str(),
+            "baseline": baseline,
+            "workspace_diagnostics": workspace_diagnostics,
+            "read_only": false,
+        }));
+    }
+    let snapshot = project.clone();
+    if let Err(error) = project.apply_legacy_relation_promotion(&preview) {
+        *project = snapshot;
+        return Ok(project_failure_with_workspace(
+            "EDIT_FAILED",
+            error,
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    if let Err(error) = project.save() {
+        *project = snapshot;
+        return Ok(project_failure_with_workspace(
+            "CONFLICT",
+            error,
+            Some(&before.diagnostics),
+            Some(baseline),
+            Some(before.options.language_version.as_str()),
+            &workspace_diagnostics,
+        ));
+    }
+    let after = project.compile();
+    Ok(json!({
+        "ok": true,
+        "operation": "commit",
+        "preview": preview,
+        "relation": serde_json::to_value(after.analysis.catalog.relations.get(&relation_id)).expect("SemanticRelationInfo 可序列化"),
+        "catalog": &after.analysis.catalog,
+        "diagnostics": after.diagnostics,
+        "language_version": after.options.language_version.as_str(),
+        "baseline": project.content_baseline(),
+        "workspace_diagnostics": workspace_diagnostics,
+        "read_only": false,
+    }))
 }
 
 fn mutate_entity_project(
@@ -741,7 +2106,7 @@ fn mutate_entity_project(
             serde_json::to_value(after.analysis.catalog.entities.get(&id))
                 .expect("EntityInfo 可序列化")
         },
-        "catalog": after.analysis.catalog,
+        "catalog": &after.analysis.catalog,
         "language_version": after.options.language_version.as_str(),
         "workspace_diagnostics": workspace_diagnostics,
         "read_only": !workspace_diagnostics.is_empty(),

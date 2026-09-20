@@ -25,6 +25,11 @@ impl LanguageVersion {
     pub const fn supports_entities(self) -> bool {
         matches!(self, Self::V1_10)
     }
+
+    /// 语义关系与通用实体一起在语言 1.10 显式启用。
+    pub const fn supports_relations(self) -> bool {
+        matches!(self, Self::V1_10)
+    }
 }
 
 /// 编译开关。结构故意保持小而显式，避免新语法无版本地改变旧工程。

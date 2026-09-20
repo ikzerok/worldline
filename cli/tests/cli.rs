@@ -1,5 +1,7 @@
 //! wl CLI 集成测试:直接驱动 lib 层的 run(),不启动进程。
 
+use serde_json::{json, Value};
+
 fn temp_story(name: &str, src: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("wl_cli_tests");
     std::fs::create_dir_all(&dir).unwrap();
@@ -28,6 +30,45 @@ fn temp_entity_project(name: &str, source: &str) -> std::path::PathBuf {
     std::fs::write(
         root.join(".world/project.json"),
         r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("world.wl"), source).unwrap();
+    root
+}
+
+fn temp_presentation_project(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("wl_cli_presentation_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".world/maps")).unwrap();
+    std::fs::write(
+        root.join(".world/project.json"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["presentation.maps.v1"],"maps":{"overview":".world/maps/overview.json"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("world.wl"),
+        "entity lighthouse kind place as \"灯塔\"\nevent start\n  -> END\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".world/maps/overview.json"),
+        r#"{"schema_version":1,"id":"overview","title":"总览","canvas":{"width":100,"height":100,"unit":"normalized"},"layer_order":["places"],"layers":{"places":{"title":"地点","visible_default":true,"locked":false}},"placements":{"lighthouse_marker":{"layer_id":"places","annotation":"灯塔","role":"reference","target_ref":{"kind":"entity","id":"lighthouse"},"geometry":{"kind":"point","position":[0.2,0.3]}}}}"#,
+    )
+    .unwrap();
+    root
+}
+
+fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("wl_cli_relation_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".world")).unwrap();
+    std::fs::write(
+        root.join(".world/project.json"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.relations.v1"]}"#,
     )
     .unwrap();
     std::fs::write(root.join("world.wl"), source).unwrap();
@@ -68,6 +109,351 @@ fn check_json_output() {
     // JSON 必须可解析
     let v: serde_json::Value = serde_json::from_str(text.trim()).expect("输出应为合法 JSON");
     assert_eq!(v["ok"], serde_json::Value::Bool(true));
+}
+
+#[test]
+fn workspace_check_json_reports_revision_and_diagnostic_domains() {
+    let root = temp_presentation_project("workspace-check");
+    let (code, out) = run_args(&[
+        "workspace",
+        "check",
+        root.to_string_lossy().as_ref(),
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0);
+    let value = json_lines(&out).remove(0);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["language_version"], "1.10");
+    assert!(value["workspace_revision"].as_str().is_some());
+    assert!(value["diagnostics"].is_array());
+    assert!(value["workspace_diagnostics"].is_array());
+    assert_eq!(value["read_only"], false);
+    assert_eq!(value["truncated"], false);
+    assert!(value["continuation"].is_null());
+    assert_eq!(value["stats"]["events"], 1);
+}
+
+#[test]
+fn maps_list_json_exposes_maps_and_target_references() {
+    let root = temp_presentation_project("maps-list");
+    let (code, out) = run_args(&["maps", "list", root.to_string_lossy().as_ref(), "--json"]);
+    assert_eq!(code.unwrap(), 0);
+    let value = json_lines(&out).remove(0);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["maps"]["overview"]["title"], "总览");
+    assert_eq!(
+        value["references"][0]["target"],
+        serde_json::json!({"kind":"entity","id":"lighthouse"})
+    );
+    assert_eq!(
+        value["references"][0]["placements"][0],
+        serde_json::json!({"map_id":"overview","placement_id":"lighthouse_marker"})
+    );
+    assert_eq!(value["truncated"], false);
+    assert!(value["workspace_revision"].as_str().is_some());
+}
+
+#[test]
+fn relations_json_uses_core_query_and_preserves_edge_identity() {
+    let root = temp_presentation_project("relations-query");
+    std::fs::write(
+        root.join("world.wl"),
+        "entity lighthouse kind place as \"灯塔\"\nentity keepers kind organization as \"守灯会\"\nrelation_type maintains as \"维护\"\n  inverse \"由其维护\"\n  direction directed\nrelation_def rel_keepers_lighthouse type maintains from entity keepers to entity lighthouse\n  description \"守灯会维护灯塔\"\nevent start\n  -> END\n",
+    )
+    .unwrap();
+    let (code, out) = run_args(&[
+        "relations",
+        root.to_string_lossy().as_ref(),
+        "--target",
+        "entity:keepers",
+        "--depth",
+        "1",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0);
+    let value = json_lines(&out).remove(0);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(
+        value["target"],
+        serde_json::json!({"kind":"entity","id":"keepers"})
+    );
+    assert_eq!(value["depth"], 1);
+    assert_eq!(value["edges"][0]["id"], "rel_keepers_lighthouse");
+    assert_eq!(
+        value["edges"][0]["from_ref"],
+        serde_json::json!({"kind":"entity","id":"keepers"})
+    );
+    assert_eq!(
+        value["edges"][0]["to_ref"],
+        serde_json::json!({"kind":"entity","id":"lighthouse"})
+    );
+    assert_eq!(value["truncated"], false);
+    assert!(value["workspace_revision"].as_str().is_some());
+
+    let (code, out) = run_args(&[
+        "relations",
+        root.to_string_lossy().as_ref(),
+        "--target",
+        "entity:keepers",
+        "--offset",
+        "1",
+        "--depth",
+        "1",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0);
+    let continued = json_lines(&out).remove(0);
+    assert_eq!(continued["ok"], true);
+    assert!(continued["edges"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn relations_rejects_unknown_target_as_usage_failure() {
+    let root = temp_presentation_project("relations-unknown");
+    let (code, out) = run_args(&[
+        "relations",
+        root.to_string_lossy().as_ref(),
+        "--target",
+        "entity:missing",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 2);
+    let value = json_lines(&out).remove(0);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "UNKNOWN_TARGET");
+}
+
+#[test]
+fn relation_cli_crud_uses_core_edit_and_baseline_fields() {
+    let root = temp_relation_project(
+        "crud",
+        "entity a kind place as \"甲\"\nentity b kind place as \"乙\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let (code, out) = run_args(&[
+        "relation-type",
+        "create",
+        &path,
+        "--id",
+        "knows",
+        "--display",
+        "认识",
+        "--inverse-display",
+        "被认识",
+        "--direction",
+        "directed",
+        "--from-kind",
+        "entity",
+        "--to-kind",
+        "entity",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let type_result = json_lines(&out).remove(0);
+    assert_eq!(type_result["ok"], true);
+    assert!(type_result["baseline"].is_string());
+    let (code, out) = run_args(&[
+        "relation",
+        "create",
+        &path,
+        "--id",
+        "stale_relation",
+        "--type",
+        "knows",
+        "--from",
+        "entity:a",
+        "--to",
+        "entity:b",
+        "--baseline",
+        "stale",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 1, "{out:?}");
+    assert_eq!(json_lines(&out)[0]["error"]["code"], "STALE_BASELINE");
+    let (code, out) = run_args(&[
+        "relation",
+        "create",
+        &path,
+        "--id",
+        "a_knows_b",
+        "--type",
+        "knows",
+        "--from",
+        "entity:a",
+        "--to",
+        "entity:b",
+        "--description",
+        "甲认识乙",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let relation_result = json_lines(&out).remove(0);
+    assert_eq!(relation_result["ok"], true);
+    assert_eq!(relation_result["relation"]["id"], "a_knows_b");
+    assert!(relation_result["catalog"]["relation_index"].is_array());
+    let (code, out) = run_args(&[
+        "relation",
+        "update",
+        &path,
+        "--id",
+        "a_knows_b",
+        "--description",
+        "甲已经认识乙",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let relation_result = json_lines(&out).remove(0);
+    assert_eq!(relation_result["relation"]["description"], "甲已经认识乙");
+    let (code, out) = run_args(&["relation", "delete", &path, "--id", "a_knows_b", "--json"]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    assert_eq!(json_lines(&out)[0]["relation"], serde_json::Value::Null);
+}
+
+#[test]
+fn relation_cli_accepts_windows_file_targets_and_explicitly_clears_optional_fields() {
+    let root = temp_relation_project(
+        "file-target-and-clear",
+        "entity a kind place as \"甲\"\nentity b kind place as \"乙\"\nrelation_type records as \"记载\"\n  inverse \"被记载\"\n  from entity\n  to file\nrelation_def record type records from entity a to file \"chapters/record one.wl\"\n  source_note \"来源\"\n  scope file \"chapters/record one.wl\"\n  property active = true\nevent start\n  -> END\n",
+    );
+    let target_file = root.join("chapters/record one.wl");
+    std::fs::create_dir_all(target_file.parent().unwrap()).unwrap();
+    std::fs::write(&target_file, "tag notes\n").unwrap();
+    let file_id = std::fs::canonicalize(&target_file)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let file_id = file_id.strip_prefix(r"\\?\").unwrap_or(&file_id).to_owned();
+    let path = root.to_string_lossy().to_string();
+    let target = format!("file:{file_id}");
+
+    let (code, out) = run_args(&["relations", &path, "--target", &target, "--json"]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let query = json_lines(&out).remove(0);
+    assert_eq!(query["ok"], true, "{query}");
+    assert!(query["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|edge| { edge["to_ref"]["id"] == file_id || edge["from_ref"]["id"] == file_id }));
+
+    let (code, out) = run_args(&[
+        "relation-type",
+        "update",
+        &path,
+        "--id",
+        "records",
+        "--clear-inverse-display",
+        "--clear-from-kind",
+        "--clear-to-kind",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let cleared_type = json_lines(&out).remove(0);
+    assert_eq!(
+        cleared_type["relation_type"]["inverse_display"],
+        Value::Null
+    );
+    assert_eq!(cleared_type["relation_type"]["from_kind"], Value::Null);
+    assert_eq!(cleared_type["relation_type"]["to_kind"], Value::Null);
+
+    let (code, out) = run_args(&[
+        "relation",
+        "update",
+        &path,
+        "--id",
+        "record",
+        "--to",
+        &target,
+        "--clear-source-note",
+        "--clear-scope",
+        "--clear-properties",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let cleared_relation = json_lines(&out).remove(0);
+    assert_eq!(cleared_relation["relation"]["source_note"], Value::Null);
+    assert_eq!(cleared_relation["relation"]["scope_refs"], json!([]));
+    assert_eq!(cleared_relation["relation"]["properties"], json!({}));
+
+    let (code, out) = run_args(&[
+        "relation",
+        "create",
+        &path,
+        "--id",
+        "bad_clear",
+        "--type",
+        "records",
+        "--from",
+        "entity:a",
+        "--to",
+        "entity:b",
+        "--clear-source-note",
+    ]);
+    assert!(
+        code.is_err(),
+        "create must reject --clear-source-note: {out:?}"
+    );
+}
+
+#[test]
+fn relation_cli_promotion_preview_then_commit_removes_legacy_line() {
+    let root = temp_relation_project(
+        "promotion",
+        "character a\n  relation b as \"旧关系\"\ncharacter b\nrelation_type knows as \"认识\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let common = [
+        "--source",
+        "character:a",
+        "--target",
+        "character:b",
+        "--label",
+        "旧关系",
+        "--id",
+        "promoted",
+        "--type",
+        "knows",
+        "--source-note",
+        "由旧人物关系提升",
+        "--scope",
+        "character:b",
+        "--property",
+        "active=true",
+        "--property",
+        "weight=3",
+        "--json",
+    ];
+    let mut preview_args = vec!["relations", "promote", "preview", &path];
+    preview_args.extend(common);
+    let (code, out) = run_args(&preview_args);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let preview = json_lines(&out).remove(0);
+    assert_eq!(preview["operation"], "preview");
+    assert_eq!(preview["preview"]["fingerprint_changed"], true);
+    assert_eq!(
+        preview["preview"]["draft"]["scope_refs"],
+        json!([{"kind":"character","id":"b"}])
+    );
+    assert_eq!(
+        preview["preview"]["draft"]["properties"],
+        json!([["active", true], ["weight", 3.0]])
+    );
+    assert!(std::fs::read_to_string(root.join("world.wl"))
+        .unwrap()
+        .contains("relation b as"));
+    let mut commit_args = vec!["relations", "promote", "commit", &path];
+    commit_args.extend(common);
+    let (code, out) = run_args(&commit_args);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    assert_eq!(json_lines(&out)[0]["operation"], "commit");
+    let source = std::fs::read_to_string(root.join("world.wl")).unwrap();
+    assert!(source.contains("relation_def promoted"), "{source}");
+    assert!(!source.contains("relation b as"), "{source}");
+    assert!(source.contains("scope character b"), "{source}");
+    assert!(source.contains("property active = true"), "{source}");
+    assert!(source.contains("property weight = 3"), "{source}");
 }
 
 #[test]

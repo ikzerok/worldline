@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "project_id": "relations_example",
+  "language_version": "1.10",
+  "entry": "world.wl",
+  "required_features": ["content.entities.v1", "content.relations.v1"],
+  "maps": {},
+  "graph_views": {}
+}

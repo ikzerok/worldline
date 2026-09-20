@@ -24,6 +24,14 @@ fn main() -> ExitCode {
             eprintln!(
                 "      wl catalog <目录或入口.wl> [--tag ID] [--recursive] [--kind 类型] [--json]"
             );
+            eprintln!("      wl workspace check <目录> [--json]");
+            eprintln!("      wl maps list <目录> [--json]");
+            eprintln!(
+                "      wl relations <目录> --target KIND:ID [--offset N] [--depth 1|2] [--json]"
+            );
+            eprintln!("      wl relation-type create|update|delete <目录> --id ID [--display 名称] [--inverse-display 反向名] [update: --clear-inverse-display|--clear-from-kind|--clear-to-kind] [--json]");
+            eprintln!("      wl relation create|update|delete <目录> --id ID [--type TYPE] [--from KIND:ID] [--to KIND:ID] [--description 文案] [--source-note 来源] [--scope KIND:ID] [--property name=value] [update: --clear-source-note|--clear-scope|--clear-properties] [--json]");
+            eprintln!("      wl relations promote preview|commit <目录> --source KIND:ID --target KIND:ID --label 标签 --id ID --type TYPE [--scope KIND:ID] [--property name=value] [--json]");
             eprintln!(
                 "      wl entity create|update|delete <目录或入口> --id ID [--kind 类型] [--display 名称] [--json]"
             );

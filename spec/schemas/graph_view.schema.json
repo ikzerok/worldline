@@ -45,7 +45,8 @@
             "asset",
             "variable",
             "file",
-            "entity"
+            "entity",
+            "relation"
           ]
         },
         "id": {

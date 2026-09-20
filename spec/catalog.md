@@ -20,7 +20,7 @@ mark character lin with harbor_place
 tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制内容,可通过其他 tag 间接引用。
 `tag <ID> [as "名称"]` 是全局唯一声明,可带 description 与字面量 property。
 `mark <类型> <对象ID或带引号路径> with <标签ID列表>` 是顶层标记,可放在任何被 include 的文件。
-类型包括 anchor、state、event、scene、character、entity、world、storyline、period、variable、tag、asset、file。
+类型包括 anchor、state、event、scene、character、entity、relation、world、storyline、period、variable、tag、asset、file。
 
 ## 1.1 语言 1.10 实体
 
@@ -46,6 +46,38 @@ tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制�
 递归查询继续沿命中的标签查找关联事件、人物、素材等完整对象。访问集合去重,即使标签互相标记也会终止。
 递归查询不向对象自动写入祖先标签;删除某个分类关系只改变索引路径。
 所有查询保留来源文件和行号,可定位标记或原始声明。
+
+## 1.2 语言 1.10 独立关系
+
+`catalog.relation_types: BTreeMap<String, RelationTypeInfo>` 保存稳定类型 ID、
+正向显示名、可选反向显示名、方向、端点约束和源位置；
+`catalog.relations: BTreeMap<String, SemanticRelationInfo>` 保存关系 ID、类型、
+`from_ref`、`to_ref`、说明、来源、scope、字面量 properties 与源位置。关系实例
+同时以 `TargetRef { kind: "relation", id }` 出现在 `catalog.objects`，因此正文、
+地图和删除影响可以按完整身份引用它；关系类型本身不是对象端点。
+
+`Catalog::query_relations(target, options)` 是局部邻接查询的唯一分析入口。默认
+`depth=1`，允许申请 `depth=2`，节点和边上限分别为 250 与 500。结果固定包含
+`schema_version=1`、起点、节点深度、关系边身份、端点、方向、显示标签、
+`truncated` 和继续查询信息。遍历保留同端点的多条关系，按关系 ID 稳定排序，
+遇到循环只访问同一对象一次；截断不会删除目录中的关系，也不会把 A→B、B→C
+推导成 A→C。读取反向端点时使用类型的 `inverse_display` 投影，不能保存反向副本。
+
+继续查询使用 `continuation.offset` 和 `Catalog::continue_relations`，保持同一快照与
+筛选；具体遍历及分页边界见 [relations.md](relations.md) §8。Rust 的完整 TargetRef
+邻接映射由 core 序列化为 `[{target, relations}]` 数组，CLI/RPC 直接序列化 Catalog。
+
+旧 `character` 块中的 `relation` 仍在 `catalog.legacy_relations` 只读投影；
+`LegacyRelationHandle` 带来源、目标、标签、源码位置和重复项序号，但没有持久
+关系 ID。需长期引用时必须由 Project 生成提升预览，再以一个事务新增
+`relation_def` 并移除旧行；预览同时保存 `content_baseline` 与完整 `RelationDraft`
+(包括 `scope_refs`、`properties`)，并明确给出旧指纹与新指纹差异。提交按内容基线
+拒绝陈旧预览，失败保持全部源码不变。旧人物关系仍按 1.9 规则参与运行指纹，独立
+关系资料不参与。
+
+Project 的关系类型/实例结构写入及提升要求清单显式使用 1.10，并在
+required_features 声明 content.relations.v1；缺失时拒绝且不改文档。只读源码分析
+仍由 CompileOptions 选择语言版本，不要求内存源码调用方提供工程清单。
 
 ## 2. 工作区图片与音频
 

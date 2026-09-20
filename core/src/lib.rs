@@ -27,6 +27,7 @@ pub mod project;
 pub mod recovery;
 pub mod reference_impact;
 pub mod relation_context;
+pub mod relations;
 pub mod states;
 mod storage;
 pub mod timeline;
@@ -36,6 +37,7 @@ pub mod workspace_snapshot;
 
 pub use analysis::{Analysis, Stats, Symbols};
 pub use ast::{Program, ValueKind};
+pub use catalog::{Catalog, CatalogObject, ReferenceInfo, TargetRef};
 pub use compiler::{
     compile_path, compile_path_with_options, compile_source, compile_source_with_options,
     compile_sources, compile_sources_with_options, compile_text_with_disk_includes,
@@ -47,6 +49,12 @@ pub use graph::{AnchorDecl, EdgeKind, GraphEdge, GraphNode, RelationGraph};
 pub use presentation::{
     MapCanvas, MapDocument, MapGeometry, MapIndex, MapLayer, MapNavigation, MapPlacement,
     MapPlacementRef, MapRasterLayer,
+};
+pub use relations::{
+    LegacyRelationHandle, LegacyRelationInfo, LegacyRelationPromotionDraft, RelationDirection,
+    RelationDraft, RelationPromotionPreview, RelationQueryContinuation, RelationQueryDirection,
+    RelationQueryEdge, RelationQueryNode, RelationQueryOptions, RelationQueryResult,
+    RelationTypeDraft, RelationTypeInfo, SemanticRelationInfo,
 };
 
 /// 编译快照:源文件、程序、分析与全部诊断。

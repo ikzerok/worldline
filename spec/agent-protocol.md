@@ -77,6 +77,85 @@ workspace_diagnostics, read_only}`；写入成功时 `read_only` 为 `false`。
 `message` 使用中文。外部磁盘修改、保存事务或引用影响会以 `CONFLICT` 或
 `EDIT_FAILED` 返回,不伪造成功。
 
+### 2.7 工作区与地图资料查询
+
+`wl workspace check <目录> --json`、`wl maps list <目录> --json` 和
+`wl relations <目录> --target KIND:ID [--offset N] [--depth 1|2]
+[--direction outgoing|incoming|both] [--type TYPE] --json` 是只读机器查询。三条命令均在当前磁盘内容上打开工程，使用
+`Project` 与 core 的统一分析、展示索引和关系索引；接口层不得重新解析源码或拼接
+关系边。输出至少包含以下公共字段：
+
+```json
+{
+  "ok": true,
+  "schema_version": 1,
+  "language_version": "1.10",
+  "workspace_revision": "<content baseline>",
+  "diagnostics": [],
+  "workspace_diagnostics": [],
+  "read_only": false,
+  "truncated": false,
+  "continuation": null
+}
+```
+
+`workspace_revision` 是此次打开工作区的内容基线投影；它只用于标识本次查询快照，
+不能替代保存冲突检查或运行 fingerprint。`diagnostics` 只放故事编译诊断，注册清单、
+展示文档、未知能力和地图格式诊断放在 `workspace_diagnostics`。查询即使
+`read_only: true` 仍可返回 `ok: true`；`workspace check` 在存在错误诊断或只读诊断时
+返回退出码 1。
+
+`workspace check` 另外返回 `stats`，与 `check --json` 使用同一 core 分析统计。
+`maps list` 返回 `maps`（按稳定地图 ID 排序的 `MapDocument` 映射）和
+`references`（按完整 `TargetRef` 排序的 `{target, placements}` 数组）。地图索引产生的
+诊断归入 `workspace_diagnostics`；地图原始文档仍由 Project 保留，CLI 不写入展示文档。
+
+`wl-agent` 的 `workspace.check` 与 `maps.list` 接受 `{path}` 或已打开工程的
+`{project_id}`，每次先刷新当前 Project，再从同一快照返回上述公共字段、诊断、内容基线
+以及 `stats` 或地图 `maps`/`references`。外部刷新冲突附在 `conflicts`，不阻止只读查询；
+`project.analyze` 也返回同一快照的 `maps` 与 `references`。
+
+`relations` 返回 core `RelationQueryResult` 的 `target/depth/nodes/edges`，并保留
+`truncated` 与 `continuation`。`--offset` 默认 0，用于同一快照的续查；默认深度为 1，最大深度为 2；默认和最大节点/边上限
+由 [presentation.md](presentation.md) §11 维护。反向读取只改变同一边的投影，不生成新的
+关系 ID。TargetRef 字符串按第一个冒号分隔；当 `kind=file` 时，ID 余串中的冒号必须
+保留，以支持 `file:C:/作品/章节/第一章.wl` 这样的 Windows 规范路径。未知 target、
+类型或参数是用法失败（退出码 2）；故事编译错误仍是可解析的
+故事层结果（退出码 1）。
+
+关系资料的写入命令使用同一份 core `Project` 编辑 API。工程清单必须明确选择语言
+1.10，并声明 `content.relations.v1`；读取和 compile API 不因缺少该能力而隐藏关系资料，
+但结构写入会以故事层失败返回且保持零改动：
+
+```text
+wl relation-type create DIR --id TYPE --display 显示名 [--inverse-display 反向名]
+wl relation-type update DIR --id TYPE [--display 显示名] [--direction directed|undirected]
+  [--clear-inverse-display] [--clear-from-kind] [--clear-to-kind]
+wl relation-type delete DIR --id TYPE
+wl relation create DIR --id REL --type TYPE --from KIND:ID --to KIND:ID [--description 文案] [--scope KIND:ID] [--property name=value]
+wl relation update DIR --id REL [--description 文案] [--source-note 来源] [--scope KIND:ID] [--property name=value]
+  [--clear-source-note] [--clear-scope] [--clear-properties]
+wl relation delete DIR --id REL
+wl relations promote preview DIR --source character:A --target character:B --label 标签 --id REL --type TYPE [--scope KIND:ID] [--property name=value]
+wl relations promote commit DIR --source character:A --target character:B --label 标签 --id REL --type TYPE [--scope KIND:ID] [--property name=value]
+```
+
+上述命令都接受 `--baseline` 与 `--json`。命令在写入前刷新源码、清单和已注册
+展示文档；外部修改、基线过期、编译错误或工作区只读诊断都会返回 `ok:false`，并
+且不把失败伪装成提交成功。成功结果包含 `operation`、`catalog`、`baseline`、
+`diagnostics`、`workspace_diagnostics` 与 `read_only:false`；关系类型资料放在
+`relation_type`，关系实例放在 `relation`。关系实例 `relation` 可附 `scope_refs` 与
+`properties`，提升预览的 `draft` 必须完整保留这两项。`relation-type` 和 `relation` 的 ID 是
+稳定身份，更新不得借此改名。删除仍由 core 做关系端点和地图引用影响检查。
+CLI 的 `--clear-*` 只接受 `update`，同一字段不能同时使用设置参数和清空参数，
+在 `create` 上会返回用法错误。JSON-RPC 更新使用 `null` 清空单个可选字符串，使用空
+数组或空对象清空 `scope_refs` 或 `properties`；省略字段则保留原值。
+
+旧人物关系只能通过 `relations promote preview` 先生成提升预览，再使用
+`relations promote commit` 写入；`source`、`target`、`label` 与 `occurrence`
+组成的 `LegacyRelationHandle` 是临时读取句柄，不是可持久化 ID。预览包含迁移前后
+运行 fingerprint 差异和待写入资料，预览本身不修改源码。
+
 ### 2.1 `wl check <file> --json`
 
 见 `diagnostics.md` §3,不在此重复:`{ok, stats, diagnostics[],
@@ -209,7 +288,18 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `session.restart` | `{session_id}` | `{state}` |
 | `session.close` | `{session_id}` | `{closed: true}` |
 | `project.open` | `{path}` | `{ok, project_id, language_version, baseline, catalog, diagnostics, workspace_diagnostics, read_only}`;故事可读但有故事诊断或工作区只读诊断时仍返回 `project_id`，后者不伪装成可写 |
-| `project.analyze` | `{project_id}` | `{ok, language_version, baseline, catalog, diagnostics, workspace_diagnostics, read_only, conflicts?}` |
+| `project.analyze` | `{project_id}` | `{ok, language_version, baseline, catalog, maps, references, diagnostics, workspace_diagnostics, read_only, conflicts?}` |
+| `workspace.check` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, stats, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}`；工程可读但有只读诊断时仍返回 `ok:true` |
+| `maps.list` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, maps, references, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}` |
+| `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?}` 或 `{project_id, target, offset?, depth?, direction?, relation_type?}` | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`offset` 为非负整数续查偏移；未知目标/类型或深度参数使用 error `-32602` |
+| `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `relation.type.update` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | 同 `relation.type.create`;关系类型 ID 保持稳定 |
+| `relation.type.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, relation_type:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `relation.create` | `{project_id, relation, baseline?}` 或 `{path, relation, baseline?}` | `{ok, operation, relation, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `relation.update` | `{project_id, relation, baseline?}` 或 `{path, relation, baseline?}` | 同 `relation.create`;关系 ID 保持稳定 |
+| `relation.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, relation:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `relation.promote.preview` | `{project_id, legacy, relation, baseline?}` 或 `{path, legacy, relation, baseline?}` | `{ok, operation:"preview", preview, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `relation.promote.commit` | `{project_id, preview, baseline?}` 或 `{path, preview, baseline?}`；也可用 `legacy` + `relation` 让服务端先生成预览 | `{ok, operation:"commit", preview, relation, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `entity.create` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | `{ok, operation, entity, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `entity.update` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | 同 `entity.create`;实体 ID 为稳定身份 |
 | `entity.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, entity:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
@@ -235,7 +325,13 @@ v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目
 `read_only: true`；工程仍可返回 `project_id`、`catalog` 和最新 `baseline`，但
 `entity.*` 必须返回故事层 `READ_ONLY` 结果而不写盘。已有 `project_id` 的查询和编辑
 请求都先刷新工作区，再计算这些分域诊断，因此外部新增未知能力或展示文档变化也会
-立即反映在 `project.analyze` 与后续编辑结果中。
+立即反映在 `project.analyze`、`workspace.check`、`maps.list`、关系查询与后续编辑结果中。
+关系查询的 `offset` 必须与同一 `target`、`depth`、方向和类型筛选及未变化的
+`workspace_revision` 一起使用；基线变化后应从 `offset: 0` 重新查询。`relation.*` 和
+`relation.promote.*` 与 `entity.*` 一样只接受语言 1.10 的可写工作区；关系写入
+失败始终是 result 中的故事层 `ok:false`。旧关系提升的 commit 会重新验证预览句柄、
+`content_baseline` 与完整 `draft`（包括 `scope_refs` 和 `properties`）；运行 fingerprint
+只用于兼容预览差异检查，源码在预览后变化时返回 `EDIT_FAILED` 并不写入。
 `analyze.timeline` 与 `wl timeline --json` 的新增 `timeline` 字段输出时段及先后约束,
 结构见 relations.md §7;原 graph 保留执行关系,二者不能互换。
 
