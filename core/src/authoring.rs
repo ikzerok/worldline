@@ -553,6 +553,33 @@ impl Project {
 
     pub fn remove_event(&mut self, id: &str) -> Result<(), String> {
         let (path, _) = self.event_draft(id)?;
+        let impact = self.deletion_impact(&crate::catalog::TargetRef::new("event", id));
+        if !impact.complete {
+            return Err("引用检查不完整，请先修复内容或地图诊断，再删除事件".into());
+        }
+        if !impact.can_delete() {
+            let mut locations = impact
+                .content_references
+                .iter()
+                .map(|reference| {
+                    format!(
+                        "{}:{}（{}）",
+                        reference.file, reference.line, reference.kind
+                    )
+                })
+                .collect::<Vec<_>>();
+            locations.extend(
+                impact
+                    .map_placements
+                    .iter()
+                    .chain(&impact.map_scopes)
+                    .map(|placement| format!("{} / {}", placement.map_id, placement.placement_id)),
+            );
+            let locations = locations.join("、");
+            return Err(format!(
+                "事件 `{id}` 仍有引用，请先明确解除或重新绑定这些引用：{locations}"
+            ));
+        }
         let mut text = self.document(&path)?.to_string();
         let lines = lines(&text, &path);
         let i = lines

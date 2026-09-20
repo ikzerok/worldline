@@ -45,6 +45,19 @@ pub struct SearchHit {
     pub preview: String,
 }
 
+/// 一个文件的只读三方冲突快照。
+///
+/// `None` 表示对应一方不存在：例如本地删除的文件没有 `local`，
+/// 外部删除的文件没有 `disk`。字节保持原样，因此坏 UTF-8 的展示文档
+/// 也能交给上层显示或另存，不会在查询时被替换。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictSnapshot {
+    pub path: PathBuf,
+    pub baseline: Option<Vec<u8>>,
+    pub local: Option<Vec<u8>>,
+    pub disk: Option<Vec<u8>>,
+}
+
 impl Project {
     #[cfg(not(target_arch = "wasm32"))]
     fn validate_destination(&self, destination: &Path) -> Result<(), String> {
@@ -346,6 +359,53 @@ impl Project {
     /// 用户完成合并；保存与导出会拒绝在此状态下继续覆盖工程。
     pub fn recovery_conflicts(&self) -> &[PathBuf] {
         &self.recovery_conflicts
+    }
+
+    /// 返回当前缓冲与磁盘相对于保存基线发生交叉变化的文件。
+    ///
+    /// 查询只复制缓冲字节，并通过 `file_access` 读取磁盘；不会刷新、修改
+    /// 或推进任何工程状态。`.wl` 以 UTF-8 文本缓冲保存，注册展示 JSON
+    /// 则直接保留原始字节，因而两类文件都能安全展示缺失和坏 UTF-8 状态。
+    pub fn conflict_snapshots(&self) -> Result<Vec<ConflictSnapshot>, String> {
+        let disk_files = match crate::file_access::workspace_files(&self.root) {
+            Ok(paths) => paths,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(format!("无法读取工作区文件清单：{error}")),
+        };
+        let mut snapshots = Vec::new();
+        for (path, document) in &self.documents {
+            if !document.is_dirty() {
+                continue;
+            }
+            let baseline = document.saved.as_ref().map(|text| text.as_bytes().to_vec());
+            let local = (!document.deleted).then(|| document.text.as_bytes().to_vec());
+            let disk = read_conflict_disk(&self.root, path, &disk_files)?;
+            if disk != baseline {
+                snapshots.push(ConflictSnapshot {
+                    path: path.clone(),
+                    baseline,
+                    local,
+                    disk,
+                });
+            }
+        }
+        for (path, document) in &self.authoring_documents {
+            if !document.is_dirty() {
+                continue;
+            }
+            let baseline = document.saved.clone();
+            let local = (!document.deleted).then(|| document.bytes.clone());
+            let disk = read_conflict_disk(&self.root, path, &disk_files)?;
+            if disk != baseline {
+                snapshots.push(ConflictSnapshot {
+                    path: path.clone(),
+                    baseline,
+                    local,
+                    disk,
+                });
+            }
+        }
+        Ok(snapshots)
     }
 
     /// 将已授权的旧权限输入迁移到缓冲；返回修改文件数，不改变保存基线或磁盘。
@@ -1014,6 +1074,22 @@ fn validate_relative(path: &Path) -> Result<(), String> {
         return Err("文件路径须为工程内的相对 .wl 路径,例如 events/harbor.wl".into());
     }
     Ok(())
+}
+
+fn read_conflict_disk(
+    root: &Path,
+    path: &Path,
+    disk_files: &[PathBuf],
+) -> Result<Option<Vec<u8>>, String> {
+    let path = crate::file_access::within(root, path)?;
+    if disk_files.binary_search(&path).is_err() {
+        return Ok(None);
+    }
+    match crate::file_access::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("无法读取冲突文件：{error}")),
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

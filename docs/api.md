@@ -66,3 +66,15 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 `Project::write_period_with_parent(id, display, parent)` 设置时段直接上级，放入 Project::edit 以验证层级；旧 write_period 保留现有上级。`Timeline::period_order()` 返回稳定的父先子后顺序及深度。
 
 `EventDraft::choices()` 提取包含嵌套结构的 ChoiceDraft；write_choice 按当前草稿行局部替换，None 新增，remove_choice 删除选择块。ChoiceDraft 包含 line/depth/label/once/condition/body/target/drift；line 只用于当前草稿定位。末尾直接出口单独建模，内部条件跃迁保留在 body。草稿允许未完成输入，最终用 Project::edit 与 write_event 校验提交。
+
+## 冲突快照
+
+`Project::conflict_snapshots()` 只读比较脏缓冲、保存基线和当前磁盘，返回 `ConflictSnapshot { path, baseline, local, disk }`。后三者为原始字节的可选值，`None` 表示该方文件缺失；无效 UTF-8 不转换、不丢弃。查询不刷新工程或推进保存基线，读取失败返回错误。界面按用户请求捕获一次，重新打开时再读取。
+
+## 删除影响计划
+
+`Project::deletion_impact(&TargetRef)` 只查询当前缓冲，返回目标是否存在、语言引用来源、地图目标标记（map_placements）、作用域标记（map_scopes）、底图素材引用（map_rasters）、诊断及检查是否完整。`DeletionImpact::can_delete()` 仅在目标存在、检查完整且没有引用时为真。界面可对同一已缓存快照调用 `reference_impact::deletion_impact(content, maps, target)`，不必在绘制时重新编译。
+
+语言层的删除反查由 `deletion_content_references::content_deletion_references(content, target)` 提供；它读取同一 `CompileResult`，覆盖目录引用、别名、顶层标记/附件以及 `seen`/`visits`、`has` 和变量条件，并排除随事件块一同删除的内部来源。调用方应把返回结果与展示层地图引用合并后再作删除判断；当前结构删除命令是事件删除，其他对象类型仍需由对应编辑命令声明删除范围。
+
+`remove_event` 在修改前重新生成计划；旧查询结果不授权后续写入。引用未解除或损坏内容/地图使检查不完整时拒绝删除，不隐式删除标记或其他资料。调用方可取消操作，或先显式修复、重新绑定/解除引用，再发起新的删除。
