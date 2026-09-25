@@ -59,6 +59,17 @@
         "minLength": 1
       }
     },
+    "presets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "source_config": {
       "type": "object",
       "additionalProperties": true,

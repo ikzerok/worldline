@@ -63,6 +63,7 @@ pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) graph_views: BTreeMap<String, PathBuf>,
+    pub(crate) presets: BTreeMap<String, PathBuf>,
     pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
@@ -173,7 +174,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     }
 
     let mut paths = BTreeSet::new();
-    for key in ["maps", "graph_views"] {
+    for key in ["maps", "graph_views", "presets"] {
         let Some(value) = object.get(key) else {
             continue;
         };
@@ -200,12 +201,19 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             };
             if let Ok(path) = registered_path(root, relative) {
                 paths.insert(path.clone());
-                if key == "maps" {
-                    // registry.maps 只保存已经通过路径边界检查的注册项；重复
-                    // JSON key 已在 parse_unique_json 阶段拒绝。
-                    registry.maps.insert(id.clone(), path);
-                } else {
-                    registry.graph_views.insert(id.clone(), path);
+                match key {
+                    "maps" => {
+                        // registry.maps 只保存已经通过路径边界检查的注册项；重复
+                        // JSON key 已在 parse_unique_json 阶段拒绝。
+                        registry.maps.insert(id.clone(), path);
+                    }
+                    "graph_views" => {
+                        registry.graph_views.insert(id.clone(), path);
+                    }
+                    "presets" => {
+                        registry.presets.insert(id.clone(), path);
+                    }
+                    _ => unreachable!(),
                 }
             } else {
                 registry.report(
@@ -368,6 +376,7 @@ fn supported_feature(feature: &str) -> bool {
             | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
+            | "presentation.presets.v1"
             | "workspace.source_sets.v1"
     )
 }

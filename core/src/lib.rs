@@ -25,6 +25,7 @@ pub mod navigation;
 pub mod parser;
 pub mod presentation;
 pub mod presentation_commands;
+pub mod presentation_presets;
 pub mod project;
 pub mod recovery;
 pub mod refactor;

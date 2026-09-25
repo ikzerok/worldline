@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PresentationPresetDocument v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "map_id",
+    "graph_view_id",
+    "layer_visibility",
+    "scope_refs",
+    "include_unscoped",
+    "include_period_children",
+    "geometry_refs"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "map_id": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "graph_view_id": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "layer_visibility": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "scope_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["kind", "id"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "include_unscoped": { "type": "boolean" },
+    "include_period_children": { "type": "boolean" },
+    "geometry_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["placement_id", "purpose", "note"],
+        "properties": {
+          "placement_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+          },
+          "purpose": {
+            "enum": ["path", "distribution"]
+          },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "extensions": { "type": "object" }
+  }
+}

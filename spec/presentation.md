@@ -237,6 +237,24 @@ GraphViewDocument v1 的必填字段为 `schema_version/id/title/focus/filters/p
 同一物理文件不得兼作多个地图/网络注册项；索引、保存与删除均拒绝歧义路径。
 关系类型被共享视图的 relation_types 筛选引用时，必须先显式修改这些筛选才能删除类型。
 
+### 6.2 M4 展示预设契约
+
+展示预设只保存作者明确选择的地图、网络视图、图层显隐、范围筛选，以及对既有折线/
+多边形的“路径说明”或“分布区”引用。格式见
+`spec/schemas/presentation_preset.schema.json`；工作区清单以 `presets` 注册并声明
+`presentation.presets.v1`。切换预设只改变展示与筛选，不执行 event、不改运行指纹，
+也不会因为多边形覆盖某对象就推断领土、文化或组织归属。
+
+`scope_refs` 只引用作者已有对象；`include_unscoped` 与
+`include_period_children` 必须显式保存。路径用途只接受 polyline，分布区用途只接受
+polygon；用途不匹配时拒绝保存，不能把几何形状转换成语义关系。预设的地图或网络视图
+不存在、图层不存在、范围对象缺失时报告 `PRESET001` 并保留原始字节。
+
+`PresetCommand` 与网络布局一样携带 Revision 和内容基线，在 Project 副本中完成
+清单注册和文档写入后一次提交；首次保存默认使用 `.world/presets/<id>.json`。
+预设写入只提高展示代次，不改 .wl、地图几何或关系定义。未知可选字段保留；未知必需
+能力由工作区能力协商按只读处理。
+
 ## 7. 命令、修订和错误
 
 建议接口形状，不是当前Rust API：
