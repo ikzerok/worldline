@@ -271,6 +271,17 @@ M4文件协作先实现按稳定ID的三方diff/merge。不同标记不同字段
 
 M1新增展示/模板/批注文档不进入Story.program、不改旧指纹。新增entity/relation声明是作者资料，也不参与运行指纹；但旧character/world字段原有指纹行为保留，不因新架构悄悄放宽。[R13] 内容改稿对存档的影响按旧规则提示。
 
+### 9.1 跨视图稳定 ID 重命名（M2）
+
+首版 `Project::plan_rename_target` / `apply_rename_plan` 对 `entity` 与 `relation`
+稳定身份提供两阶段重构。预览从当前内容、地图和网络视图索引确认引用完整性，
+列出实际会改变的源码与展示文档；显示名修改仍走普通资料编辑，不触发 ID 重构。
+
+提交必须匹配预览时的 `content_baseline` 与每个目标文件原始字节，任何 ID 冲突、
+损坏/只读展示文档、陈旧基线或重写后诊断都会使整批零写入失败。源码中的声明、
+结构引用与显式正文链接，以及地图/网络 JSON 的 TargetRef、位置键和隐藏关系 ID
+在同一候选 Project 中更新并统一验证。entity/relation ID 重命名不得改变运行指纹。
+
 ## 10. CLI与仓库间契约
 
 保留`wl check/graph/timeline/catalog/play`含义。新增提案命令：`wl workspace check DIR --json`、`wl maps list DIR --json`、`wl relations DIR --target KIND:ID --depth 1 --json`。新命令先在M2实现；当前0.2.0不可直接调用。

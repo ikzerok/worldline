@@ -26,6 +26,7 @@ pub mod presentation;
 pub mod presentation_commands;
 pub mod project;
 pub mod recovery;
+pub mod refactor;
 pub mod reference_impact;
 pub mod relation_context;
 pub mod relations;
