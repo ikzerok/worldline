@@ -112,6 +112,21 @@ Diagnostic {
 | MAP011 | warning | TargetRef 对象尚未在内容目录中解析；地图仍可读 |
 | MAP012 | warning | 导航目标尚未注册；地图仍可读 |
 
+### GRAPH00x — 共享网络视图
+
+网络布局由 `worldline-core::graph_views` 读取；以下诊断不加入故事 Program 或运行指纹。
+原始字节始终由 Project 保留，未知格式或必需能力不允许覆盖或删除。
+
+| code | severity | 场景 |
+|---|---|---|
+| GRAPH001 | error | JSON、重复键、结构、坐标、身份或路径复用错误 |
+| GRAPH002 | error | 内容目录完整时，视图引用的对象或关系类型确认不存在 |
+| GRAPH003 | error | 视图 schema 版本或必需能力不受支持，只读保留 |
+| GRAPH004 | warning | 内容本身有错误，视图引用暂时无法解析，不能视作已被删除 |
+
+删除影响检查合并内容、地图和网络诊断；内容有错误时，即使 GRAPH004 为 warning，
+整体引用检查仍不完整。关系类型的筛选引用也阻止类型删除，不以当前是否有实例为依据。
+
 ## 3. 机器接口
 
 `wl check --json` 输出:

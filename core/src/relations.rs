@@ -97,6 +97,9 @@ pub struct RelationQueryOptions {
     /// 只允许 1 或 2；0 会被规范化为 1。
     pub depth: u8,
     pub relation_type: Option<String>,
+    /// 多类型 OR 筛选；与单类型条件及方向条件取 AND。
+    #[serde(default)]
+    pub relation_types: Vec<String>,
     pub direction: RelationQueryDirection,
     pub max_nodes: usize,
     pub max_edges: usize,
@@ -108,6 +111,7 @@ impl Default for RelationQueryOptions {
             offset: 0,
             depth: 1,
             relation_type: None,
+            relation_types: Vec::new(),
             direction: RelationQueryDirection::Both,
             max_nodes: 250,
             max_edges: 500,
@@ -151,6 +155,9 @@ pub struct RelationQueryContinuation {
     pub target: TargetRef,
     pub depth: u8,
     pub relation_type: Option<String>,
+    /// 多类型 OR 筛选；与单类型条件及方向条件取 AND。
+    #[serde(default)]
+    pub relation_types: Vec<String>,
     pub direction: RelationQueryDirection,
     /// 因上限未展开的实际边界对象；调用方可从这些对象继续请求更窄结果。
     pub frontier: Vec<TargetRef>,
@@ -553,6 +560,7 @@ impl Catalog {
                 offset: continuation.offset,
                 depth: continuation.depth,
                 relation_type: continuation.relation_type.clone(),
+                relation_types: continuation.relation_types.clone(),
                 direction: continuation.direction,
                 ..Default::default()
             },
@@ -595,6 +603,8 @@ impl Catalog {
                         .relation_type
                         .as_deref()
                         .is_none_or(|kind| relation.relation_type == kind)
+                        && (options.relation_types.is_empty()
+                            || options.relation_types.contains(&relation.relation_type))
                         && (undirected
                             || ((relation.from_ref == current
                                 && options.direction != RelationQueryDirection::Incoming)
@@ -682,6 +692,7 @@ impl Catalog {
                 target: target.clone(),
                 depth: options.depth,
                 relation_type: options.relation_type.clone(),
+                relation_types: options.relation_types.clone(),
                 direction: options.direction,
                 frontier: frontier.into_iter().collect(),
             }),
@@ -876,7 +887,10 @@ impl crate::project::Project {
         if !impact.content_references.is_empty() {
             return Err(format!("关系 `{id}` 仍被正文或目录引用，请先解除这些引用"));
         }
-        if !impact.map_placements.is_empty() || !impact.map_scopes.is_empty() {
+        if !impact.map_placements.is_empty()
+            || !impact.map_scopes.is_empty()
+            || !impact.graph_views.is_empty()
+        {
             return Err(format!("关系 `{id}` 仍被展示文档引用，请先解除这些引用"));
         }
         replace_relation_block(
@@ -912,6 +926,32 @@ impl crate::project::Project {
         {
             return Err(format!(
                 "关系类型 `{id}` 仍被关系实例使用，请先删除或修改这些关系"
+            ));
+        }
+        let views = crate::graph_views::build_graph_view_index(self, &result);
+        if views
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == crate::Severity::Error)
+        {
+            return Err("网络视图引用检查不完整，不能删除关系类型".into());
+        }
+        let referencing_views = views
+            .views
+            .values()
+            .filter(|view| {
+                view.draft
+                    .filters
+                    .relation_types
+                    .iter()
+                    .any(|reference| reference == id)
+            })
+            .map(|view| view.draft.id.clone())
+            .collect::<Vec<_>>();
+        if !referencing_views.is_empty() {
+            return Err(format!(
+                "关系类型 `{id}` 仍被共享视图筛选引用，请先修改筛选：{}",
+                referencing_views.join("、")
             ));
         }
         replace_relation_block(

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": true,
-  "title": "GraphViewDocument v1 — proposal",
+  "title": "GraphViewDocument v1",
   "required": [
     "schema_version",
     "id",
@@ -83,6 +83,15 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 500
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "both",
+            "outgoing",
+            "incoming"
+          ],
+          "default": "both"
         }
       },
       "additionalProperties": true

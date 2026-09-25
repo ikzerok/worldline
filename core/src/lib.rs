@@ -16,6 +16,7 @@ pub mod expression;
 pub mod file_access;
 mod fingerprint;
 pub mod graph;
+pub mod graph_views;
 pub mod lexer;
 pub mod map_creation;
 pub mod migration;

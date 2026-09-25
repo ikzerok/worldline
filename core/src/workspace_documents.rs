@@ -62,6 +62,7 @@ impl AuthoringDocument {
 pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
     pub(crate) maps: BTreeMap<String, PathBuf>,
+    pub(crate) graph_views: BTreeMap<String, PathBuf>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
 }
@@ -189,6 +190,8 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     // registry.maps 只保存已经通过路径边界检查的注册项；重复
                     // JSON key 已在 parse_unique_json 阶段拒绝。
                     registry.maps.insert(id.clone(), path);
+                } else {
+                    registry.graph_views.insert(id.clone(), path);
                 }
             } else {
                 registry.report(

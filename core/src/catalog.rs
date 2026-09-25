@@ -5,7 +5,9 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, serde::Deserialize,
+)]
 pub struct TargetRef {
     pub kind: String,
     pub id: String,

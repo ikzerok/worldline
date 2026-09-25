@@ -27,3 +27,9 @@ _Avoid_: 文件指纹、工程哈希
 **纯内容工程**:
 没有可运行 event 的合法工程；仅试玩入口检查可运行性，保存/打包不得拒绝。
 _Avoid_: 设定集（口语化）
+
+## 当前开发切片
+
+WP-10 的 `graph_views` 支撑接口已加入共享布局读取、带基线事务、删除与显式引用保护。
+契约见 `spec/presentation.md` 和 `spec/diagnostics.md`，14 项行为回归见 `core/tests/graph_views.rs`。
+这不代表 worldedit 的网络 UI 或后续 WP-11 已完成；配对进度见同级 worldedit 的 `docs/wp10-progress.md`。

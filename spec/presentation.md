@@ -195,6 +195,37 @@ M4的范围引用可以指作者定义的period、作品条目或版本条目。
 
 局部查询默认depth=1，可申请depth=2；首版最多显示250节点、500边（数值以第11节阈值登记为准），超过时返回`truncated=true`与继续展开入口。原始关系数据不能因为显示上限被删掉。查询顺序确定、双向读取不生成反向副本。
 
+### 6.1 M2 网络布局读写契约
+
+`graph_views::build_graph_view_index` 从清单 `graph_views` 的安全路径构建唯一展示索引。
+GraphViewDocument v1 的必填字段为 `schema_version/id/title/focus/filters/positions/hidden_relation_ids`。
+`positions` 键为 `kind:id`（只分割首个冒号），值为两个有限坐标；这是网络逻辑坐标，
+不表示地理位置。`filters` 含 depth（1–2）、relation_types（空表示全部）、direction
+（both/outgoing/incoming，默认 both）、max_nodes（1–250）与 max_edges（1–500）。
+同维关系类型取 OR，方向与类型取 AND；分页必须沿用同一快照及筛选，替换当前页而非无限累积。
+
+读取不改工程。损坏 JSON、重复键、结构或数值错误报 `GRAPH001`；明确引用缺失报
+`GRAPH002`；源码有错误导致引用暂时无法解析时报告 `GRAPH004`，不能视为已删除。
+未知必需能力或版本报 `GRAPH003` 并只读保留原字节。展示诊断不混入故事
+编译结果。标题、focus、positions 和 hidden_relation_ids 均是展示资料，不产生关系。
+正文提及、关键词匹配与旧人物关系兼容投影不自动写成网络中的独立关系。
+
+`GraphViewCommand` 捕获进程 Revision 与完整内容基线；`apply_with_content` 校验内容
+快照、基线、文档格式与引用后，在 Project 副本中注册/写入，再整批提交。首次保存默认
+路径为 `.world/graph-views/<id>.json`，不得接管既有普通文件；清单显式登记
+`presentation.graph_views.v1`。修改只更新已知字段，保留原文档、focus 和 filters 中
+未知可选字段。命令只提高展示代次，源码与运行指纹不变，Project 快照可一次撤销。
+坏内容导致引用无法确认时拒绝新增引用；已存在且未改变的引用允许纯布局修复。
+保存时仍遵守 Project 的磁盘冲突检查，内容基线不是磁盘锁或密码学凭证。
+
+删除影响增加 `graph_views` 列表，含 view_id、路径与引用字段；中心、固定位置和隐藏
+关系均作为明确引用。损坏或不支持的注册视图使全工程删除检查不完整；删除命令不能
+将其当作无引用。临时隐藏边不解除这些共享引用，删除关系须先明确修改引用它的视图。
+`DeleteGraphViewCommand` 只删除共享布局文档并解除注册，需同样的修订与内容基线；
+一次撤销可恢复注册与原字节。未知必需能力、路径共享或只读文档拒绝删除，绝不级联删除实体或关系。
+同一物理文件不得兼作多个地图/网络注册项；索引、保存与删除均拒绝歧义路径。
+关系类型被共享视图的 relation_types 筛选引用时，必须先显式修改这些筛选才能删除类型。
+
 ## 7. 命令、修订和错误
 
 建议接口形状，不是当前Rust API：
