@@ -50,6 +50,9 @@ struct RelationsArgs {
     depth: u8,
     direction: RelationQueryDirection,
     relation_type: Option<String>,
+    scope_refs: Vec<TargetRef>,
+    include_unscoped: bool,
+    include_period_children: bool,
     json: bool,
 }
 
@@ -251,6 +254,9 @@ fn parse_relations_args(args: &[String]) -> Result<RelationsArgs, String> {
     let mut offset = 0;
     let mut direction = RelationQueryDirection::Both;
     let mut relation_type = None;
+    let mut scope_refs = Vec::new();
+    let mut include_unscoped = false;
+    let mut include_period_children = false;
     let mut json = false;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -319,6 +325,25 @@ fn parse_relations_args(args: &[String]) -> Result<RelationsArgs, String> {
                     return Err("参数 `--type` 只能提供一次".into());
                 }
             }
+            "--scope" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--scope` 需要 KIND:ID")?;
+                scope_refs.push(parse_target_ref(&value)?);
+            }
+            "--include-unscoped" => {
+                if inline.is_some() {
+                    return Err("--include-unscoped 不接受值".into());
+                }
+                include_unscoped = true;
+            }
+            "--include-period-children" => {
+                if inline.is_some() {
+                    return Err("--include-period-children 不接受值".into());
+                }
+                include_period_children = true;
+            }
             key if key.starts_with("--") => return Err(format!("未知参数 {key}")),
             value => {
                 if path.replace(PathBuf::from(value)).is_some() {
@@ -334,6 +359,9 @@ fn parse_relations_args(args: &[String]) -> Result<RelationsArgs, String> {
         depth,
         direction,
         relation_type,
+        scope_refs,
+        include_unscoped,
+        include_period_children,
         json,
     })
 }
@@ -1143,12 +1171,31 @@ fn cmd_relations(args: &RelationsArgs, out: &mut impl Write) -> Result<i32, Stri
             );
         }
     }
+    for scope in &args.scope_refs {
+        if snapshot.result.analysis.catalog.object(scope).is_none() {
+            return write_query_error(
+                &args.path,
+                args.json,
+                "UNKNOWN_SCOPE",
+                &format!("范围对象不存在 {}:{}", scope.kind, scope.id),
+                out,
+                2,
+            );
+        }
+    }
+    let scope_refs = worldline_core::relations::expand_period_scope_refs(
+        &snapshot.result.analysis.timeline,
+        &args.scope_refs,
+        args.include_period_children,
+    );
     let query = snapshot.result.analysis.catalog.query_relations(
         &args.target,
         RelationQueryOptions {
             offset: args.offset,
             depth: args.depth,
             relation_type: args.relation_type.clone(),
+            scope_refs,
+            include_unscoped: args.include_unscoped,
             direction: args.direction,
             ..RelationQueryOptions::default()
         },

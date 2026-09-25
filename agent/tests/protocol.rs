@@ -468,6 +468,73 @@ fn relation_query_uses_catalog_index_and_returns_truncation_fields() {
 }
 
 #[test]
+fn relation_query_filters_author_scopes_and_expands_period_children_explicitly() {
+    let source = r#"
+period old as "旧纪元"
+period late as "旧纪元末" within old
+entity version_a kind version as "版本A"
+entity a kind place
+entity b kind place
+relation_type links as "连接"
+relation_def old_a type links from entity a to entity b
+  scope period old
+  scope entity version_a
+relation_def late_a type links from entity a to entity b
+  scope period late
+  scope entity version_a
+relation_def global type links from entity a to entity b
+event start
+  -> END
+"#;
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": source, "language_version": "1.10" }),
+        ),
+        req(
+            2,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": "entity:a",
+                "scope_refs": ["period:old", "entity:version_a"]
+            }),
+        ),
+        req(
+            3,
+            "relation.query",
+            json!({
+                "story_id": "s1",
+                "target": "entity:a",
+                "scope_refs": ["period:old", "entity:version_a"],
+                "include_period_children": true
+            }),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[0]["result"]["ok"], true, "{responses:?}");
+    assert_eq!(
+        responses[1]["result"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["old_a"]
+    );
+    assert_eq!(
+        responses[2]["result"]["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["late_a", "old_a"]
+    );
+}
+
+#[test]
 fn relation_query_rejects_unknown_target_as_jsonrpc_parameter_error() {
     let (_, responses) = exchange(&[
         req(

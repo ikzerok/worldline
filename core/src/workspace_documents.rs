@@ -63,6 +63,7 @@ pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) graph_views: BTreeMap<String, PathBuf>,
+    pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
 }
@@ -158,6 +159,19 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         }
     }
 
+    if let Some(config) = object.get("source_config") {
+        match parse_source_selection(root, object, config) {
+            Ok(selection) => registry.source_selection = Some(selection),
+            Err(message) => registry.report(root, "WS005", message),
+        }
+    } else if required_feature(object, "workspace.source_sets.v1") {
+        registry.report(
+            root,
+            "WS005",
+            "清单声明 workspace.source_sets.v1，但缺少 source_config",
+        );
+    }
+
     let mut paths = BTreeSet::new();
     for key in ["maps", "graph_views"] {
         let Some(value) = object.get(key) else {
@@ -206,6 +220,77 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         registry.documents.insert(path, manifest_read_only);
     }
     registry
+}
+
+fn required_feature(object: &Map<String, Value>, feature: &str) -> bool {
+    object
+        .get("required_features")
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(feature)))
+}
+
+fn parse_source_selection(
+    root: &Path,
+    manifest: &Map<String, Value>,
+    value: &Value,
+) -> Result<crate::source_config::SourceSelection, String> {
+    if !required_feature(manifest, "workspace.source_sets.v1") {
+        return Err("source_config 需要 required_feature workspace.source_sets.v1".into());
+    }
+    let object = value.as_object().ok_or("source_config 必须是对象")?;
+    if object.get("mode").and_then(Value::as_str) != Some("explicit") {
+        return Err("source_config.mode 目前只支持 explicit".into());
+    }
+    let active = source_list(root, object.get("active"), "active")?;
+    if active.is_empty() {
+        return Err("source_config.active 不能为空".into());
+    }
+    let archived = source_list(root, object.get("archived"), "archived")?;
+    if active.iter().any(|path| archived.contains(path)) {
+        return Err("同一源码不能同时属于 active 与 archived".into());
+    }
+    let entry = manifest
+        .get("entry")
+        .and_then(Value::as_str)
+        .unwrap_or("world.wl");
+    let entry = source_file_path(root, entry)?;
+    if !active.contains(&entry) {
+        return Err("工程 entry 必须属于 source_config.active".into());
+    }
+    let mut selection = crate::source_config::SourceSelection { active, archived };
+    selection.normalize();
+    Ok(selection)
+}
+
+fn source_list(root: &Path, value: Option<&Value>, field: &str) -> Result<Vec<PathBuf>, String> {
+    let values = value
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("source_config.{field} 必须是数组"))?;
+    values
+        .iter()
+        .map(|value| {
+            let value = value
+                .as_str()
+                .ok_or_else(|| format!("source_config.{field} 必须只含字符串路径"))?;
+            source_file_path(root, value)
+        })
+        .collect()
+}
+
+fn source_file_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let relative_path = Path::new(relative);
+    if relative_path.as_os_str().is_empty() || relative_path.is_absolute() {
+        return Err("源码配置必须使用工作区内相对路径".into());
+    }
+    let path = crate::compiler::source_path(&root.join(relative_path));
+    let root = crate::compiler::source_path(root);
+    if !path.starts_with(&root) || path == root {
+        return Err("源码配置路径不得越过工作区边界".into());
+    }
+    if path.extension().and_then(|ext| ext.to_str()) != Some("wl") {
+        return Err("源码配置路径必须使用 .wl 扩展名".into());
+    }
+    Ok(path)
 }
 
 pub(crate) fn registered_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
@@ -283,6 +368,7 @@ fn supported_feature(feature: &str) -> bool {
             | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
+            | "workspace.source_sets.v1"
     )
 }
 

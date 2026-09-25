@@ -27,7 +27,7 @@ fn main() -> ExitCode {
             eprintln!("      wl workspace check <目录> [--json]");
             eprintln!("      wl maps list <目录> [--json]");
             eprintln!(
-                "      wl relations <目录> --target KIND:ID [--offset N] [--depth 1|2] [--json]"
+                "      wl relations <目录> --target KIND:ID [--offset N] [--depth 1|2] [--scope KIND:ID] [--include-unscoped] [--include-period-children] [--json]"
             );
             eprintln!("      wl relation-type create|update|delete <目录> --id ID [--display 名称] [--inverse-display 反向名] [update: --clear-inverse-display|--clear-from-kind|--clear-to-kind] [--json]");
             eprintln!("      wl relation create|update|delete <目录> --id ID [--type TYPE] [--from KIND:ID] [--to KIND:ID] [--description 文案] [--source-note 来源] [--scope KIND:ID] [--property name=value] [update: --clear-source-note|--clear-scope|--clear-properties] [--json]");

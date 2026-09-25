@@ -100,6 +100,10 @@ pub struct RelationQueryOptions {
     /// 多类型 OR 筛选；与单类型条件及方向条件取 AND。
     #[serde(default)]
     pub relation_types: Vec<String>,
+    #[serde(default)]
+    pub scope_refs: Vec<TargetRef>,
+    #[serde(default)]
+    pub include_unscoped: bool,
     pub direction: RelationQueryDirection,
     pub max_nodes: usize,
     pub max_edges: usize,
@@ -112,6 +116,8 @@ impl Default for RelationQueryOptions {
             depth: 1,
             relation_type: None,
             relation_types: Vec::new(),
+            scope_refs: Vec::new(),
+            include_unscoped: false,
             direction: RelationQueryDirection::Both,
             max_nodes: 250,
             max_edges: 500,
@@ -158,6 +164,10 @@ pub struct RelationQueryContinuation {
     /// 多类型 OR 筛选；与单类型条件及方向条件取 AND。
     #[serde(default)]
     pub relation_types: Vec<String>,
+    #[serde(default)]
+    pub scope_refs: Vec<TargetRef>,
+    #[serde(default)]
+    pub include_unscoped: bool,
     pub direction: RelationQueryDirection,
     /// 因上限未展开的实际边界对象；调用方可从这些对象继续请求更窄结果。
     pub frontier: Vec<TargetRef>,
@@ -561,6 +571,8 @@ impl Catalog {
                 depth: continuation.depth,
                 relation_type: continuation.relation_type.clone(),
                 relation_types: continuation.relation_types.clone(),
+                scope_refs: continuation.scope_refs.clone(),
+                include_unscoped: continuation.include_unscoped,
                 direction: continuation.direction,
                 ..Default::default()
             },
@@ -605,6 +617,7 @@ impl Catalog {
                         .is_none_or(|kind| relation.relation_type == kind)
                         && (options.relation_types.is_empty()
                             || options.relation_types.contains(&relation.relation_type))
+                        && relation_matches_scope(self, relation, &options)
                         && (undirected
                             || ((relation.from_ref == current
                                 && options.direction != RelationQueryDirection::Incoming)
@@ -693,6 +706,8 @@ impl Catalog {
                 depth: options.depth,
                 relation_type: options.relation_type.clone(),
                 relation_types: options.relation_types.clone(),
+                scope_refs: options.scope_refs.clone(),
+                include_unscoped: options.include_unscoped,
                 direction: options.direction,
                 frontier: frontier.into_iter().collect(),
             }),
@@ -705,6 +720,78 @@ impl Catalog {
             .map(|relation| relation.handle.clone())
             .collect()
     }
+}
+
+fn scope_dimension(catalog: &Catalog, target: &TargetRef) -> String {
+    match target.kind.as_str() {
+        "period" => "period".into(),
+        "event" | "scene" => "story".into(),
+        "entity"
+            if catalog
+                .entities
+                .get(&target.id)
+                .is_some_and(|entity| entity.entity_type == "version") =>
+        {
+            "version".into()
+        }
+        _ => target.kind.clone(),
+    }
+}
+
+fn relation_matches_scope(
+    catalog: &Catalog,
+    relation: &SemanticRelationInfo,
+    options: &RelationQueryOptions,
+) -> bool {
+    if options.scope_refs.is_empty() {
+        return true;
+    }
+    if relation.scope_refs.is_empty() {
+        return options.include_unscoped;
+    }
+    let mut requested = BTreeMap::<String, Vec<&TargetRef>>::new();
+    for scope in &options.scope_refs {
+        requested
+            .entry(scope_dimension(catalog, scope))
+            .or_default()
+            .push(scope);
+    }
+    requested.into_iter().all(|(dimension, selected)| {
+        relation
+            .scope_refs
+            .iter()
+            .any(|scope| scope_dimension(catalog, scope) == dimension && selected.contains(&scope))
+    })
+}
+
+/// 根据时段树显式扩展查询范围；默认调用方传 false 时不做任何继承或插值。
+pub fn expand_period_scope_refs(
+    timeline: &crate::timeline::Timeline,
+    selected: &[TargetRef],
+    include_children: bool,
+) -> Vec<TargetRef> {
+    let mut out = selected.iter().cloned().collect::<BTreeSet<_>>();
+    if !include_children {
+        return out.into_iter().collect();
+    }
+    let mut queue = selected
+        .iter()
+        .filter(|target| target.kind == "period")
+        .map(|target| target.id.clone())
+        .collect::<VecDeque<_>>();
+    while let Some(parent) = queue.pop_front() {
+        for child in timeline
+            .periods
+            .iter()
+            .filter(|period| period.parent.as_deref() == Some(parent.as_str()))
+        {
+            let target = TargetRef::new("period", &child.id);
+            if out.insert(target) {
+                queue.push_back(child.id.clone());
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 /// 根据关系类型与实例构建机器可读的关系索引（供未来快照 DTO 复用）。

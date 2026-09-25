@@ -186,6 +186,22 @@ pub(crate) fn compile_sources_excluding_with_options(
     deleted: HashSet<PathBuf>,
     options: CompileOptions,
 ) -> CompileResult {
+    compile_sources_excluding_inactive_with_options(
+        entry,
+        sources,
+        deleted,
+        HashSet::new(),
+        options,
+    )
+}
+
+pub(crate) fn compile_sources_excluding_inactive_with_options(
+    entry: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+    deleted: HashSet<PathBuf>,
+    inactive: HashSet<PathBuf>,
+    options: CompileOptions,
+) -> CompileResult {
     let entry = entry_path(entry);
     let overrides = sources
         .iter()
@@ -195,6 +211,7 @@ pub(crate) fn compile_sources_excluding_with_options(
         root: entry.parent().unwrap_or(Path::new(".")).to_path_buf(),
         overrides,
         deleted,
+        inactive,
         sources: BTreeMap::new(),
         files: Vec::new(),
         loaded: HashSet::new(),
@@ -258,6 +275,7 @@ struct Compiler {
     root: PathBuf,
     overrides: BTreeMap<PathBuf, String>,
     deleted: HashSet<PathBuf>,
+    inactive: HashSet<PathBuf>,
     sources: BTreeMap<PathBuf, String>,
     files: Vec<String>,
     loaded: HashSet<PathBuf>,
@@ -270,6 +288,15 @@ struct Compiler {
 impl Compiler {
     fn load(&mut self, path: &Path, from: &str, span: Span) {
         let path = source_path(path);
+        if self.inactive.contains(&path) {
+            self.diags.push(Diagnostic::error(
+                "A105",
+                from,
+                span,
+                format!("include 指向非活动源码:{}", path.display()),
+            ));
+            return;
+        }
         if self.deleted.contains(&path) {
             self.diags.push(Diagnostic::error(
                 "A105",

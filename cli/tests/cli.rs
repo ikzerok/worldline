@@ -210,6 +210,55 @@ fn relations_json_uses_core_query_and_preserves_edge_identity() {
 }
 
 #[test]
+fn relations_scope_flags_filter_author_scopes_without_inference() {
+    let root = temp_presentation_project("relations-scope");
+    std::fs::write(
+        root.join("world.wl"),
+        "period old as \"旧纪元\"\nperiod late as \"旧纪元末\" within old\nentity version_a kind version as \"版本A\"\nentity a kind place\nentity b kind place\nrelation_type links as \"连接\"\nrelation_def old_a type links from entity a to entity b\n  scope period old\n  scope entity version_a\nrelation_def late_a type links from entity a to entity b\n  scope period late\n  scope entity version_a\nrelation_def global type links from entity a to entity b\nevent start\n  -> END\n",
+    )
+    .unwrap();
+    let path = root.to_string_lossy().to_string();
+    let base = [
+        "relations",
+        path.as_str(),
+        "--target",
+        "entity:a",
+        "--scope",
+        "period:old",
+        "--scope",
+        "entity:version_a",
+        "--json",
+    ];
+    let (code, out) = run_args(&base);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let value = json_lines(&out).remove(0);
+    assert_eq!(
+        value["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["old_a"]
+    );
+
+    let mut expanded = base.to_vec();
+    expanded.insert(expanded.len() - 1, "--include-period-children");
+    let (code, out) = run_args(&expanded);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let value = json_lines(&out).remove(0);
+    assert_eq!(
+        value["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edge| edge["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["late_a", "old_a"]
+    );
+}
+
+#[test]
 fn relations_rejects_unknown_target_as_usage_failure() {
     let root = temp_presentation_project("relations-unknown");
     let (code, out) = run_args(&[

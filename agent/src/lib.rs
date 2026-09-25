@@ -409,7 +409,7 @@ impl Server {
 
     fn relation_query(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let target = relation_target(params)?;
-        let options = relation_query_options(params)?;
+        let (options, include_period_children) = relation_query_options(params)?;
         if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
             let unit = self.projects.get_mut(project_id).ok_or_else(|| {
                 ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
@@ -437,6 +437,12 @@ impl Server {
                 ));
             }
             let baseline = unit.project.content_baseline();
+            let mut project_options = options.clone();
+            project_options.scope_refs = worldline_core::relations::expand_period_scope_refs(
+                &result.analysis.timeline,
+                &project_options.scope_refs,
+                include_period_children,
+            );
             let mut response = relation_query_value(
                 &result.analysis,
                 &result.diagnostics,
@@ -444,7 +450,7 @@ impl Server {
                 result.options.language_version,
                 Some(&baseline),
                 &target,
-                options,
+                project_options,
             )?;
             if !conflicts.is_empty() {
                 response["conflicts"] = json!(conflicts);
@@ -453,6 +459,12 @@ impl Server {
         }
         let story_id = param_str(params, "story_id")?;
         let unit = self.story(story_id)?;
+        let mut story_options = options;
+        story_options.scope_refs = worldline_core::relations::expand_period_scope_refs(
+            &unit.analysis.timeline,
+            &story_options.scope_refs,
+            include_period_children,
+        );
         relation_query_value(
             unit.analysis,
             &[],
@@ -460,7 +472,7 @@ impl Server {
             unit.language_version,
             None,
             &target,
-            options,
+            story_options,
         )
     }
 }
@@ -472,7 +484,7 @@ fn relation_target(params: &Value) -> Result<TargetRef, ProtoError> {
     relation_target_value(value, "target")
 }
 
-fn relation_query_options(params: &Value) -> Result<RelationQueryOptions, ProtoError> {
+fn relation_query_options(params: &Value) -> Result<(RelationQueryOptions, bool), ProtoError> {
     let offset = match params.get("offset") {
         None => 0,
         Some(value) => value
@@ -513,13 +525,50 @@ fn relation_query_options(params: &Value) -> Result<RelationQueryOptions, ProtoE
                 .ok_or_else(|| ProtoError::new(-32602, "`relation_type` 必须是字符串"))
         })
         .transpose()?;
-    Ok(RelationQueryOptions {
-        offset,
-        depth,
-        relation_type,
-        direction,
-        ..RelationQueryOptions::default()
-    })
+    let scope_refs = params
+        .get("scope_refs")
+        .or_else(|| params.get("scopes"))
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| ProtoError::new(-32602, "`scope_refs` 必须是数组"))?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| relation_target_value(value, &format!("scope_refs[{index}]")))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let include_unscoped = params
+        .get("include_unscoped")
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| ProtoError::new(-32602, "`include_unscoped` 必须是布尔值"))
+        })
+        .transpose()?
+        .unwrap_or(false);
+    let include_period_children = params
+        .get("include_period_children")
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| ProtoError::new(-32602, "`include_period_children` 必须是布尔值"))
+        })
+        .transpose()?
+        .unwrap_or(false);
+    Ok((
+        RelationQueryOptions {
+            offset,
+            depth,
+            relation_type,
+            scope_refs,
+            include_unscoped,
+            direction,
+            ..RelationQueryOptions::default()
+        },
+        include_period_children,
+    ))
 }
 
 fn relation_compile_failure(
@@ -560,6 +609,14 @@ fn relation_query_value(
             return Err(ProtoError::new(
                 -32602,
                 format!("未知关系类型 `{relation_type}`"),
+            ));
+        }
+    }
+    for scope in &options.scope_refs {
+        if analysis.catalog.object(scope).is_none() {
+            return Err(ProtoError::new(
+                -32602,
+                format!("关系查询范围对象不存在 {}:{}", scope.kind, scope.id),
             ));
         }
     }

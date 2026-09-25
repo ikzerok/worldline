@@ -36,6 +36,7 @@ pub struct Project {
     refresh_generation: u64,
     recovery_conflicts: Vec<PathBuf>,
     language_version: LanguageVersion,
+    source_selection: Option<crate::source_config::SourceSelection>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +104,7 @@ impl Project {
             .map(|bytes| crate::workspace_documents::parse_registry(&self.root, bytes))
             .unwrap_or_default();
         self.language_version = registry.language_version;
+        self.source_selection = registry.source_selection.clone();
         self.authoring_diagnostics = registry.diagnostics.clone();
 
         let tracked_paths: std::collections::BTreeSet<_> = registry
@@ -306,6 +308,7 @@ impl Project {
             refresh_generation: 0,
             recovery_conflicts: recovery.conflicts,
             language_version: LanguageVersion::V1_9,
+            source_selection: None,
         };
         project.refresh()?;
         if project.authoring_diagnostics.is_empty() {
@@ -356,6 +359,7 @@ impl Project {
             refresh_generation: 0,
             recovery_conflicts: Vec::new(),
             language_version: LanguageVersion::V1_9,
+            source_selection: None,
         }
     }
 
@@ -461,9 +465,19 @@ impl Project {
     pub fn sources(&self) -> BTreeMap<PathBuf, String> {
         self.documents
             .iter()
-            .filter(|(_, document)| !document.is_deleted())
+            .filter(|(path, document)| {
+                !document.is_deleted()
+                    && self
+                        .source_selection
+                        .as_ref()
+                        .is_none_or(|selection| selection.is_active(path))
+            })
             .map(|(p, d)| (p.clone(), d.text.clone()))
             .collect()
+    }
+
+    pub fn source_selection(&self) -> Option<&crate::source_config::SourceSelection> {
+        self.source_selection.as_ref()
     }
 
     /// 当前工程清单选择的语言版本；无清单的旧工程固定返回 `"1.9"`。
@@ -484,14 +498,28 @@ impl Project {
     }
 
     fn compile_source_buffers(&self, sources: &BTreeMap<PathBuf, String>) -> CompileResult {
-        crate::compiler::compile_sources_excluding_with_options(
+        let deleted = self
+            .documents
+            .iter()
+            .filter(|(_, document)| document.deleted)
+            .map(|(path, _)| path.clone())
+            .collect();
+        let inactive = self
+            .source_selection
+            .as_ref()
+            .map(|selection| {
+                self.documents
+                    .iter()
+                    .filter(|(path, document)| !document.deleted && !selection.is_active(path))
+                    .map(|(path, _)| path.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        crate::compiler::compile_sources_excluding_inactive_with_options(
             &self.entry,
             sources,
-            self.documents
-                .iter()
-                .filter(|(_, document)| document.deleted)
-                .map(|(path, _)| path.clone())
-                .collect(),
+            deleted,
+            inactive,
             self.compile_options(),
         )
     }
@@ -558,11 +586,13 @@ impl Project {
             .filter(|d| !d.deleted)
         else {
             self.language_version = LanguageVersion::V1_9;
+            self.source_selection = None;
             self.authoring_diagnostics.clear();
             return;
         };
         let registry = crate::workspace_documents::parse_registry(&self.root, &document.bytes);
         self.language_version = registry.language_version;
+        self.source_selection = registry.source_selection.clone();
         self.authoring_diagnostics = registry.diagnostics;
         for (path, inherited) in registry.documents {
             let document = self
@@ -792,6 +822,7 @@ impl Project {
             refresh_generation: 0,
             recovery_conflicts: Vec::new(),
             language_version: self.language_version,
+            source_selection: self.source_selection.clone(),
         };
         candidate.save_buffers(true)?;
         for (relative, source) in portable.copies {

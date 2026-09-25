@@ -91,6 +91,7 @@ Diagnostic {
 | WS002 | error | 清单 schema 版本不受支持 |
 | WS003 | error | 清单必需能力未知或格式错误 |
 | WS004 | error | 清单注册项路径、类型或边界无效 |
+| WS005 | error | 显式源码集配置无效、入口未激活或 active/archive 边界冲突 |
 
 ### MAP00x — 地图展示文档
 
