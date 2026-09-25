@@ -10,6 +10,7 @@ pub mod catalog_edit;
 mod catalog_syntax;
 mod compiler;
 mod content_baseline;
+pub mod content_templates;
 pub mod deletion_content_references;
 pub mod diagnostic;
 pub mod expression;

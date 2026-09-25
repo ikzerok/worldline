@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": true,
-  "title": "Authoring template catalog v1 — proposal",
+  "title": "Authoring template catalog v1",
   "required": [
     "schema_version",
     "templates"

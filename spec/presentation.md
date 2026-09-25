@@ -181,6 +181,17 @@ properties 与源位置。创建、修改、改名（显示名或分类）和删
 
 需要持久引用时，显式“提升为独立关系”：预览新relation_def与旧项移除，整批提交，保留作者说明。预览携带 `Project::content_baseline()` 和完整草稿，包含 scope 与 properties；提交按内容基线拒绝陈旧请求并保持零写入。不能以源行号伪装永久ID。旧人物关系原本参与指纹规则；提升可能影响旧档，必须提示和测试，不能未经证明宣称等价迁移。
 
+### 5.1.1 可选内容模板（M3）
+
+内置模板目录的机器单源为 `spec/examples/templates.catalog.json`，schema 为
+`spec/schemas/templates.schema.json`。core 公开只读模板目录与按
+`kind/entity_type` 匹配接口；首版共 16 类（world 1、character 1、entity 14）。
+
+模板只包含可选字段、创作问题和关系建议，不保存对象实例值。切换或删除模板不会
+清除 description、已有 property、别名或未知自定义字段；空栏目不自动写成
+false/0。关系建议只打开显式 relation 草稿，仍须作者选择类型与两端后提交。
+来源、陈述性质与创作状态作为彼此独立的作者资料字段展示，不因“已接受”推断真假。
+
 ### 5.2 范围不是模拟状态
 
 M4的范围引用可以指作者定义的period、作品条目或版本条目。按维度内部OR、跨维度AND筛选；是否包含未标范围项由`include_unscoped`明确控制。默认不展开时期子树，作者可显式选择“含子时期”。
