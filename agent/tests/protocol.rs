@@ -594,6 +594,58 @@ fn full_play_session() {
 }
 
 #[test]
+fn replay_rpc_exposes_trace_checkpoint_and_pure_choice_explanations() {
+    let source =
+        "event start\n  choice \"blocked\" if false\n    -> END\n  choice \"finish\"\n    -> END\n";
+    let compiled = worldline_core::compile_source("未命名.wl", source);
+    assert!(!compiled.has_errors(), "{:#?}", compiled.diagnostics);
+    let mut fixture =
+        worldline_runtime::Story::new_with_seed(&compiled.program, &compiled.analysis, 42).unwrap();
+    fixture.continue_story().unwrap();
+    fixture.choose(0).unwrap();
+    fixture.continue_story().unwrap();
+    let replay_trace = json!(fixture.replay_trace());
+    let (_, first) = exchange(&[
+        req(1, "compile", json!({ "source": source })),
+        req(2, "session.open", json!({ "story_id": "s1", "seed": 42 })),
+        req(3, "session.continue", json!({ "session_id": "c1" })),
+        req(4, "session.explain_choices", json!({ "session_id": "c1" })),
+        req(5, "session.checkpoint", json!({ "session_id": "c1" })),
+        req(
+            6,
+            "session.choose",
+            json!({ "session_id": "c1", "index": 0 }),
+        ),
+        req(7, "session.continue", json!({ "session_id": "c1" })),
+        req(8, "session.trace", json!({ "session_id": "c1" })),
+        req(
+            9,
+            "trace.replay",
+            json!({
+                "story_id": "s1",
+                "trace": replay_trace,
+                "max_steps": 1000,
+                "time_budget_ms": 5000
+            }),
+        ),
+        req(10, "shutdown", json!({})),
+    ]);
+    assert!(first.iter().all(|response| response.get("error").is_none()));
+    assert_eq!(first[1]["result"]["state"]["paused"], false);
+    assert_eq!(first[3]["result"]["choices"][0]["available"], false);
+    assert_eq!(
+        first[3]["result"]["choices"][0]["condition"]["result"],
+        false
+    );
+    assert_eq!(first[4]["result"]["checkpoint"]["seed"], 42);
+    let trace = first[7]["result"]["trace"].clone();
+    assert_eq!(trace["complete"], true);
+    assert_eq!(first[8]["result"]["ok"], true, "{:?}", first[8]);
+    assert_eq!(first[8]["result"]["replay"]["status"]["status"], "replayed");
+    assert_eq!(first[8]["result"]["replay"]["status"]["complete"], true);
+}
+
+#[test]
 fn compile_error_returns_diagnostics() {
     let (_, resp) = exchange(&[
         req(

@@ -64,18 +64,18 @@ struct ReplayExecutionBudget<'a> {
 }
 
 impl ReplayExecutionBudget<'_> {
-    fn consume_step(&mut self) -> Result<(), ReplayStatus> {
+    fn consume_step(&mut self) -> Option<ReplayStatus> {
         if self.cancellation.is_cancelled() {
-            return Err(ReplayStatus::Cancelled);
+            return Some(ReplayStatus::Cancelled);
         }
         if self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms) {
-            return Err(ReplayStatus::TimeBudgetExceeded);
+            return Some(ReplayStatus::TimeBudgetExceeded);
         }
         if self.steps >= self.limits.max_steps {
-            return Err(ReplayStatus::StepBudgetExceeded);
+            return Some(ReplayStatus::StepBudgetExceeded);
         }
         self.steps += 1;
-        Ok(())
+        None
     }
 }
 
@@ -404,9 +404,19 @@ impl<'p> Story<'p> {
             } else {
                 None
             };
+            let available = !condition_failed && !already_taken;
+            if available {
+                for part in &choice.label {
+                    if let TextPart::Expr(expression) = part {
+                        // Mirror ordinary label rendering on the copied stream so later
+                        // conditions see the same random values without consuming Story RNG.
+                        self.eval_with_rng(expression, &mut rng)?;
+                    }
+                }
+            }
             explanations.push(ChoiceExplanation {
                 choice: identity,
-                available: !condition_failed && !already_taken,
+                available,
                 condition,
                 unavailable_reason,
             });
@@ -481,7 +491,11 @@ impl<'p> Story<'p> {
         if checkpoint.fingerprint != analysis.fingerprint {
             return Err(RunError::new("检查点程序 fingerprint 不匹配"));
         }
-        Self::load(program, analysis, &checkpoint.state)
+        let story = Self::load(program, analysis, &checkpoint.state)?;
+        if story.seed != normalize_seed(checkpoint.seed) {
+            return Err(RunError::new("检查点 seed 与 runtime 状态不一致"));
+        }
+        Ok(story)
     }
 
     // -- v1.5:准入、效果、变动 ------------------------------------------------
@@ -714,7 +728,7 @@ impl<'p> Story<'p> {
         }
         loop {
             if let Some(run_budget) = budget.as_deref_mut() {
-                if let Err(status) = run_budget.consume_step() {
+                if let Some(status) = run_budget.consume_step() {
                     return Ok(ContinueOutcome {
                         outputs: out,
                         stop: Some(status),
@@ -899,7 +913,16 @@ impl<'p> Story<'p> {
                         let mut identity =
                             self.choice_identity(fi, start, offset, c.label_raw.clone());
                         let condition = if let Some(cond) = &c.cond {
-                            let result = matches!(self.eval(cond)?, Value::Bool(true));
+                            let value = self.eval(cond).map_err(|mut error| {
+                                error
+                                    .node
+                                    .get_or_insert_with(|| self.current_node().unwrap_or_default());
+                                if error.line.is_none() || error.line == Some(0) {
+                                    error.line = Some(c.loc.line);
+                                }
+                                error
+                            })?;
+                            let result = matches!(value, Value::Bool(true));
                             Some(ConditionExplanation {
                                 expression: expression_source(cond),
                                 result: Some(result),
@@ -1643,22 +1666,35 @@ impl ReplayTrace {
         let initial_actual = if story.is_paused() {
             story.observation(&[])
         } else {
-            match story.continue_story_inner(Some(&mut budget))? {
-                outcome => {
-                    story.record_continuation(&outcome.outputs);
-                    if let Some(status) = outcome.stop {
-                        return Ok(make_replay_result(
-                            status,
-                            budget.steps,
-                            0,
-                            trace.fingerprint,
-                            &story,
-                            &initial_state,
-                        ));
-                    }
-                    story.observation(&outcome.outputs)
+            let outcome = match story.continue_story_inner(Some(&mut budget)) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return Ok(make_replay_result(
+                        ReplayStatus::StoryFailed {
+                            message: error.message,
+                            node: error.node,
+                            line: error.line,
+                        },
+                        budget.steps,
+                        0,
+                        trace.fingerprint,
+                        &story,
+                        &initial_state,
+                    ));
                 }
+            };
+            story.record_continuation(&outcome.outputs);
+            if let Some(status) = outcome.stop {
+                return Ok(make_replay_result(
+                    status,
+                    budget.steps,
+                    0,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
             }
+            story.observation(&outcome.outputs)
         };
         initial_state = initial_actual.state.clone();
         if let Some(expected) = &trace.initial_observation {
@@ -1674,7 +1710,7 @@ impl ReplayTrace {
                     0,
                     trace.fingerprint,
                     &story,
-                    &initial_state,
+                    &expected.state,
                 ));
             }
         }
@@ -1776,7 +1812,7 @@ impl ReplayTrace {
                     completed_choices,
                     trace.fingerprint,
                     &story,
-                    &initial_state,
+                    &expected_observation.state,
                 ));
             }
         }

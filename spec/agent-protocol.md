@@ -256,6 +256,8 @@ workspace_diagnostics[], read_only, language_version}`。工作区存在 `WS003`
   的存档 JSON 写入该文件;暂停态语义同 `semantics.md` §7。
   人类模式下 `--save` 同样生效。
 
+`wl play` 可选 `--seed N` 指定可复现随机流，`--trace-output=<文件>` 在退出时保存 runtime trace JSON。`wl replay <入口> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] --json` 在当前编译产物上受控重放；回放不写 Project。参数/DTO 错误退出码为 2；故事失败、轨迹分歧、预算耗尽或取消退出码为 1，JSON 结果携带 `status`、当前位置、状态差异、覆盖和诊断信息。DTO/状态边界见 [replay.md](replay.md)。
+
 ### 2.5 状态视图(state)
 
 由 `worldline_runtime::Story::state_view()` 统一产出,CLI 与 `wl-agent`
@@ -304,7 +306,11 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `compile` | `{path, language_version?}` 或 `{source, file_name?, language_version?}` | `{ok, story_id, fingerprint, stats, diagnostics, workspace_diagnostics, read_only, language_version}`;故事编译失败时无 story_id；工程可编译但工作区只读时仍可返回 story_id，`read_only` 为 true |
 | `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog, language_version}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
 | `export` | `{story_id, format}`;format ∈ `graph_mermaid` \| `timeline_mermaid` | `{text}` |
-| `session.open` | `{story_id, save?}`(save 为存档 JSON 字符串) | `{session_id, state}` |
+| `session.open` | `{story_id, save?, seed?}`(save 为存档 JSON 字符串；seed 为新会话的非负整数随机种子，不能与 save 同用) | `{session_id, state}` |
+| `session.trace` | `{session_id}` | `{trace}`；输出与 CLI 相同的 runtime ReplayTrace |
+| `session.checkpoint` | `{session_id}` | `{checkpoint}`；仅用于相同 runtime/schema/fingerprint |
+| `session.explain_choices` | `{session_id}` | `{choices}`；只读解释当前选择组的条件与阻断原因 |
+| `trace.replay` | `{story_id, trace, max_steps?, time_budget_ms?}` | `{ok, replay}`；选择/观察不匹配和预算停止为结构化故事结果，不是 JSON-RPC 错误 |
 | `session.continue` | `{session_id}` | `{outputs, choices, state, paused, ended}`;运行期错误 → `ok:false` |
 | `session.choose` | `{session_id, index}`(**0 起**) | `{state, paused, ended, choices}`;越界 → error `-32602` |
 | `session.state` | `{session_id}` | `{state}` |
@@ -383,6 +389,8 @@ core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没
 - 会话结束(ended)后 `session.continue` 仍可安全调用:返回
   `ended: true`,`outputs` 仅含 `{"type":"ended"}` 收束事件;
   `session.restart` 复位到开头。
+
+`session.open` 可选 `seed`，否则使用 runtime 默认种子。`session.trace`、`session.checkpoint`、`session.explain_choices` 和 `trace.replay` 都复用 runtime 公共接口；重放时不得按旧选择索引回退。`trace.replay` 的 `max_steps` 与 `time_budget_ms` 是非负整数；结构无效或版本/fingerprint 不兼容的 DTO 属于 `-32602`，可执行轨迹的分歧、预算耗尽和故事运行错误作为 `replay.status` 返回。调试 schema、选择身份、失败位置和预算语义见 [replay.md](replay.md)。
 
 ### 3.5 会话示例
 

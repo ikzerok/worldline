@@ -84,6 +84,14 @@ fn checkpoint_roundtrip_binds_runtime_and_program_but_does_not_write_project() {
         Ok(_) => panic!("changed source unexpectedly accepted the checkpoint"),
     };
     assert!(error.message.contains("fingerprint"));
+
+    let mut mismatched_seed = checkpoint.clone();
+    mismatched_seed.seed = 8;
+    let error = match Story::from_checkpoint(&result.program, &result.analysis, &mismatched_seed) {
+        Err(error) => error,
+        Ok(_) => panic!("checkpoint with an inconsistent seed unexpectedly loaded"),
+    };
+    assert!(error.message.contains("seed"));
 }
 
 #[test]
@@ -119,6 +127,25 @@ fn condition_explanation_is_read_only_and_reports_false_and_once_reasons() {
 }
 
 #[test]
+fn unpaused_explanations_mirror_random_labels_without_consuming_story_rng() {
+    let result = compile(
+        "event start\n  choice \"draw {rnd(1, 10)}\"\n    -> END\n  choice \"conditional\" if rnd(1, 2) == 1\n    -> END\n",
+    );
+    let mut story = Story::new_with_seed(&result.program, &result.analysis, 1234).unwrap();
+    let before = story.save().unwrap();
+    let predicted = story.explain_choices().unwrap();
+    assert_eq!(story.save().unwrap(), before);
+
+    story.continue_story().unwrap();
+    let actual = story.explain_choices().unwrap();
+    assert_eq!(predicted.len(), actual.len());
+    for (predicted, actual) in predicted.iter().zip(actual.iter()) {
+        assert_eq!(predicted.available, actual.available);
+        assert_eq!(predicted.condition, actual.condition);
+    }
+}
+
+#[test]
 fn changed_choice_stops_replay_without_falling_back_to_the_old_index() {
     let original = compile(
         "event start\n  choice \"north\" if true\n    -> END\n  choice \"south\"\n    -> END\n",
@@ -141,6 +168,42 @@ fn changed_choice_stops_replay_without_falling_back_to_the_old_index() {
 }
 
 #[test]
+fn replay_reports_condition_runtime_failure_with_source_location() {
+    let original = compile("event start\n  choice \"continue\" if true\n    -> END\n");
+    let trace = captured_trace(&original, 5);
+    let changed = compile("event start\n  choice \"continue\" if 1 / 0 == 1\n    -> END\n");
+    let replay = ReplayTrace::replay(
+        &changed.program,
+        &changed.analysis,
+        &trace,
+        ReplayBudget::new(100, 1_000),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        replay.status,
+        ReplayStatus::StoryFailed { line: Some(2), .. }
+    ));
+}
+
+#[test]
+fn changed_state_is_reported_as_a_diff_against_the_recorded_observation() {
+    let original = compile("event start\n  let score = 1\n  choice \"continue\"\n    -> END\n");
+    let trace = captured_trace(&original, 11);
+    let changed = compile("event start\n  let score = 2\n  choice \"continue\"\n    -> END\n");
+    let replay = ReplayTrace::replay(
+        &changed.program,
+        &changed.analysis,
+        &trace,
+        ReplayBudget::new(100, 1_000),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+    assert!(matches!(replay.status, ReplayStatus::Diverged { .. }));
+    assert_eq!(replay.state_diff["vars"]["score"]["Num"], 2.0);
+}
+
+#[test]
 fn self_loop_respects_step_budget_and_pre_cancelled_replay_stops_immediately() {
     let result = compile("event start\n  -> start\n");
     let trace = Story::new_with_seed(&result.program, &result.analysis, 1)
@@ -156,6 +219,17 @@ fn self_loop_respects_step_budget_and_pre_cancelled_replay_stops_immediately() {
     .unwrap();
     assert_eq!(replay.status, ReplayStatus::StepBudgetExceeded);
     assert_eq!(replay.executed_steps, 40);
+
+    let replay = ReplayTrace::replay(
+        &result.program,
+        &result.analysis,
+        &trace,
+        ReplayBudget::new(40, 0),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(replay.status, ReplayStatus::TimeBudgetExceeded);
+    assert_eq!(replay.executed_steps, 0);
 
     let cancellation = ReplayCancellation::new();
     cancellation.cancel();

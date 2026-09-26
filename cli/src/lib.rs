@@ -17,7 +17,7 @@ use worldline_core::{
     LanguageVersion, RelationDirection, RelationDraft, RelationQueryDirection,
     RelationQueryOptions, RelationTypeDraft, Severity,
 };
-use worldline_runtime::{Output, Story};
+use worldline_runtime::{Output, ReplayBudget, ReplayStatus, ReplayTrace, Story};
 
 /// 单个故事文件的公共参数。
 struct FileArgs {
@@ -25,6 +25,16 @@ struct FileArgs {
     json: bool,
     load: Option<PathBuf>,
     save: Option<PathBuf>,
+    seed: Option<u64>,
+    trace_output: Option<PathBuf>,
+    language_version: Option<LanguageVersion>,
+}
+
+struct ReplayArgs {
+    path: PathBuf,
+    trace_json: String,
+    budget: ReplayBudget,
+    json: bool,
     language_version: Option<LanguageVersion>,
 }
 
@@ -247,8 +257,9 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
             let f = parse_file_args(cmd, rest, true)?;
             cmd_play(&f, out, input)
         }
+        "replay" => cmd_replay(&parse_replay_args(rest)?, out),
         other => Err(format!(
-            "未知子命令 `{other}`(可用:workspace / maps / relations / relation / relation-type / check / play / graph / timeline / catalog / catalog-query / authoring-intent / entity)"
+            "未知子命令 `{other}`(可用:workspace / maps / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / authoring-intent / entity)"
         )),
     }
 }
@@ -885,6 +896,8 @@ fn parse_file_args(cmd: &str, args: &[String], session_flags: bool) -> Result<Fi
     let mut json = false;
     let mut load = None;
     let mut save = None;
+    let mut seed = None;
+    let mut trace_output = None;
     let mut language_version = None;
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
@@ -895,6 +908,25 @@ fn parse_file_args(cmd: &str, args: &[String], session_flags: bool) -> Result<Fi
             }
             other if session_flags && other.starts_with("--save=") => {
                 save = Some(PathBuf::from(other.trim_start_matches("--save=")));
+            }
+            "--seed" if session_flags => {
+                let value = iter.next().ok_or("参数 `--seed` 需要非负整数")?;
+                seed = Some(value.parse().map_err(|_| "参数 `--seed` 需要非负整数")?);
+            }
+            other if session_flags && other.starts_with("--seed=") => {
+                seed = Some(
+                    other
+                        .trim_start_matches("--seed=")
+                        .parse()
+                        .map_err(|_| "参数 `--seed` 需要非负整数")?,
+                );
+            }
+            "--trace-output" if session_flags => {
+                let value = iter.next().ok_or("参数 `--trace-output` 需要文件路径")?;
+                trace_output = Some(PathBuf::from(value));
+            }
+            other if session_flags && other.starts_with("--trace-output=") => {
+                trace_output = Some(PathBuf::from(other.trim_start_matches("--trace-output=")));
             }
             "--language-version" => {
                 let value = iter
@@ -918,11 +950,82 @@ fn parse_file_args(cmd: &str, args: &[String], session_flags: bool) -> Result<Fi
     let Some(path) = path else {
         return Err(format!("子命令 `{cmd}` 需要一个 .wl 故事文件"));
     };
+    if load.is_some() && seed.is_some() {
+        return Err("`--seed` 只能用于新故事，不能与 `--load` 同时使用".into());
+    }
     Ok(FileArgs {
         path,
         json,
         load,
         save,
+        seed,
+        trace_output,
+        language_version,
+    })
+}
+
+fn parse_replay_args(args: &[String]) -> Result<ReplayArgs, String> {
+    let mut path = None;
+    let mut trace_json = None;
+    let mut max_steps = ReplayBudget::default().max_steps;
+    let mut time_budget_ms = ReplayBudget::default().time_budget_ms;
+    let mut json = false;
+    let mut language_version = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let (key, inline) = arg
+            .split_once('=')
+            .map(|(key, value)| (key, Some(value)))
+            .unwrap_or((arg.as_str(), None));
+        match key {
+            "--json" if inline.is_none() => json = true,
+            "--trace-json" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--trace-json` 需要 JSON DTO")?;
+                if trace_json.replace(value).is_some() {
+                    return Err("参数 `--trace-json` 只能提供一次".into());
+                }
+            }
+            "--max-steps" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--max-steps` 需要非负整数")?;
+                max_steps = value
+                    .parse()
+                    .map_err(|_| "参数 `--max-steps` 需要非负整数")?;
+            }
+            "--time-budget-ms" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--time-budget-ms` 需要非负整数")?;
+                time_budget_ms = value
+                    .parse()
+                    .map_err(|_| "参数 `--time-budget-ms` 需要非负整数")?;
+            }
+            "--language-version" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--language-version` 需要一个值")?;
+                language_version = Some(parse_language_version(&value)?);
+            }
+            _ if key.starts_with("--") => return Err(format!("未知参数 {key}")),
+            _ => {
+                if path.replace(PathBuf::from(arg)).is_some() {
+                    return Err("只能提供一个故事文件".into());
+                }
+            }
+        }
+    }
+    Ok(ReplayArgs {
+        path: path.ok_or("子命令 `replay` 需要一个 .wl 故事文件")?,
+        trace_json: trace_json.ok_or("子命令 `replay` 需要 --trace-json")?,
+        budget: ReplayBudget::new(max_steps, time_budget_ms),
+        json,
         language_version,
     })
 }
@@ -2963,16 +3066,53 @@ fn cmd_play(f: &FileArgs, out: &mut impl Write, input: &mut impl BufRead) -> Res
                 Err(error) => return play_start_failure(f, out, format!("存档载入失败:{error}")),
             }
         }
-        None => match Story::new(&result.program, &result.analysis) {
+        None => match f.seed.map_or_else(
+            || Story::new(&result.program, &result.analysis),
+            |seed| Story::new_with_seed(&result.program, &result.analysis, seed),
+        ) {
             Ok(story) => story,
             Err(error) => return play_start_failure(f, out, format!("故事启动失败:{error}")),
         },
     };
-    if f.json {
+    let code = if f.json {
         play_json(&mut story, f.save.as_deref(), out, input)
     } else {
         play_human(&mut story, f.save.as_deref(), out, input)
+    }?;
+    if let Some(path) = &f.trace_output {
+        let trace = serde_json::to_string_pretty(&story.replay_trace())
+            .map_err(|error| format!("trace 生成失败:{error}"))?;
+        std::fs::write(path, trace)
+            .map_err(|error| format!("无法写入 trace {}: {error}", path.display()))?;
     }
+    Ok(code)
+}
+
+fn cmd_replay(args: &ReplayArgs, out: &mut impl Write) -> Result<i32, String> {
+    let Some(snapshot) = compile_or_fail(&args.path, args.language_version, out) else {
+        return Ok(2);
+    };
+    let result = &snapshot.result;
+    if result.has_errors() {
+        return compile_failed(&result.diagnostics, args.json, out);
+    }
+    let trace: ReplayTrace = serde_json::from_str(&args.trace_json)
+        .map_err(|error| format!("trace DTO 无效:{error}"))?;
+    let replay = ReplayTrace::replay(
+        &result.program,
+        &result.analysis,
+        &trace,
+        args.budget,
+        &worldline_runtime::ReplayCancellation::new(),
+    )
+    .map_err(|error| format!("重放请求无效:{error}"))?;
+    let failed = !matches!(replay.status, ReplayStatus::Replayed { .. });
+    if args.json {
+        writeln!(out, "{}", json!(replay)).map_err(|error| error.to_string())?;
+    } else {
+        writeln!(out, "{:?}", replay.status).map_err(|error| error.to_string())?;
+    }
+    Ok(if failed { 1 } else { 0 })
 }
 
 fn play_start_failure(f: &FileArgs, out: &mut impl Write, message: String) -> Result<i32, String> {

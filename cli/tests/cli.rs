@@ -112,6 +112,58 @@ fn check_json_output() {
 }
 
 #[test]
+fn play_can_write_a_seeded_trace_that_cli_replays() {
+    let source = temp_story(
+        "replay-cli.wl",
+        "event start\n  开场。\n  choice \"完成\"\n    结尾。\n    -> END\n",
+    );
+    let trace_path = std::env::temp_dir().join(format!(
+        "wl-replay-cli-{}-{}.json",
+        std::process::id(),
+        source.file_name().unwrap().to_string_lossy()
+    ));
+    let mut output = Vec::new();
+    let mut input = std::io::Cursor::new(b"0\n".to_vec());
+    let code = wl::run(
+        &[
+            "play".into(),
+            source.to_string_lossy().into_owned(),
+            "--seed=907".into(),
+            format!("--trace-output={}", trace_path.display()),
+            "--json".into(),
+        ],
+        &mut output,
+        &mut input,
+    )
+    .unwrap();
+    assert_eq!(code, 0);
+    let trace = std::fs::read_to_string(&trace_path).unwrap();
+    let trace_dto: Value = serde_json::from_str(&trace).unwrap();
+    assert_eq!(trace_dto["origin"]["kind"], "entry");
+    assert_eq!(trace_dto["complete"], true);
+
+    let mut replay_output = Vec::new();
+    let mut no_input = std::io::Cursor::new(Vec::new());
+    let code = wl::run(
+        &[
+            "replay".into(),
+            source.to_string_lossy().into_owned(),
+            format!("--trace-json={trace}"),
+            "--max-steps=1000".into(),
+            "--time-budget-ms=5000".into(),
+            "--json".into(),
+        ],
+        &mut replay_output,
+        &mut no_input,
+    )
+    .unwrap();
+    assert_eq!(code, 0);
+    let replay = json_lines(&replay_output).remove(0);
+    assert_eq!(replay["status"]["status"], "replayed");
+    assert_eq!(replay["status"]["complete"], true);
+}
+
+#[test]
 fn workspace_check_json_reports_revision_and_diagnostic_domains() {
     let root = temp_presentation_project("workspace-check");
     let (code, out) = run_args(&[

@@ -19,7 +19,7 @@ use worldline_core::{
     RelationDirection, RelationDraft, RelationPromotionPreview, RelationQueryDirection,
     RelationQueryOptions, RelationTypeDraft,
 };
-use worldline_runtime::Story;
+use worldline_runtime::{ReplayBudget, ReplayCancellation, ReplayTrace, Story};
 
 /// 协议版本:方法表或错误语义发生不兼容变更时递增。
 pub const PROTOCOL: u64 = 1;
@@ -189,6 +189,7 @@ impl Server {
                 Ok(json!({ "text": text }))
             }
             "session.open" => self.session_open(params),
+            "trace.replay" => self.trace_replay(params),
             "session.continue" => {
                 let s = self.session(params)?;
                 match s.story.continue_story() {
@@ -235,6 +236,24 @@ impl Server {
             "session.state" => {
                 let s = self.session(params)?;
                 Ok(json!({ "state": s.story.state_view() }))
+            }
+            "session.trace" => {
+                let s = self.session(params)?;
+                Ok(json!({ "trace": s.story.replay_trace() }))
+            }
+            "session.checkpoint" => {
+                let s = self.session(params)?;
+                match s.story.checkpoint() {
+                    Ok(checkpoint) => Ok(json!({ "checkpoint": checkpoint })),
+                    Err(error) => Ok(json!({ "ok": false, "run_error": error })),
+                }
+            }
+            "session.explain_choices" => {
+                let s = self.session(params)?;
+                match s.story.explain_choices() {
+                    Ok(choices) => Ok(json!({ "choices": choices })),
+                    Err(error) => Ok(json!({ "ok": false, "run_error": error })),
+                }
             }
             "session.save" => {
                 let s = self.session(params)?;
@@ -392,13 +411,27 @@ impl Server {
 
     fn session_open(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let story_id = param_str(params, "story_id")?.to_string();
+        let seed = match params.get("seed") {
+            None => None,
+            Some(value) => Some(
+                value
+                    .as_u64()
+                    .ok_or_else(|| ProtoError::new(-32602, "`seed` 必须是非负 64 位整数"))?,
+            ),
+        };
+        if seed.is_some() && params.get("save").and_then(Value::as_str).is_some() {
+            return Err(ProtoError::new(-32602, "`seed` 不能与 `save` 同时使用"));
+        }
         let (program, analysis) = {
             let unit = self.story(&story_id)?;
             (unit.program, unit.analysis)
         };
         let opened = match params.get("save").and_then(Value::as_str) {
             Some(save) => Story::load(program, analysis, save),
-            None => Story::new(program, analysis),
+            None => match seed {
+                Some(seed) => Story::new_with_seed(program, analysis, seed),
+                None => Story::new(program, analysis),
+            },
         };
         let story = match opened {
             Ok(s) => s,
@@ -410,6 +443,30 @@ impl Server {
         self.sessions
             .insert(session_id.clone(), Session { story_id, story });
         Ok(json!({ "session_id": session_id, "state": state }))
+    }
+
+    fn trace_replay(&self, params: &Value) -> Result<Value, ProtoError> {
+        let story_id = param_str(params, "story_id")?;
+        let unit = self.story(story_id)?;
+        let trace_value = params
+            .get("trace")
+            .cloned()
+            .ok_or_else(|| ProtoError::new(-32602, "需要 `trace` DTO"))?;
+        let trace: ReplayTrace = serde_json::from_value(trace_value)
+            .map_err(|error| ProtoError::new(-32602, format!("`trace` DTO 无效:{error}")))?;
+        let defaults = ReplayBudget::default();
+        let max_steps = optional_u64(params, "max_steps")?.unwrap_or(defaults.max_steps);
+        let time_budget_ms =
+            optional_u64(params, "time_budget_ms")?.unwrap_or(defaults.time_budget_ms);
+        let replay = ReplayTrace::replay(
+            unit.program,
+            unit.analysis,
+            &trace,
+            ReplayBudget::new(max_steps, time_budget_ms),
+            &ReplayCancellation::new(),
+        )
+        .map_err(|error| ProtoError::new(-32602, format!("重放 DTO 不兼容:{error}")))?;
+        Ok(json!({ "ok": true, "replay": replay }))
     }
 
     fn relation_query(&mut self, params: &Value) -> Result<Value, ProtoError> {
@@ -2656,6 +2713,16 @@ fn param_str<'a>(params: &'a Value, key: &str) -> Result<&'a str, ProtoError> {
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| ProtoError::new(-32602, format!("需要字符串参数 `{key}`")))
+}
+
+fn optional_u64(params: &Value, key: &str) -> Result<Option<u64>, ProtoError> {
+    match params.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| ProtoError::new(-32602, format!("参数 `{key}` 必须是非负 64 位整数"))),
+    }
 }
 
 fn err(id: Value, code: i32, message: &str, data: Value) -> Value {
