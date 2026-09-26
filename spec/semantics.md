@@ -32,7 +32,7 @@ StoryState {
   turns: u32                     // 已完成的选择回合数
   pointer: Option<FlowPoint>     // 执行游标;None = 已结束
   taken_once: Set<ChoiceId>      // once 选择已选记录
-  rng: u64                      // 随机数生成器状态
+  rng: u64                      // 随机数生成器状态；显式 seed 可重复创建同一初始流
   storyline: StorylineId         // 主角当前故事线(漂流/主线变动切换)
   states: Map<StateId, Vec<TagId>> // 当前标签集合，包含身份状态
   state_history: Vec<StateRecord> // 已执行状态操作及前后集合
@@ -45,6 +45,7 @@ StoryState {
 - 进入事件时:若其首个子节点是场景 → 自动下潜进入第一个场景;
   否则从事件体语句开始。
 - **FlowPoint** = (节点 id, 语句下标)。执行即从该点逐步推进。
+- runtime 可导出版本绑定的 ReplayTrace 与检查点；trace 记录实际选择和逐段观察，不是穷尽执行图的证明。选择身份与改稿差异策略见 [replay.md](replay.md)。
 
 ## 3. 一步推进(tick)
 
@@ -89,7 +90,7 @@ Output ::= Text { content: String, new_line: bool, tags: Vec<String>, links: Vec
 
 ## 6. 确定性与随机
 
-- `rnd(a,b)` 每次求值推进随机数生成器状态,该状态随运行存档保存与恢复。
+- `rnd(a,b)` 每次求值推进随机数生成器状态,该状态随运行存档保存与恢复。默认创建使用时间种子；`Story::new_with_seed` 允许显式设置可复现种子，trace 记录此输入。
   暂停选择组载入后会重新求值,因此包含随机表达式的选择组不保证显示同一结果。
   影响分支的随机判定可先 `set` 到变量再使用,避免重建选择时重新取值。
 
@@ -110,6 +111,7 @@ v1.6:世界观、人物属性和关系是静态作者资料;不改变运行期�
   除 `rnd()` 外该过程确定,与存档前状态一致。
 - 存档覆盖 `vars`、`visits`、`turns`、`taken_once`、帧栈、随机状态、`storyline`、`met`、`anchors`、`states`、`state_history`。保留的 `perms` 字段是从身份状态派生的兼容快照，不是独立可变状态。
 - 多周目:新建 Story 或 restart 重置演练状态，状态集合恢复声明初值，历史清空。
+- 调试检查点与重放 trace 的 schema、版本绑定和状态边界见 [replay.md](replay.md)；它们不写入 Project，运行存档的既有读取兼容规则保持独立。
 - 权限迁移保存旧指纹与归一后指纹的精确对应，只有对应匹配才可把旧档权限注入世界叙事身份状态；拒绝未知权限、缺失状态及冲突来源。其余改稿仍按指纹不匹配拒绝，详见 [states.md](states.md)。
 
 ## 8. 故事线、准入、效果与锚点

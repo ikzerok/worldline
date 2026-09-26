@@ -3,6 +3,12 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Duration;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant as MonotonicInstant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant as MonotonicInstant;
 
 use worldline_core::ast::{
     BinOp, Change, ChangeKind, DivertTarget, EffectWhen, Expr, Program, Stmt, TextPart, UnOp,
@@ -10,9 +16,15 @@ use worldline_core::ast::{
 use worldline_core::Analysis;
 
 mod model;
+mod replay;
 
 pub use model::{AnchorKind, AnchorRecord, ChoiceView, Output, RunError, StateRecord, Value};
 use model::{FrameSave, FrameSrc, SaveState};
+pub use replay::{
+    AccessCoverage, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ConditionExplanation,
+    ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
+    ReplayResult, ReplayStatus, ReplayStep, ReplayTrace, REPLAY_SCHEMA_VERSION,
+};
 
 // ---------------------------------------------------------------------------
 // 帧栈
@@ -35,6 +47,36 @@ struct Pause {
     start: usize,
     group_len: usize,
     choices: Vec<ChoiceView>,
+    explanations: Vec<ChoiceExplanation>,
+    rng_before: u64,
+}
+
+struct ContinueOutcome {
+    outputs: Vec<Output>,
+    stop: Option<ReplayStatus>,
+}
+
+struct ReplayExecutionBudget<'a> {
+    limits: ReplayBudget,
+    cancellation: &'a ReplayCancellation,
+    started: MonotonicInstant,
+    steps: u64,
+}
+
+impl ReplayExecutionBudget<'_> {
+    fn consume_step(&mut self) -> Result<(), ReplayStatus> {
+        if self.cancellation.is_cancelled() {
+            return Err(ReplayStatus::Cancelled);
+        }
+        if self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms) {
+            return Err(ReplayStatus::TimeBudgetExceeded);
+        }
+        if self.steps >= self.limits.max_steps {
+            return Err(ReplayStatus::StepBudgetExceeded);
+        }
+        self.steps += 1;
+        Ok(())
+    }
 }
 
 /// 故事实例:消费 Program,持全部可变状态。
@@ -49,6 +91,7 @@ pub struct Story<'p> {
     glue_pending: bool,
     paused: Option<Box<Pause>>,
     rng: Cell<u64>,
+    seed: u64,
     fingerprint: u64,
     // v1.5 状态
     storyline: String,
@@ -57,14 +100,26 @@ pub struct Story<'p> {
     initial_states: BTreeMap<String, Vec<String>>,
     states: BTreeMap<String, Vec<String>>,
     state_history: Vec<StateRecord>,
+    choice_coverage: BTreeMap<String, ChoiceCoverage>,
+    trace: ReplayTrace,
 }
 
 impl<'p> Story<'p> {
     /// 新建故事(调用方须保证编译无 error 诊断)。
     pub fn new(program: &'p Program, analysis: &'p Analysis) -> Result<Self, RunError> {
+        Self::new_with_seed(program, analysis, seed_now())
+    }
+
+    /// 使用显式随机种子新建故事，供可复现测试、调试和重放使用。
+    pub fn new_with_seed(
+        program: &'p Program,
+        analysis: &'p Analysis,
+        seed: u64,
+    ) -> Result<Self, RunError> {
         if program.events.is_empty() {
             return Err(RunError::new("工程没有可运行入口"));
         }
+        let seed = normalize_seed(seed);
         let entry_idx = analysis
             .symbols
             .events
@@ -87,7 +142,8 @@ impl<'p> Story<'p> {
             frames: Vec::new(),
             glue_pending: false,
             paused: None,
-            rng: Cell::new(seed_now()),
+            rng: Cell::new(seed),
+            seed,
             fingerprint: analysis.fingerprint,
             storyline,
             met: HashSet::new(),
@@ -95,6 +151,8 @@ impl<'p> Story<'p> {
             states: initial_states.clone(),
             initial_states,
             state_history: Vec::new(),
+            choice_coverage: BTreeMap::new(),
+            trace: ReplayTrace::entry(analysis.fingerprint, seed),
         };
         story.init_vars()?;
         story.enter_event(&program.entry)?;
@@ -256,9 +314,174 @@ impl<'p> Story<'p> {
             "anchors": self.anchors,
             "states": self.states,
             "state_history": self.state_history,
+            "coverage": self.access_coverage(),
             "paused": self.is_paused(),
             "ended": self.is_ended(),
         })
+    }
+
+    /// 已实际访问节点与选择的覆盖投影；未访问项目不表示不可达。
+    pub fn access_coverage(&self) -> AccessCoverage {
+        AccessCoverage {
+            visited_nodes: self
+                .visits
+                .iter()
+                .map(|(key, value)| (key.clone(), *value))
+                .collect(),
+            selected_choices: self.choice_coverage.values().cloned().collect(),
+        }
+    }
+
+    /// 当前捕获的可序列化重放轨迹。
+    pub fn replay_trace(&self) -> ReplayTrace {
+        self.trace.clone()
+    }
+
+    /// 从当前状态开始新的 trace，并把完整 runtime 存档记录为 checkpoint origin。
+    pub fn start_trace_from_here(&mut self) -> Result<(), RunError> {
+        let checkpoint = self.checkpoint()?;
+        self.trace = ReplayTrace::checkpoint(checkpoint);
+        if self.paused.is_some() {
+            self.trace.initial_observation = Some(self.observation(&[]));
+        }
+        Ok(())
+    }
+
+    /// Explain the current choice group without changing runtime state or its random stream.
+    pub fn explain_choices(&self) -> Result<Vec<ChoiceExplanation>, RunError> {
+        if let Some(pause) = &self.paused {
+            return Ok(pause.explanations.clone());
+        }
+        let Some(fi) = self.frames.len().checked_sub(1) else {
+            return Ok(Vec::new());
+        };
+        let frame = &self.frames[fi];
+        let start = frame.idx;
+        let Some(Stmt::Choice(_)) = frame.stmts.get(start) else {
+            return Ok(Vec::new());
+        };
+        let mut rng = self.rng.get();
+        let mut explanations = Vec::new();
+        let mut offset = 0;
+        while let Some(Stmt::Choice(choice)) = frame.stmts.get(start + offset) {
+            let identity = self.choice_identity(fi, start, offset, choice.label_raw.clone());
+            let condition = choice.cond.as_ref().map(|expression| {
+                match self.eval_with_rng(expression, &mut rng) {
+                    Ok(Value::Bool(result)) => ConditionExplanation {
+                        expression: expression_source(expression),
+                        result: Some(result),
+                        error: None,
+                    },
+                    Ok(_) => ConditionExplanation {
+                        expression: expression_source(expression),
+                        result: Some(false),
+                        error: None,
+                    },
+                    Err(error) => ConditionExplanation {
+                        expression: expression_source(expression),
+                        result: None,
+                        error: Some(error.message),
+                    },
+                }
+            });
+            let condition_failed = condition
+                .as_ref()
+                .is_some_and(|value| value.result != Some(true));
+            let already_taken =
+                choice.once && self.taken_once.contains(&self.choice_id(fi, start, offset));
+            let unavailable_reason = if condition
+                .as_ref()
+                .is_some_and(|value| value.error.is_some())
+            {
+                Some("条件求值失败".into())
+            } else if condition
+                .as_ref()
+                .is_some_and(|value| value.result == Some(false))
+            {
+                Some("条件求值为 false".into())
+            } else if already_taken {
+                Some("once 选择已使用".into())
+            } else {
+                None
+            };
+            explanations.push(ChoiceExplanation {
+                choice: identity,
+                available: !condition_failed && !already_taken,
+                condition,
+                unavailable_reason,
+            });
+            offset += 1;
+        }
+        Ok(explanations)
+    }
+
+    fn observation(&self, outputs: &[Output]) -> ReplayObservation {
+        let choices = self
+            .paused
+            .as_ref()
+            .into_iter()
+            .flat_map(|pause| pause.explanations.iter())
+            .filter(|explanation| explanation.available)
+            .map(|explanation| explanation.choice.clone())
+            .collect();
+        ReplayObservation {
+            outputs: outputs
+                .iter()
+                .map(|output| serde_json::to_value(output).unwrap_or(serde_json::Value::Null))
+                .collect(),
+            choices,
+            state: self.state_view(),
+        }
+    }
+
+    fn record_continuation(&mut self, outputs: &[Output]) {
+        let observation = self.observation(outputs);
+        if self.trace.initial_observation.is_none() {
+            self.trace.initial_observation = Some(observation.clone());
+        } else if let Some(step) = self.trace.steps.last_mut() {
+            if step.observation.is_none() {
+                step.observation = Some(observation);
+            }
+        }
+        self.trace.complete = self.is_ended();
+    }
+
+    /// 创建绑定 runtime/schema 与程序 fingerprint 的调试检查点。
+    pub fn checkpoint(&self) -> Result<ReplayCheckpoint, RunError> {
+        let mut state: serde_json::Value = serde_json::from_str(&self.save()?)
+            .map_err(|error| RunError::new(format!("检查点状态编码失败:{error}")))?;
+        // 暂停组条件和标签的随机表达式在初次呈现时已消耗 RNG；恢复时从组开始状态
+        // 重算，保证同一个检查点重新呈现同一组选择。
+        if let Some(pause) = &self.paused {
+            state["rng"] = serde_json::json!(pause.rng_before);
+        }
+        let state = serde_json::to_string(&state)
+            .map_err(|error| RunError::new(format!("检查点序列化失败:{error}")))?;
+        Ok(ReplayCheckpoint {
+            schema_version: REPLAY_SCHEMA_VERSION,
+            runtime_version: env!("CARGO_PKG_VERSION").into(),
+            fingerprint: self.fingerprint,
+            seed: self.seed,
+            state,
+        })
+    }
+
+    /// 从严格匹配版本和 fingerprint 的检查点恢复 Story。
+    pub fn from_checkpoint(
+        program: &'p Program,
+        analysis: &'p Analysis,
+        checkpoint: &ReplayCheckpoint,
+    ) -> Result<Self, RunError> {
+        if checkpoint.schema_version != REPLAY_SCHEMA_VERSION {
+            return Err(RunError::new("检查点 schema_version 不兼容"));
+        }
+        if checkpoint.runtime_version != env!("CARGO_PKG_VERSION") {
+            return Err(RunError::new("检查点 runtime_version 不兼容"));
+        }
+        if checkpoint.fingerprint != analysis.fingerprint {
+            return Err(RunError::new("检查点程序 fingerprint 不匹配"));
+        }
+        Self::load(program, analysis, &checkpoint.state)
     }
 
     // -- v1.5:准入、效果、变动 ------------------------------------------------
@@ -473,14 +696,37 @@ impl<'p> Story<'p> {
 
     /// 推进到暂停(选择)或结束;返回本轮输出。
     pub fn continue_story(&mut self) -> Result<Vec<Output>, RunError> {
+        let outcome = self.continue_story_inner(None)?;
+        self.record_continuation(&outcome.outputs);
+        Ok(outcome.outputs)
+    }
+
+    fn continue_story_inner(
+        &mut self,
+        mut budget: Option<&mut ReplayExecutionBudget<'_>>,
+    ) -> Result<ContinueOutcome, RunError> {
         let mut out = Vec::new();
         if self.paused.is_some() {
-            return Ok(out);
+            return Ok(ContinueOutcome {
+                outputs: out,
+                stop: None,
+            });
         }
         loop {
+            if let Some(run_budget) = budget.as_deref_mut() {
+                if let Err(status) = run_budget.consume_step() {
+                    return Ok(ContinueOutcome {
+                        outputs: out,
+                        stop: Some(status),
+                    });
+                }
+            }
             let Some(fi) = self.frames.len().checked_sub(1) else {
                 out.push(Output::Ended);
-                return Ok(out);
+                return Ok(ContinueOutcome {
+                    outputs: out,
+                    stop: None,
+                });
             };
             if self.frames[fi].idx >= self.frames[fi].stmts.len() {
                 // 事件自然完成先 done 后 exit；弹栈前保留记录的事件归属。
@@ -573,7 +819,10 @@ impl<'p> Story<'p> {
                             self.run_exit_effects(false)?;
                             self.frames.clear();
                             out.push(Output::Ended);
-                            return Ok(out);
+                            return Ok(ContinueOutcome {
+                                outputs: out,
+                                stop: None,
+                            });
                         }
                         DivertTarget::Node(target) => {
                             let current_event = self.current_event_name();
@@ -643,27 +892,62 @@ impl<'p> Story<'p> {
                         group_len += 1;
                     }
                     let mut choices = Vec::new();
+                    let mut explanations = Vec::with_capacity(group_len);
                     let mut offset = 0usize;
+                    let rng_before = self.rng.get();
                     while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
-                        if let Some(cond) = &c.cond {
-                            if !matches!(self.eval(cond)?, Value::Bool(true)) {
-                                offset += 1;
-                                continue;
-                            }
+                        let mut identity =
+                            self.choice_identity(fi, start, offset, c.label_raw.clone());
+                        let condition = if let Some(cond) = &c.cond {
+                            let result = matches!(self.eval(cond)?, Value::Bool(true));
+                            Some(ConditionExplanation {
+                                expression: expression_source(cond),
+                                result: Some(result),
+                                error: None,
+                            })
+                        } else {
+                            None
+                        };
+                        if condition
+                            .as_ref()
+                            .is_some_and(|value| value.result == Some(false))
+                        {
+                            explanations.push(ChoiceExplanation {
+                                choice: identity,
+                                available: false,
+                                condition,
+                                unavailable_reason: Some("条件求值为 false".into()),
+                            });
+                            offset += 1;
+                            continue;
                         }
                         if c.once {
                             let id = self.choice_id(fi, start, offset);
                             if self.taken_once.contains(&id) {
+                                explanations.push(ChoiceExplanation {
+                                    choice: identity,
+                                    available: false,
+                                    condition,
+                                    unavailable_reason: Some("once 选择已使用".into()),
+                                });
                                 offset += 1;
                                 continue;
                             }
                         }
                         let (label, links) = self.render_parts(&c.label)?;
+                        identity.label = label.clone();
                         choices.push(ChoiceView {
+                            id: identity.id.clone(),
                             label,
                             links,
                             line: c.loc.line,
                             offset,
+                        });
+                        explanations.push(ChoiceExplanation {
+                            choice: identity,
+                            available: true,
+                            condition,
+                            unavailable_reason: None,
                         });
                         offset += 1;
                     }
@@ -677,8 +961,13 @@ impl<'p> Story<'p> {
                         start,
                         group_len,
                         choices,
+                        explanations,
+                        rng_before,
                     }));
-                    return Ok(out);
+                    return Ok(ContinueOutcome {
+                        outputs: out,
+                        stop: None,
+                    });
                 }
             }
         }
@@ -693,7 +982,14 @@ impl<'p> Story<'p> {
             self.paused = Some(pause);
             return Err(RunError::new(format!("选择序号 {idx} 超出范围")));
         };
+        let selected_id = view.id.clone();
         let offset = view.offset;
+        let selected_identity = pause
+            .explanations
+            .iter()
+            .find(|explanation| explanation.available && explanation.choice.id == selected_id)
+            .map(|explanation| explanation.choice.clone())
+            .ok_or_else(|| RunError::new("内部状态损坏:选择解释丢失"))?;
         let fi = pause.frame_depth;
         let start = pause.start;
         let group_len = pause.group_len;
@@ -720,6 +1016,21 @@ impl<'p> Story<'p> {
             node: None,
             src: Some(src),
         });
+        let coverage = self
+            .choice_coverage
+            .entry(selected_identity.id.clone())
+            .or_insert_with(|| ChoiceCoverage {
+                id: selected_identity.id.clone(),
+                node: selected_identity.node.clone(),
+                label: selected_identity.label.clone(),
+                line: selected_identity.line,
+                count: 0,
+            });
+        coverage.count = coverage.count.saturating_add(1);
+        self.trace.steps.push(ReplayStep {
+            choice: selected_identity,
+            observation: None,
+        });
         Ok(())
     }
 
@@ -736,9 +1047,11 @@ impl<'p> Story<'p> {
         self.anchors.clear();
         self.states.clone_from(&self.initial_states);
         self.state_history.clear();
-        self.rng.set(seed_now());
+        self.choice_coverage.clear();
+        self.rng.set(self.seed);
         self.init_vars()?;
         self.enter_event(&self.program.entry)?;
+        self.trace = ReplayTrace::entry(self.fingerprint, self.seed);
         Ok(())
     }
 
@@ -753,6 +1066,48 @@ impl<'p> Story<'p> {
             .or_else(|| self.current_node())
             .unwrap_or_else(|| "?".into());
         format!("{node}:{start}:{offset}")
+    }
+
+    fn choice_identity(
+        &self,
+        frame_depth: usize,
+        start: usize,
+        offset: usize,
+        label: String,
+    ) -> ChoiceIdentity {
+        let frame = &self.frames[frame_depth];
+        let Some(Stmt::Choice(choice)) = frame.stmts.get(start + offset) else {
+            return ChoiceIdentity {
+                id: "invalid-choice".into(),
+                node: self.current_node().unwrap_or_default(),
+                line: 0,
+                offset,
+                label,
+            };
+        };
+        let node = frame
+            .node
+            .clone()
+            .or_else(|| self.current_node())
+            .unwrap_or_else(|| "?".into());
+        let signature = choice_signature(choice);
+        let occurrence = frame.stmts[start..start + offset]
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::Choice(previous) if choice_signature(previous) == signature => Some(()),
+                _ => None,
+            })
+            .count();
+        ChoiceIdentity {
+            id: format!(
+                "{node}:{:016x}:{occurrence}",
+                stable_hash(signature.as_bytes())
+            ),
+            node,
+            line: choice.loc.line,
+            offset,
+            label,
+        }
     }
 
     // -- 求值 ---------------------------------------------------------------
@@ -801,6 +1156,13 @@ impl<'p> Story<'p> {
     }
 
     fn eval(&self, e: &Expr) -> Result<Value, RunError> {
+        let mut rng = self.rng.get();
+        let result = self.eval_with_rng(e, &mut rng);
+        self.rng.set(rng);
+        result
+    }
+
+    fn eval_with_rng(&self, e: &Expr, rng: &mut u64) -> Result<Value, RunError> {
         match e {
             Expr::Num(n) => Ok(Value::Num(*n)),
             Expr::Str(s) => Ok(Value::Str(s.clone())),
@@ -811,7 +1173,7 @@ impl<'p> Story<'p> {
                 line: Some(loc.line),
             }),
             Expr::Unary { op, expr } => {
-                let v = self.eval(expr)?;
+                let v = self.eval_with_rng(expr, rng)?;
                 match (op, v) {
                     (UnOp::Neg, Value::Num(n)) => Ok(Value::Num(-n)),
                     (UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
@@ -823,8 +1185,8 @@ impl<'p> Story<'p> {
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
-                let l = self.eval(lhs)?;
-                let r = self.eval(rhs)?;
+                let l = self.eval_with_rng(lhs, rng)?;
+                let r = self.eval_with_rng(rhs, rng)?;
                 let line = expr_loc_line(e);
                 let type_err = || RunError {
                     message: format!(
@@ -959,7 +1321,9 @@ impl<'p> Story<'p> {
                             line: Some(loc.line),
                         });
                     };
-                    let (Value::Num(lo), Value::Num(hi)) = (self.eval(a)?, self.eval(b)?) else {
+                    let (Value::Num(lo), Value::Num(hi)) =
+                        (self.eval_with_rng(a, rng)?, self.eval_with_rng(b, rng)?)
+                    else {
                         return Err(RunError {
                             message: "rnd 的参数必须是数值".into(),
                             node: self.current_node(),
@@ -976,7 +1340,7 @@ impl<'p> Story<'p> {
                         });
                     }
                     let span = hi - lo + 1;
-                    Ok(Value::Num((lo + self.next_rnd() % span) as f64))
+                    Ok(Value::Num((lo + next_rnd(rng) % span) as f64))
                 }
                 other => Err(RunError {
                     message: format!("未知函数 `{other}`"),
@@ -985,16 +1349,6 @@ impl<'p> Story<'p> {
                 }),
             },
         }
-    }
-
-    /// xorshift64:轻量确定性随机。Cell 使求值可在 `&self` 下进行。
-    fn next_rnd(&self) -> u64 {
-        let mut x = self.rng.get();
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.rng.set(x);
-        x
     }
 
     // -- 存读档 ---------------------------------------------------------------
@@ -1017,7 +1371,10 @@ impl<'p> Story<'p> {
                 })
                 .collect(),
             glue_pending: self.glue_pending,
+            paused: self.paused.is_some(),
             rng: self.rng.get(),
+            seed: self.seed,
+            choice_coverage: self.choice_coverage.clone(),
             storyline: self.storyline.clone(),
             perms: None,
             met: self.met_list(),
@@ -1110,6 +1467,22 @@ impl<'p> Story<'p> {
             .get(entry_idx)
             .map(|e| e.storyline.clone())
             .unwrap_or_else(|| "main".into());
+        let seed = normalize_seed(if state.seed == 0 {
+            state.rng
+        } else {
+            state.seed
+        });
+        state.seed = seed;
+        let saved_frames = state.frames.clone();
+        let restore_pause = state.paused;
+        let checkpoint = ReplayCheckpoint {
+            schema_version: REPLAY_SCHEMA_VERSION,
+            runtime_version: env!("CARGO_PKG_VERSION").into(),
+            fingerprint: analysis.fingerprint,
+            seed,
+            state: serde_json::to_string(&state)
+                .map_err(|error| RunError::new(format!("存档序列化失败:{error}")))?,
+        };
         let mut story = Story {
             program,
             symbols: &analysis.symbols,
@@ -1121,6 +1494,7 @@ impl<'p> Story<'p> {
             glue_pending: state.glue_pending,
             paused: None,
             rng: Cell::new(state.rng),
+            seed,
             fingerprint: analysis.fingerprint,
             storyline: if state.storyline.is_empty() {
                 entry_storyline
@@ -1132,8 +1506,16 @@ impl<'p> Story<'p> {
             initial_states: initial_states(analysis),
             states: state.states,
             state_history: state.state_history,
+            choice_coverage: state.choice_coverage,
+            trace: ReplayTrace::checkpoint(checkpoint),
         };
-        story.frames = story.rebuild_frames(&state.frames)?;
+        story.frames = story.rebuild_frames(&saved_frames)?;
+        if restore_pause {
+            let _ = story.continue_story()?;
+            if !story.is_paused() {
+                return Err(RunError::new("存档标记为暂停，但无法重建选择组"));
+            }
+        }
         Ok(story)
     }
 
@@ -1214,6 +1596,271 @@ impl<'p> Story<'p> {
     }
 }
 
+impl ReplayTrace {
+    /// Replay a recorded input sequence against a compiled story. Entry traces may be
+    /// checked against changed source; checkpoint traces require an exact fingerprint.
+    pub fn replay(
+        program: &Program,
+        analysis: &Analysis,
+        trace: &ReplayTrace,
+        limits: ReplayBudget,
+        cancellation: &ReplayCancellation,
+    ) -> Result<ReplayResult, RunError> {
+        if trace.schema_version != REPLAY_SCHEMA_VERSION {
+            return Err(RunError::new("重放 trace schema_version 不兼容"));
+        }
+        if trace.runtime_version != env!("CARGO_PKG_VERSION") {
+            return Err(RunError::new("重放 trace runtime_version 不兼容"));
+        }
+        let mut story = match &trace.origin {
+            ReplayOrigin::Entry { seed } => Story::new_with_seed(program, analysis, *seed)?,
+            ReplayOrigin::Checkpoint { checkpoint } => {
+                if checkpoint.fingerprint != trace.fingerprint {
+                    return Err(RunError::new("trace 与检查点 fingerprint 不一致"));
+                }
+                Story::from_checkpoint(program, analysis, checkpoint)?
+            }
+        };
+        let mut budget = ReplayExecutionBudget {
+            limits,
+            cancellation,
+            started: MonotonicInstant::now(),
+            steps: 0,
+        };
+        let mut initial_state = story.state_view();
+
+        if cancellation.is_cancelled() {
+            return Ok(make_replay_result(
+                ReplayStatus::Cancelled,
+                0,
+                0,
+                trace.fingerprint,
+                &story,
+                &initial_state,
+            ));
+        }
+
+        let initial_actual = if story.is_paused() {
+            story.observation(&[])
+        } else {
+            match story.continue_story_inner(Some(&mut budget))? {
+                outcome => {
+                    story.record_continuation(&outcome.outputs);
+                    if let Some(status) = outcome.stop {
+                        return Ok(make_replay_result(
+                            status,
+                            budget.steps,
+                            0,
+                            trace.fingerprint,
+                            &story,
+                            &initial_state,
+                        ));
+                    }
+                    story.observation(&outcome.outputs)
+                }
+            }
+        };
+        initial_state = initial_actual.state.clone();
+        if let Some(expected) = &trace.initial_observation {
+            if !observations_match(expected, &initial_actual) {
+                return Ok(make_replay_result(
+                    ReplayStatus::Diverged {
+                        step_index: 0,
+                        reason: "初始输出、状态或选择组不匹配".into(),
+                        expected_choice: None,
+                        actual_choices: initial_actual.choices,
+                    },
+                    budget.steps,
+                    0,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            }
+        }
+
+        let mut completed_choices = 0;
+        for (step_index, step) in trace.steps.iter().enumerate() {
+            if cancellation.is_cancelled() {
+                return Ok(make_replay_result(
+                    ReplayStatus::Cancelled,
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            }
+            let Some(choice_index) = story
+                .choices()
+                .iter()
+                .position(|choice| choice.id == step.choice.id)
+            else {
+                return Ok(make_replay_result(
+                    ReplayStatus::Diverged {
+                        step_index,
+                        reason: "记录的选择在当前暂停组中不存在".into(),
+                        expected_choice: Some(step.choice.clone()),
+                        actual_choices: story.observation(&[]).choices,
+                    },
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            };
+            if let Err(error) = story.choose(choice_index) {
+                return Ok(make_replay_result(
+                    ReplayStatus::StoryFailed {
+                        message: error.message,
+                        node: error.node,
+                        line: error.line,
+                    },
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            }
+            completed_choices += 1;
+            let Some(expected_observation) = &step.observation else {
+                return Ok(make_replay_result(
+                    ReplayStatus::IncompleteTrace,
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            };
+            let outcome = match story.continue_story_inner(Some(&mut budget)) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return Ok(make_replay_result(
+                        ReplayStatus::StoryFailed {
+                            message: error.message,
+                            node: error.node,
+                            line: error.line,
+                        },
+                        budget.steps,
+                        completed_choices,
+                        trace.fingerprint,
+                        &story,
+                        &initial_state,
+                    ));
+                }
+            };
+            story.record_continuation(&outcome.outputs);
+            if let Some(status) = outcome.stop {
+                return Ok(make_replay_result(
+                    status,
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            }
+            let actual = story.observation(&outcome.outputs);
+            if !observations_match(expected_observation, &actual) {
+                return Ok(make_replay_result(
+                    ReplayStatus::Diverged {
+                        step_index: step_index + 1,
+                        reason: "选择后的输出、状态或选择组不匹配".into(),
+                        expected_choice: Some(step.choice.clone()),
+                        actual_choices: actual.choices,
+                    },
+                    budget.steps,
+                    completed_choices,
+                    trace.fingerprint,
+                    &story,
+                    &initial_state,
+                ));
+            }
+        }
+
+        let status = ReplayStatus::Replayed {
+            ended: story.is_ended(),
+            complete: trace.complete && story.is_ended(),
+        };
+        Ok(make_replay_result(
+            status,
+            budget.steps,
+            completed_choices,
+            trace.fingerprint,
+            &story,
+            &initial_state,
+        ))
+    }
+}
+
+fn observations_match(expected: &ReplayObservation, actual: &ReplayObservation) -> bool {
+    expected.outputs == actual.outputs
+        && expected
+            .choices
+            .iter()
+            .map(|choice| (&choice.id, &choice.label))
+            .eq(actual
+                .choices
+                .iter()
+                .map(|choice| (&choice.id, &choice.label)))
+        && semantic_state(&expected.state) == semantic_state(&actual.state)
+}
+
+fn semantic_state(value: &serde_json::Value) -> serde_json::Value {
+    let mut value = value.clone();
+    if let Some(choices) = value
+        .get_mut("coverage")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|coverage| coverage.get_mut("selected_choices"))
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for choice in choices {
+            if let Some(choice) = choice.as_object_mut() {
+                choice.remove("line");
+            }
+        }
+    }
+    value
+}
+
+fn make_replay_result(
+    status: ReplayStatus,
+    executed_steps: u64,
+    completed_choices: usize,
+    original_fingerprint: u64,
+    story: &Story<'_>,
+    initial_state: &serde_json::Value,
+) -> ReplayResult {
+    let current_state = story.state_view();
+    let mut state_diff = BTreeMap::new();
+    if let (Some(before), Some(after)) = (initial_state.as_object(), current_state.as_object()) {
+        for key in before.keys().chain(after.keys()) {
+            let before_value = before.get(key);
+            let after_value = after.get(key);
+            if before_value != after_value {
+                state_diff.insert(
+                    key.clone(),
+                    after_value.cloned().unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+    }
+    ReplayResult {
+        status,
+        executed_steps,
+        completed_choices,
+        source_fingerprint: story.fingerprint,
+        original_fingerprint,
+        current_node: story.current_node(),
+        current_state,
+        state_diff,
+        coverage: story.access_coverage(),
+    }
+}
+
 fn static_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Var { name, .. } | Expr::Str(name) => Some(name),
@@ -1236,6 +1883,97 @@ fn initial_states(analysis: &Analysis) -> BTreeMap<String, Vec<String>> {
         .iter()
         .map(|(id, state)| (id.clone(), unique_tags(&state.tags)))
         .collect()
+}
+
+fn normalize_seed(seed: u64) -> u64 {
+    if seed == 0 {
+        0x9E37_79B9_7F4A_7C15
+    } else {
+        seed
+    }
+}
+
+fn next_rnd(rng: &mut u64) -> u64 {
+    let mut value = normalize_seed(*rng);
+    value ^= value << 13;
+    value ^= value >> 7;
+    value ^= value << 17;
+    *rng = value;
+    value
+}
+
+fn choice_signature(choice: &worldline_core::ast::ChoiceStmt) -> String {
+    format!(
+        "label={};condition={};once={}",
+        choice.label_raw,
+        choice
+            .cond
+            .as_ref()
+            .map(expression_signature)
+            .unwrap_or_else(|| "always".into()),
+        choice.once
+    )
+}
+
+fn stable_hash(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
+}
+
+fn expression_signature(expression: &Expr) -> String {
+    match expression {
+        Expr::Num(value) => format!("num:{:016x}", value.to_bits()),
+        Expr::Str(value) => format!("str:{}", serde_json::to_string(value).unwrap_or_default()),
+        Expr::Bool(value) => format!("bool:{value}"),
+        Expr::Var { name, .. } => format!("var:{name}"),
+        Expr::Unary { op, expr } => format!("unary:{op:?}({})", expression_signature(expr)),
+        Expr::Binary { op, lhs, rhs } => format!(
+            "binary:{:?}({},{})",
+            op,
+            expression_signature(lhs),
+            expression_signature(rhs)
+        ),
+        Expr::Call { name, args, .. } => format!(
+            "call:{name}({})",
+            args.iter()
+                .map(expression_signature)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    }
+}
+
+fn expression_source(expression: &Expr) -> String {
+    match expression {
+        Expr::Num(value) => value.to_string(),
+        Expr::Str(value) => serde_json::to_string(value).unwrap_or_default(),
+        Expr::Bool(value) => value.to_string(),
+        Expr::Var { name, .. } => name.clone(),
+        Expr::Unary { op, expr } => {
+            let operator = match op {
+                UnOp::Neg => "-",
+                UnOp::Not => "not ",
+            };
+            format!("{operator}{}", expression_source(expr))
+        }
+        Expr::Binary { op, lhs, rhs } => format!(
+            "{} {} {}",
+            expression_source(lhs),
+            op.symbol(),
+            expression_source(rhs)
+        ),
+        Expr::Call { name, args, .. } => format!(
+            "{name}({})",
+            args.iter()
+                .map(expression_source)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 fn num_op(l: &Value, r: &Value, line: u32, f: impl Fn(f64, f64) -> f64) -> Result<Value, RunError> {

@@ -58,6 +58,8 @@ pub enum Output {
 /// 暂停时的可选选择。
 #[derive(Debug, Clone, Serialize)]
 pub struct ChoiceView {
+    /// 与行号无关的重放身份；选择索引只用于当前暂停呈现。
+    pub id: String,
     pub label: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<worldline_core::navigation::RenderedLink>,
@@ -188,7 +190,13 @@ pub(super) struct SaveState {
     pub taken_once: Vec<String>,
     pub frames: Vec<FrameSave>,
     pub glue_pending: bool,
+    #[serde(default)]
+    pub paused: bool,
     pub rng: u64,
+    #[serde(default)]
+    pub seed: u64,
+    #[serde(default)]
+    pub choice_coverage: BTreeMap<String, super::replay::ChoiceCoverage>,
     #[serde(default)]
     pub storyline: String,
     #[serde(default, skip_serializing)]

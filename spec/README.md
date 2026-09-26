@@ -12,6 +12,7 @@
 | [relations.md](relations.md) | 执行图的条件上下文与目标准入、时间无环偏序、导出格式 |
 | [agent-protocol.md](agent-protocol.md) | 机器接口契约:CLI JSON 模式、`wl-agent` JSON-RPC 协议 |
 | [states.md](states.md) | 状态替换/增加/移除、世界叙事身份迁移、变更出处与旧档兼容 |
+| [replay.md](replay.md) | 确定性叙事重放、检查点、条件解释与访问覆盖 |
 | [catalog.md](catalog.md) | 通用标签、独立锚点与反查、文件引用及工程打包 |
 | [presentation.md](presentation.md) | 地图、网络视图、展示文档、关系 DTO、命令边界与跨仓契约 |
 
