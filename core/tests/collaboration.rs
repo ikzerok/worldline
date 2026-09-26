@@ -401,8 +401,8 @@ fn proposal_conflicts_on_same_field_delete_modify_and_array_reorder() {
 fn proposal_resolutions_require_every_conflict_and_preserve_the_original_proposal() {
     let mut project = project("resolve_values");
     let path = project.root.join(".world/maps/city.json");
-    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
-        .unwrap();
+    let base =
+        String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec()).unwrap();
     let mut proposed_value: serde_json::Value =
         serde_json::from_str(&map_json(10, 10, &["a", "b"], true)).unwrap();
     proposed_value["extensions"]["owner/name~tag"] = "提议值".into();
@@ -471,12 +471,14 @@ fn proposal_resolutions_require_every_conflict_and_preserve_the_original_proposa
         .map(|conflict| ProposalResolution {
             path: conflict.path.clone(),
             location: conflict.location.clone(),
-            value: Some(if conflict.location.ends_with("/x") {
-                "不是 JSON"
-            } else {
-                "40"
-            }
-            .into()),
+            value: Some(
+                if conflict.location.ends_with("/x") {
+                    "不是 JSON"
+                } else {
+                    "40"
+                }
+                .into(),
+            ),
         })
         .collect::<Vec<_>>();
     let expected_revision = revision;
@@ -547,8 +549,8 @@ fn proposal_resolutions_require_every_conflict_and_preserve_the_original_proposa
 fn proposal_resolution_can_choose_deletion_and_replace_a_text_conflict() {
     let mut project = project("resolve_delete");
     let path = project.root.join(".world/maps/city.json");
-    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
-        .unwrap();
+    let base =
+        String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec()).unwrap();
     let proposed = map_json(0, 0, &["a", "b"], false);
     let draft = proposal("resolve_delete", base, proposed);
     let mut revision = Revision::default();
@@ -642,13 +644,9 @@ fn proposal_resolution_can_choose_deletion_and_replace_a_text_conflict() {
 fn array_conflict_resolution_replaces_the_whole_array_value() {
     let mut project = project("resolve_array");
     let path = project.root.join(".world/maps/city.json");
-    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
-        .unwrap();
-    let draft = proposal(
-        "resolve_array",
-        base,
-        map_json(0, 0, &["a"], true),
-    );
+    let base =
+        String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec()).unwrap();
+    let draft = proposal("resolve_array", base, map_json(0, 0, &["a"], true));
     let mut revision = Revision::default();
     let baseline = project.content_baseline();
     let expected_revision = revision;
@@ -663,10 +661,7 @@ fn array_conflict_resolution_replaces_the_whole_array_value() {
     )
     .unwrap();
     project
-        .set_authoring_document(
-            &path,
-            map_json(0, 0, &["b", "a"], true).into_bytes(),
-        )
+        .set_authoring_document(&path, map_json(0, 0, &["b", "a"], true).into_bytes())
         .unwrap();
     let indexed = collaboration::build_proposal_index(&project);
     let preview =

@@ -1565,8 +1565,7 @@ fn merge_change(
             structured: false,
         });
     }
-    if change.proposed.as_deref() == change.base.as_deref()
-        || current == change.proposed.as_deref()
+    if change.proposed.as_deref() == change.base.as_deref() || current == change.proposed.as_deref()
     {
         return Ok(ProposalMerge {
             text: current.map(str::to_owned),
@@ -1575,11 +1574,9 @@ fn merge_change(
         });
     }
     if change.domain == "presentation" {
-        if let (Some(base), Some(current), Some(proposed)) = (
-            change.base.as_deref(),
-            current,
-            change.proposed.as_deref(),
-        ) {
+        if let (Some(base), Some(current), Some(proposed)) =
+            (change.base.as_deref(), current, change.proposed.as_deref())
+        {
             let base_json = parse_unique_json(base.as_bytes());
             let current_json = parse_unique_json(current.as_bytes());
             let proposed_json = parse_unique_json(proposed.as_bytes());
@@ -1719,17 +1716,12 @@ fn resolve_change_conflicts(
 ) -> Result<Option<String>, String> {
     for conflict in conflicts {
         let key = (conflict.path.clone(), conflict.location.clone());
-        let resolution = resolutions
-            .remove(&key)
-            .ok_or("提案存在未解决的三方冲突")?;
+        let resolution = resolutions.remove(&key).ok_or("提案存在未解决的三方冲突")?;
         if !conflict.location.is_empty() {
             if !merged.structured {
                 return Err("只有结构化展示冲突可以按 JSON Pointer 解决".into());
             }
-            let text = merged
-                .text
-                .as_deref()
-                .ok_or("JSON 冲突所在文件已被删除")?;
+            let text = merged.text.as_deref().ok_or("JSON 冲突所在文件已被删除")?;
             let mut document = parse_unique_json(text.as_bytes())
                 .map_err(|error| format!("当前 JSON 合并结果无效：{error}"))?;
             let value = resolution
@@ -1738,16 +1730,14 @@ fn resolve_change_conflicts(
                 .transpose()
                 .map_err(|error| format!("冲突解决值不是有效 JSON：{error}"))?;
             set_json_pointer(&mut document, &conflict.location, value)?;
-            merged.text = Some(
-                serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?,
-            );
+            merged.text =
+                Some(serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?);
         } else if merged.structured {
             let text = resolution.ok_or("JSON 根冲突必须提供完整 JSON 值")?;
             let document = parse_unique_json(text.as_bytes())
                 .map_err(|error| format!("冲突解决值不是有效 JSON：{error}"))?;
-            merged.text = Some(
-                serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?,
-            );
+            merged.text =
+                Some(serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?);
         } else {
             if change.domain == "presentation" {
                 if let Some(text) = &resolution {
@@ -1801,8 +1791,7 @@ pub fn apply_proposal_with_resolutions(
         return Err("提案已经结束，不能重复采纳".into());
     }
     let preview = preview_proposal(project, &proposal.draft)?;
-    let mut resolution_values =
-        collect_proposal_resolutions(&preview.conflicts, resolutions)?;
+    let mut resolution_values = collect_proposal_resolutions(&preview.conflicts, resolutions)?;
     if preview.files.len() != proposal.draft.changes.len() {
         return Err("提案预览文件与原提案不一致，请重新比较".into());
     }
