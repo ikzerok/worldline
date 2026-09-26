@@ -58,7 +58,7 @@
           "required": ["kind"],
           "properties": {
             "kind": {
-              "enum": ["anchor", "state", "event", "scene", "character", "entity", "world", "storyline", "period", "variable", "tag", "asset", "file", "relation"]
+              "enum": ["entity", "relation"]
             },
             "entity_type": { "type": "string", "minLength": 1 }
           },

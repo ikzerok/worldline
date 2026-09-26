@@ -613,6 +613,51 @@ fn template_validation_rejects_schema_shape_errors_before_import() {
 }
 
 #[test]
+fn template_object_ref_target_kind_is_restricted_with_source_location() {
+    let source = concat!(
+        "character keeper as \"守灯人\"\n",
+        "entity harbor kind place as \"港口\"\n",
+        "  description \"雾港\"\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut project = project_with_object_refs("unsupported-template-target", "1.10", true, source);
+    let manifest_path = project.root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["required_features"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!("content.templates.v1"));
+    manifest["templates"]["project:bad_target"] =
+        serde_json::json!(".world/templates/bad_target.json");
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    fs::create_dir_all(project.root.join(".world/templates")).unwrap();
+    fs::write(
+        project.root.join(".world/templates/bad_target.json"),
+        r#"{
+  "schema_version":1,
+  "id":"project:bad_target",
+  "title":"不支持的目标",
+  "applies_to":{"kind":"entity","entity_type":"place"},
+  "fields":[
+    {"id":"keeper_field","key":"keeper","label":"守灯人","type":"object_ref","required":false,"target":{"kind":"character"}}
+  ]
+}"#,
+    )
+    .unwrap();
+    project.refresh().unwrap();
+
+    let entry = &project.template_index().projects["project:bad_target"];
+    let diagnostic = entry
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TPL004")
+        .unwrap();
+    assert_eq!(diagnostic.span.line, 7);
+}
+
+#[test]
 fn explicit_object_refs_are_tracked_rewritten_and_do_not_promote_plain_strings() {
     let source = concat!(
         "entity harbor kind place as \"港口\"\n",
@@ -693,6 +738,43 @@ fn renaming_an_entity_rewrites_its_self_reference_without_blocking_deletion_anal
         .document(&project.root.join("world.wl"))
         .unwrap()
         .contains("ref(\"entity\", \"beacon\")"));
+}
+
+#[test]
+fn relation_object_refs_are_protected_and_rewritten_with_relation_ids() {
+    let source = concat!(
+        "entity harbor kind place as \"港口\"\n",
+        "entity keeper kind person as \"守灯人\"\n",
+        "relation_type watches as \"守望\"\n",
+        "  direction directed\n",
+        "  from entity\n",
+        "  to entity\n",
+        "relation_def watch_1 type watches from entity keeper to entity harbor\n",
+        "  property source = ref(\"relation\", \"watch_1\")\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut project = project_with_object_refs("relation-object-ref-rename", "1.10", true, source);
+    let target = worldline_core::TargetRef::new("relation", "watch_1");
+    let before = project.compile();
+    assert!(!before.has_errors(), "{:?}", before.diagnostics);
+    assert!(before
+        .analysis
+        .catalog
+        .references_to(&target)
+        .iter()
+        .any(|reference| reference.kind == "对象属性引用"));
+    assert!(project.deletion_impact(&target).can_delete());
+
+    let fingerprint = before.analysis.fingerprint;
+    let plan = project.plan_rename_target(&target, "watch_2").unwrap();
+    project.apply_rename_plan(&plan).unwrap();
+    let after = project.compile();
+    assert!(!after.has_errors(), "{:?}", after.diagnostics);
+    assert_eq!(after.analysis.fingerprint, fingerprint);
+    let source = project.document(&project.root.join("world.wl")).unwrap();
+    assert!(source.contains("relation_def watch_2 type"));
+    assert!(source.contains("ref(\"relation\", \"watch_2\")"));
 }
 
 #[test]
@@ -779,6 +861,24 @@ fn object_ref_syntax_requires_language_and_manifest_capability_and_reports_missi
         .diagnostics
         .iter()
         .any(|item| item.code == "A214"));
+
+    let unsupported_kind = concat!(
+        "character keeper as \"守灯人\"\n",
+        "  property friend = ref(\"character\", \"keeper\")\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut unsupported = project_with_object_refs(
+        "object-ref-unsupported-kind",
+        "1.10",
+        true,
+        unsupported_kind,
+    );
+    assert!(unsupported
+        .compile()
+        .diagnostics
+        .iter()
+        .any(|item| item.code == "P004"));
 }
 
 #[test]

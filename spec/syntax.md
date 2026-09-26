@@ -86,7 +86,7 @@ entity lighthouse kind place as "雾港灯塔"
 
 语言 1.10 属性可使用 `ref("kind", "id")` 声明显式对象引用，例如
 `property home = ref("entity", "harbor")`。两项参数必须是非空字符串字面量，不求值；
-kind 必须是当前语言版本允许的完整 `TargetRef` 类型。项目清单必须声明
+kind 仅允许 `entity` 或 `relation`；其他类型报 P004。项目清单必须声明
 `content.object_refs.v1`，以使不支持该能力的旧客户端按只读处理。缺失目标报告 A214；
 只有此显式值建立强引用，普通字符串、模板字段同名或显示文字不自动转成引用。
 该属性供作者资料、目录和引用影响使用，不参与事件执行或运行指纹。重命名会更新

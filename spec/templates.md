@@ -18,11 +18,13 @@
 
 - `text`、`number`、`boolean` 分别对应字符串、有限数值和布尔属性。
 - `enum` 的 `choices` 必须非空、无重复且不含空白项；实例值仍是字符串。
-- `object_ref` 必须指定 `target.kind`，可选 `target.entity_type` 仅用于 `entity`。
+- `object_ref` 必须指定 `target.kind` 为 `entity` 或 `relation`；可选
+  `target.entity_type` 仅用于 `entity`。v1 限制为 core 可完整重命名和保护删除的目标类型。
   实例必须使用下文的显式 `ref("kind", "id")` 属性值；普通字符串即使内容相同
- 也不是对象引用。默认值以 `{"kind":"entity","id":"harbor"}` 的 TargetRef
- 形状保存，并且目标必须存在且符合 `target` 约束。引用按完整 `TargetRef` 参与验证、
- 目录、重命名与删除影响。
+  也不是对象引用。默认值以 `{"kind":"entity","id":"harbor"}` 的 TargetRef
+  形状保存，并且目标必须存在且符合 `target` 约束。引用按完整 `TargetRef` 参与验证、
+  目录、重命名与删除影响。其他 TargetRef 类型暂不支持模板对象引用，必须由 core
+  定位诊断拒绝。
 - `group` 仅是界面分组，不对应实例属性；必须有非空 `fields`，不能有 `key`、
   `required`、`choices`、`target` 或 `default`。子字段继续遵循相同规则。
 
@@ -47,7 +49,8 @@ character navigator as "领航员"
   property home = ref("entity", "harbor")
 ```
 
-目标 kind 和 ID 是字面字符串，不做表达式求值。core 只在 `ref(...)` 值上建立强引用；
+目标 kind 和 ID 是字面字符串，不做表达式求值；v1 的 kind 只允许 `entity` 与 `relation`。
+core 只在 `ref(...)` 值上建立强引用；
 字符串属性不会被模板定义、字段同名或内容猜测提升成引用。缺失目标产生语言诊断，
 并出现在引用影响、重命名和删除保护中。该属性值不进入运行指纹。1.9 不支持此值。
 对象引用字段仍只是编辑提示：本票不提供可执行规则、远程资源、自动默认值、自动

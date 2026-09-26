@@ -31,7 +31,8 @@ tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制�
 保持独立。实体只进入 `catalog.entities` 和统一 `catalog.objects`，不进入事件
 执行结构或运行指纹。description/property 的规则与 world 相同，属性值可为字符串、
 有限数值、布尔值或显式 `ref("kind", "id")` 对象引用；后者只在语言 1.10 支持并
-要求 `content.object_refs.v1`。字符串不因模板字段或内容猜测而升级为引用。
+要求 `content.object_refs.v1`，kind 限定为 `entity` 与 `relation`，以保证 core 重命名和
+删除保护完整。字符串不因模板字段或内容猜测而升级为引用。
 
 实体的正文链接写作 `[[entity:ID|显示文字]]`，并遵守正文链接的转义和目标存在
 检查。旧 1.9 工程不自动启用该目标类型，也不把同名旧对象迁移为 entity。

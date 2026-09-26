@@ -38,6 +38,9 @@ pub const TARGET_KINDS: &[&str] = &[
     "relation",
 ];
 
+/// Explicit property references currently target kinds supported by the core rename plan.
+pub const OBJECT_REFERENCE_TARGET_KINDS: &[&str] = &["entity", "relation"];
+
 pub fn is_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
     TARGET_KINDS.contains(&kind)
         && ((kind != "entity" && kind != "relation")

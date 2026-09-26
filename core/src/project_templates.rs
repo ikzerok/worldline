@@ -937,7 +937,7 @@ fn parse_field(
         }
         if field_type == "object_ref" {
             let valid_target = target.as_ref().is_some_and(|target| {
-                crate::catalog::TARGET_KINDS.contains(&target.kind.as_str())
+                crate::catalog::OBJECT_REFERENCE_TARGET_KINDS.contains(&target.kind.as_str())
                     && (target.kind == "entity" || target_entity_type.is_none())
             });
             if !valid_target {

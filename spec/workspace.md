@@ -31,7 +31,8 @@ Project 为外部刷新维护会话代次。`restore` 只接受同一工作区�
 `property key = ref("kind", "id")` 是有类型的 `TargetRef` 值，不是字符串约定；
 使用它的工程须在清单 `required_features` 声明 `content.object_refs.v1`，不支持该能力
 的旧客户端按只读保护。缺失目标由 core 产生 A214，引用参与重命名和删除影响；普通
-字符串不参与。语法和模板字段见 [syntax.md](syntax.md) 与 [templates.md](templates.md)。
+字符串不参与；当前允许的 kind 只有 `entity` 和 `relation`。语法和模板字段见
+[syntax.md](syntax.md) 与 [templates.md](templates.md)。
 
 ## 可恢复保存
 
