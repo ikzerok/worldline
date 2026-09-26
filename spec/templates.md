@@ -41,7 +41,8 @@
 和模板文档，不改写实例。类型变更、字段改名和缺失值不触发隐式强转或迁移。
 
 语言属性 `object_ref` 是 1.10 的新增显式值，要求 Project 清单声明
-`content.object_refs.v1`：
+`content.object_refs.v1`。在 1.10 工程中显式导入包含该字段的模板时，预览/应用会一并
+加入此已知能力；1.9 工程拒绝导入此类型字段，且已注册的该模板只读：
 
 ```wl
 entity harbor kind place as "雾港"

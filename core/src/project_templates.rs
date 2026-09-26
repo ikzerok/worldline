@@ -189,6 +189,7 @@ impl Project {
                 id,
                 &registry.required_features,
                 registered_read_only,
+                self.language_version_kind(),
                 &content,
             );
             if !root_has_feature {
@@ -372,6 +373,7 @@ fn prepare_template_mutation(
             &id,
             &registry.required_features,
             registry.read_only(path) || document.is_some_and(AuthoringDocument::is_read_only),
+            project.language_version_kind(),
             &project.compile_current(),
         )
     });
@@ -413,6 +415,9 @@ fn prepare_template_mutation(
         let mut parse_features = registry.required_features.clone();
         if operation == "import" {
             parse_features.insert(PROJECT_TEMPLATE_REQUIRED_FEATURE.to_owned());
+            if project.language_version_kind().supports_entities() {
+                parse_features.insert(OBJECT_REFS_REQUIRED_FEATURE.to_owned());
+            }
         }
         let registered_read_only = old_path.is_some()
             && !registry
@@ -424,6 +429,7 @@ fn prepare_template_mutation(
             &id,
             &parse_features,
             registered_read_only,
+            project.language_version_kind(),
             &project.compile_current(),
         );
         diagnostics.extend(parsed.diagnostics.iter().cloned());
@@ -470,6 +476,15 @@ fn prepare_template_mutation(
             .any(|feature| feature.as_str() == Some(PROJECT_TEMPLATE_REQUIRED_FEATURE))
         {
             required_features.push(json!(PROJECT_TEMPLATE_REQUIRED_FEATURE));
+        }
+        if new_template
+            .as_ref()
+            .is_some_and(|template| template.fields.iter().any(field_contains_object_ref))
+            && !required_features
+                .iter()
+                .any(|feature| feature.as_str() == Some(OBJECT_REFS_REQUIRED_FEATURE))
+        {
+            required_features.push(json!(OBJECT_REFS_REQUIRED_FEATURE));
         }
     }
     let templates = manifest_object
@@ -531,6 +546,7 @@ fn parse_template_document(
     registered_id: &str,
     manifest_features: &BTreeSet<String>,
     registered_read_only: bool,
+    language_version: crate::LanguageVersion,
     content: &CompileResult,
 ) -> ProjectTemplateDocument {
     let mut entry = ProjectTemplateDocument {
@@ -709,6 +725,15 @@ fn parse_template_document(
         return entry;
     }
     let has_object_ref = parsed_fields.iter().any(field_contains_object_ref);
+    if has_object_ref && !language_version.supports_entities() {
+        entry.error(
+            "TPL005",
+            file,
+            line_for(bytes, "object_ref"),
+            "对象引用字段要求语言 1.10，模板按只读处理",
+        );
+        entry.read_only = true;
+    }
     if has_object_ref && !manifest_features.contains(OBJECT_REFS_REQUIRED_FEATURE) {
         entry.error(
             "TPL005",

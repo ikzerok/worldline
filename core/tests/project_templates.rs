@@ -927,3 +927,85 @@ fn object_ref_template_defaults_resolve_and_serialize_as_target_refs() {
         .unwrap();
     assert!(!project.template_index().projects["project:people"].read_only);
 }
+
+#[test]
+fn importing_object_ref_template_adds_capability_without_writing_instances() {
+    let source = concat!(
+        "entity harbor kind place as \"港口\"\n",
+        "  description \"雾港\"\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut project =
+        project_with_object_refs("object-ref-template-capability", "1.10", false, source);
+    let original_source = fs::read(project.root.join("world.wl")).unwrap();
+    let document = r#"{
+  "schema_version":1,
+  "id":"project:places",
+  "title":"地点",
+  "applies_to":{"kind":"entity","entity_type":"place"},
+  "fields":[
+    {"id":"home_field","key":"home","label":"关联地点","type":"object_ref","required":false,"target":{"kind":"entity","entity_type":"place"},"default":{"kind":"entity","id":"harbor"}}
+  ]
+}"#
+    .as_bytes()
+    .to_vec();
+    let revision = Revision::default();
+    let request = command(&project, revision, import("project:places", document));
+    let preview = project
+        .preview_template_mutation(revision, &request)
+        .unwrap();
+    assert!(preview.instances.iter().any(|instance| {
+        instance.target.id == "harbor"
+            && instance.fields.iter().any(|field| {
+                field.key == "home" && field.state == ProjectTemplateValueState::Missing
+            })
+    }));
+    let mut revision = revision;
+    project
+        .apply_template_mutation(&mut revision, preview)
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(
+        project
+            .authoring_document(&project.root.join(".world/project.json"))
+            .unwrap()
+            .bytes(),
+    )
+    .unwrap();
+    assert!(manifest["required_features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|feature| feature == "content.object_refs.v1"));
+    assert_eq!(
+        fs::read(project.root.join("world.wl")).unwrap(),
+        original_source
+    );
+}
+
+#[test]
+fn importing_object_ref_template_requires_language_110() {
+    let project = project_with_object_refs(
+        "object-ref-template-old-language",
+        "1.9",
+        false,
+        "event arrival\n  -> END\n",
+    );
+    let document = r#"{
+  "schema_version":1,
+  "id":"project:people",
+  "title":"人物关系",
+  "applies_to":{"kind":"entity"},
+  "fields":[
+    {"id":"home_field","key":"home","label":"居所","type":"object_ref","required":false,"target":{"kind":"entity"}}
+  ]
+}"#
+    .as_bytes()
+    .to_vec();
+    let revision = Revision::default();
+    let request = command(&project, revision, import("project:people", document));
+    let error = project
+        .preview_template_mutation(revision, &request)
+        .unwrap_err();
+    assert!(error.contains("TPL005"), "{error}");
+}
