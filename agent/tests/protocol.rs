@@ -302,9 +302,9 @@ fn authoring_intent_rpc_preview_and_apply_are_atomic() {
         "entity lighthouse kind place as \"灯塔😀\"\nevent start\n  你看见灯塔😀。\n  -> END\n";
     let root = temp_authoring_intent_project("rpc", source);
     let root_path = root.to_string_lossy().to_string();
-    let source_path = root.join("world.wl");
     let map_path = root.join(".world/maps/overview.json");
     let project = worldline_core::project::Project::open(&root).unwrap();
+    let source_path = project.entry.clone();
     let baseline = project.content_baseline();
     let expected_text = "灯塔😀";
     let start = source.rfind(expected_text).unwrap();
