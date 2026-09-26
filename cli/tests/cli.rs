@@ -1272,7 +1272,7 @@ fn authoring_intent_cli_preview_is_read_only_and_apply_is_all_or_nothing() {
     let baseline = project.content_baseline();
     let expected_text = "灯塔😀";
     let start = source.rfind(expected_text).unwrap();
-    let target_path = root.join("world.wl");
+    let target_path = project.entry.clone();
     let intent = json!({
         "expected_baseline": baseline,
         "target": {
