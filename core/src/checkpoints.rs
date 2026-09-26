@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_MAX_CHECKPOINTS: usize = 20;
 pub const DEFAULT_MAX_CHECKPOINT_BYTES: usize = 64 * 1024 * 1024;
@@ -725,8 +726,8 @@ fn make_manifest(
     payload_bytes: u64,
 ) -> Result<CheckpointManifest, String> {
     let id = next_checkpoint_id();
-    let created_at_unix_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let created_at_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
         .min(u64::MAX as u128) as u64;
@@ -863,8 +864,8 @@ fn ensure_restore_targets_writable(
 static NEXT_CHECKPOINT: AtomicU64 = AtomicU64::new(0);
 
 fn next_checkpoint_id() -> String {
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
     let sequence = NEXT_CHECKPOINT.fetch_add(1, Ordering::Relaxed);
@@ -918,6 +919,25 @@ mod browser_checkpoint_scope_tests {
     }
 }
 
+#[cfg(test)]
+mod checkpoint_clock_tests {
+    use super::{make_manifest, next_checkpoint_id};
+    use crate::workspace_snapshot::Files;
+    use std::path::PathBuf;
+
+    #[test]
+    fn checkpoint_ids_are_unique_and_manifest_times_are_available() {
+        let files = Files::from([(PathBuf::from("world.wl"), b"event start\n".to_vec())]);
+        let first = make_manifest(None, &files, 12).unwrap();
+        let second = make_manifest(None, &files, 12).unwrap();
+
+        assert_ne!(next_checkpoint_id(), next_checkpoint_id());
+        assert_ne!(first.id, second.id);
+        assert!(first.created_at_unix_ms > 0);
+        assert!(second.created_at_unix_ms > 0);
+    }
+}
+
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_project_checkpoint_session_tests {
     use super::CheckpointLimits;
@@ -946,6 +966,7 @@ mod wasm_project_checkpoint_session_tests {
         let checkpoint = project
             .create_checkpoint(None, CheckpointLimits::default())
             .unwrap();
+        assert!(checkpoint.created_at_unix_ms > 0);
         let plan = project.preview_checkpoint_restore(&checkpoint.id).unwrap();
 
         // Browser save/reopen restores the session identity alongside the package.

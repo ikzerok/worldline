@@ -288,6 +288,7 @@ dependencies = [
  "same-file",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]
