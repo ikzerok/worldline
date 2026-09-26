@@ -33,6 +33,40 @@ pub struct MarkdownImportRequest {
     pub allow_language_upgrade: bool,
 }
 
+/// 目录和 Files 快照两种来源共用的迁移选项。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownImportOptions {
+    pub expected_baseline: String,
+    #[serde(default)]
+    pub id_overrides: BTreeMap<String, String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub accept_losses: bool,
+    #[serde(default)]
+    pub allow_language_upgrade: bool,
+}
+
+impl From<&MarkdownImportRequest> for MarkdownImportOptions {
+    fn from(request: &MarkdownImportRequest) -> Self {
+        Self {
+            expected_baseline: request.expected_baseline.clone(),
+            id_overrides: request.id_overrides.clone(),
+            namespace: request.namespace.clone(),
+            accept_losses: request.accept_losses,
+            allow_language_upgrade: request.allow_language_upgrade,
+        }
+    }
+}
+
+/// 用户显式选择的普通文件快照。`label` 只用于预览显示，不会作为宿主路径访问。
+#[derive(Debug, Clone, Copy)]
+pub struct MarkdownImportSourceSnapshot<'a> {
+    pub label: &'a str,
+    pub files: &'a crate::workspace_snapshot::Files,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MarkdownPageMapping {
     pub source: String,
@@ -123,11 +157,28 @@ pub struct MarkdownImportResult {
     pub new_baseline: String,
 }
 
+/// 从快照应用迁移后，供宿主显式接收的完整候选工作区。
 #[derive(Debug, Clone)]
-struct InputFile {
+pub struct MarkdownImportSnapshotResult {
+    pub result: MarkdownImportResult,
+    pub workspace_files: crate::workspace_snapshot::Files,
+}
+
+#[derive(Debug, Clone)]
+enum InputFileSource<'a> {
+    Snapshot(&'a [u8]),
+    #[cfg(not(target_arch = "wasm32"))]
+    Disk {
+        root: PathBuf,
+        absolute: PathBuf,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct InputFile<'a> {
     relative: String,
-    absolute: PathBuf,
     length: u64,
+    source: InputFileSource<'a>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,10 +212,10 @@ struct InlineReference {
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedAttachment {
+struct ResolvedAttachment<'a> {
     source_page: String,
     reference: InlineReference,
-    input: InputFile,
+    input: InputFile<'a>,
     bytes: Arc<Vec<u8>>,
     id: String,
     output_path: String,
@@ -175,6 +226,13 @@ struct PreparedPreview {
     plan: MarkdownImportPlan,
     candidate: Project,
     additional_files: Vec<(PathBuf, Vec<u8>)>,
+}
+
+struct ParsedMarkdownSource<'a> {
+    source_root: PathBuf,
+    inputs: Vec<InputFile<'a>>,
+    markdown: Vec<InputFile<'a>>,
+    pages: Vec<SourcePage>,
 }
 
 type CandidateBuild = (
@@ -206,7 +264,11 @@ impl Project {
         &self,
         request: &MarkdownImportRequest,
     ) -> Result<MarkdownImportPlan, String> {
-        prepare_preview(self, request).map(|prepared| prepared.plan)
+        let options = MarkdownImportOptions::from(request);
+        validate_project_for_import(self, &options)?;
+        let source_root = checked_source_root(&request.source_root)?;
+        let inputs = enumerate_source_files(&source_root)?;
+        prepare_preview(self, source_root, inputs, &options).map(|prepared| prepared.plan)
     }
 
     /// 重新验证预览后，在一个 Project 候选和可恢复保存事务中应用迁移。
@@ -216,19 +278,15 @@ impl Project {
         request: &MarkdownImportRequest,
         plan_digest: &str,
     ) -> Result<MarkdownImportResult, String> {
-        let mut prepared = prepare_preview(self, request)?;
+        let options = MarkdownImportOptions::from(request);
+        validate_project_for_import(self, &options)?;
+        let source_root = checked_source_root(&request.source_root)?;
+        let inputs = enumerate_source_files(&source_root)?;
+        let mut prepared = prepare_preview(self, source_root, inputs, &options)?;
         if prepared.plan.plan_digest != plan_digest {
             return Err("Markdown 迁移预览已过期；来源、映射或工程基线已变化".into());
         }
-        if !prepared.plan.conflicts.is_empty() {
-            return Err("Markdown 迁移仍有未解决的冲突".into());
-        }
-        if !prepared.plan.losses.is_empty() && !request.accept_losses {
-            return Err("Markdown 迁移缺少损失确认".into());
-        }
-        if prepared.plan.requires_language_upgrade && !request.allow_language_upgrade {
-            return Err("Markdown 迁移缺少语言升级确认".into());
-        }
+        ensure_plan_applicable(&prepared.plan, &options)?;
         let changed_files = prepared
             .plan
             .files
@@ -252,29 +310,69 @@ impl Project {
             new_baseline,
         })
     }
+
+    /// 对用户明确选择的普通文件快照构建只读预览，不访问 `label` 对应的宿主路径。
+    pub fn preview_markdown_import_snapshot(
+        &self,
+        source: &MarkdownImportSourceSnapshot<'_>,
+        options: &MarkdownImportOptions,
+    ) -> Result<MarkdownImportPlan, String> {
+        validate_snapshot_label(source.label)?;
+        validate_project_for_import(self, options)?;
+        let inputs = enumerate_snapshot_files(source.files)?;
+        prepare_preview(self, PathBuf::from(source.label), inputs, options)
+            .map(|prepared| prepared.plan)
+    }
+
+    /// 在内存中重算预览并返回完整候选 Files；不写宿主存储，也不修改当前 Project。
+    pub fn apply_markdown_import_snapshot(
+        &self,
+        source: &MarkdownImportSourceSnapshot<'_>,
+        options: &MarkdownImportOptions,
+        plan_digest: &str,
+    ) -> Result<MarkdownImportSnapshotResult, String> {
+        validate_snapshot_label(source.label)?;
+        validate_project_for_import(self, options)?;
+        let inputs = enumerate_snapshot_files(source.files)?;
+        let mut prepared = prepare_preview(self, PathBuf::from(source.label), inputs, options)?;
+        if prepared.plan.plan_digest != plan_digest {
+            return Err("Markdown 迁移预览已过期；来源、映射或工程基线已变化".into());
+        }
+        ensure_plan_applicable(&prepared.plan, options)?;
+        let changed_files = prepared
+            .plan
+            .files
+            .iter()
+            .map(|file| self.root.join(&file.path))
+            .chain(std::iter::once(self.entry.clone()))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let baseline = self.content_baseline();
+        let mut workspace_files = crate::workspace_snapshot::snapshot_files(&prepared.candidate)?;
+        for (relative, bytes) in prepared.additional_files.drain(..) {
+            insert_candidate_file(&mut workspace_files, relative, bytes)?;
+        }
+        let new_baseline = prepared.candidate.content_baseline();
+        prepared.plan.new_baseline = new_baseline.clone();
+        Ok(MarkdownImportSnapshotResult {
+            result: MarkdownImportResult {
+                plan: prepared.plan,
+                changed_files,
+                baseline,
+                new_baseline,
+            },
+            workspace_files,
+        })
+    }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn prepare_preview(
     project: &Project,
-    request: &MarkdownImportRequest,
+    source_root: PathBuf,
+    inputs: Vec<InputFile<'_>>,
+    options: &MarkdownImportOptions,
 ) -> Result<PreparedPreview, String> {
-    if !project.authoring_diagnostics().is_empty() {
-        return Err("工作区存在只读诊断，不能预览迁移写入".into());
-    }
-    if !project.recovery_conflicts().is_empty() {
-        return Err("工程存在未解决的保存事务冲突".into());
-    }
-    let baseline = project.content_baseline();
-    if request.expected_baseline != baseline {
-        return Err(format!(
-            "工程基线已过期，拒绝迁移预览；当前基线为 {baseline}"
-        ));
-    }
-    check_tracked_disk_baselines(project)?;
-
-    let source_root = checked_source_root(&request.source_root)?;
-    let inputs = enumerate_source_files(&source_root)?;
     let markdown = inputs
         .iter()
         .filter(|file| {
@@ -300,16 +398,60 @@ fn prepare_preview(
         if text_total > MAX_MARKDOWN_BYTES_TOTAL {
             return Err("Markdown 文本超过单次迁移预算".into());
         }
-        let bytes = read_input_file(&source_root, input)?;
+        let bytes = read_input_file(input)?;
         let text = std::str::from_utf8(&bytes)
             .map_err(|_| format!("Markdown 页面不是有效 UTF-8：{}", input.relative))?;
         let parsed = parse_page(&input.relative, &bytes, text)?;
         pages.push(parsed);
     }
     pages.sort_by(|left, right| left.relative.cmp(&right.relative));
+    prepare_preview_from_pages(
+        project,
+        options,
+        ParsedMarkdownSource {
+            source_root,
+            inputs,
+            markdown,
+            pages,
+        },
+    )
+}
 
+fn validate_project_for_import(
+    project: &Project,
+    options: &MarkdownImportOptions,
+) -> Result<(), String> {
+    if !project.authoring_diagnostics().is_empty() {
+        return Err("工作区存在只读诊断，不能预览迁移写入".into());
+    }
+    if !project.recovery_conflicts().is_empty() {
+        return Err("工程存在未解决的保存事务冲突".into());
+    }
+    let baseline = project.content_baseline();
+    if options.expected_baseline != baseline {
+        return Err(format!(
+            "工程基线已过期，拒绝迁移预览；当前基线为 {baseline}"
+        ));
+    }
+    check_tracked_disk_baselines(project)?;
+
+    Ok(())
+}
+
+fn prepare_preview_from_pages(
+    project: &Project,
+    options: &MarkdownImportOptions,
+    source: ParsedMarkdownSource<'_>,
+) -> Result<PreparedPreview, String> {
+    let ParsedMarkdownSource {
+        source_root,
+        inputs,
+        markdown,
+        mut pages,
+    } = source;
+    let baseline = options.expected_baseline.clone();
     let current = project.compile_current();
-    let namespace = match request.namespace.as_deref() {
+    let namespace = match options.namespace.as_deref() {
         Some(value) if valid_id(value) && value.len() <= MAX_NAMESPACE_BYTES => value.to_string(),
         Some(_) => {
             return Err(format!(
@@ -323,7 +465,7 @@ fn prepare_preview(
     };
     let mut conflicts = Vec::new();
     let mut name_conflicts = Vec::new();
-    resolve_page_ids(&current, &mut pages, request, &mut conflicts);
+    resolve_page_ids(&current, &mut pages, options, &mut conflicts);
 
     let mut title_sources: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for page in &pages {
@@ -578,7 +720,7 @@ fn prepare_preview(
                     let bytes = if let Some(bytes) = attachment_contents.get(&input.relative) {
                         bytes.clone()
                     } else {
-                        let bytes = Arc::new(read_input_file(&source_root, &input)?);
+                        let bytes = Arc::new(read_input_file(&input)?);
                         if bytes.len() > MAX_ATTACHMENT_BYTES_TOTAL {
                             return Err(format!("附件超过单次预算：{}", input.relative));
                         }
@@ -633,9 +775,7 @@ fn prepare_preview(
                     );
                     let category = if quarantined { "quarantine" } else { "assets" };
                     let output_path = format!("{output_root}/{category}/{id}.{extension}");
-                    if output_path_exists(project, &output_path)?
-                        || (!quarantined && current.analysis.catalog.assets.contains_key(&id))
-                    {
+                    if !quarantined && current.analysis.catalog.assets.contains_key(&id) {
                         conflicts.push(MarkdownImportConflict {
                             code: "ATTACHMENT_PATH_CONFLICT".into(),
                             source: Some(page.relative.clone()),
@@ -783,8 +923,8 @@ fn prepare_preview(
         requires_language_upgrade,
     })?;
     let can_apply = conflicts.is_empty()
-        && (losses.is_empty() || request.accept_losses)
-        && (!requires_language_upgrade || request.allow_language_upgrade);
+        && (losses.is_empty() || options.accept_losses)
+        && (!requires_language_upgrade || options.allow_language_upgrade);
     let plan = MarkdownImportPlan {
         source_root,
         source_fingerprint,
@@ -809,13 +949,58 @@ fn prepare_preview(
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+fn ensure_plan_applicable(
+    plan: &MarkdownImportPlan,
+    options: &MarkdownImportOptions,
+) -> Result<(), String> {
+    if !plan.conflicts.is_empty() {
+        return Err("Markdown 迁移仍有未解决的冲突".into());
+    }
+    if !plan.losses.is_empty() && !options.accept_losses {
+        return Err("Markdown 迁移缺少损失确认".into());
+    }
+    if plan.requires_language_upgrade && !options.allow_language_upgrade {
+        return Err("Markdown 迁移缺少语言升级确认".into());
+    }
+    Ok(())
+}
+
+fn insert_candidate_file(
+    files: &mut crate::workspace_snapshot::Files,
+    path: PathBuf,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    let target = path
+        .to_str()
+        .ok_or_else(|| format!("Markdown 候选路径不是 UTF-8：{}", path.display()))?
+        .replace('\\', "/")
+        .to_lowercase();
+    for existing in files.keys() {
+        let existing = existing
+            .to_str()
+            .ok_or_else(|| format!("工程路径不是 UTF-8：{}", existing.display()))?
+            .replace('\\', "/")
+            .to_lowercase();
+        if existing == target
+            || existing.starts_with(&format!("{target}/"))
+            || target.starts_with(&format!("{existing}/"))
+        {
+            return Err(format!(
+                "Markdown 候选目标已存在，拒绝覆盖：{}",
+                path.display()
+            ));
+        }
+    }
+    files.insert(path, bytes);
+    Ok(())
+}
+
 fn build_candidate(
     project: &Project,
     current: &crate::CompileResult,
     pages: &[SourcePage],
     links: &[MarkdownLinkMapping],
-    attachments: &[ResolvedAttachment],
+    attachments: &[ResolvedAttachment<'_>],
     namespace: &str,
     requires_language_upgrade: bool,
 ) -> Result<CandidateBuild, String> {
@@ -1078,7 +1263,6 @@ fn diagnostic_error_counts(
     counts
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn update_import_manifest(project: &mut Project, import_source: &Path) -> Result<(), String> {
     let manifest_path = crate::workspace_documents::manifest_path(&project.root);
     let relative_source = import_source.to_string_lossy().replace('\\', "/");
@@ -1214,7 +1398,7 @@ fn validate_import_relative_path(relative: &str) -> Result<(), String> {
                         && suffix.as_bytes()[0] != b'0'
                 })
             });
-        if component.is_empty()
+        if matches!(component, "" | "." | "..")
             || component.len() > 200
             || component.ends_with(['.', ' '])
             || component.chars().any(|character| {
@@ -1231,7 +1415,6 @@ fn validate_import_relative_path(relative: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn check_tracked_disk_baselines(project: &Project) -> Result<(), String> {
     for path in project
         .documents
@@ -1263,34 +1446,106 @@ fn checked_source_root(path: &Path) -> Result<PathBuf, String> {
     std::fs::canonicalize(path).map_err(|error| format!("无法规范化 Markdown 来源目录：{error}"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn read_input_file(root: &Path, input: &InputFile) -> Result<Vec<u8>, String> {
-    let metadata = std::fs::symlink_metadata(&input.absolute)
-        .map_err(|error| format!("无法检查来源文件 {}：{error}", input.relative))?;
-    if crate::file_access::is_link_or_junction(&metadata) || !metadata.is_file() {
-        return Err(format!(
-            "来源文件在预览期间变为链接或特殊文件：{}",
-            input.relative
-        ));
+fn validate_snapshot_label(label: &str) -> Result<(), String> {
+    if label.trim().is_empty()
+        || label.len() > MAX_IMPORT_PATH_BYTES
+        || label.chars().any(char::is_control)
+    {
+        return Err("Markdown 快照标签不能为空、不能含控制字符，且最多 512 字节".into());
     }
-    let canonical = std::fs::canonicalize(&input.absolute)
-        .map_err(|error| format!("无法规范化来源文件 {}：{error}", input.relative))?;
-    if !canonical.starts_with(root) {
-        return Err(format!("来源文件越过所选目录：{}", input.relative));
+    Ok(())
+}
+
+fn read_input_file(input: &InputFile<'_>) -> Result<Vec<u8>, String> {
+    match &input.source {
+        InputFileSource::Snapshot(bytes) => Ok(bytes.to_vec()),
+        #[cfg(not(target_arch = "wasm32"))]
+        InputFileSource::Disk { root, absolute } => {
+            let metadata = std::fs::symlink_metadata(absolute)
+                .map_err(|error| format!("无法检查来源文件 {}：{error}", input.relative))?;
+            if crate::file_access::is_link_or_junction(&metadata) || !metadata.is_file() {
+                return Err(format!(
+                    "来源文件在预览期间变为链接或特殊文件：{}",
+                    input.relative
+                ));
+            }
+            let canonical = std::fs::canonicalize(absolute)
+                .map_err(|error| format!("无法规范化来源文件 {}：{error}", input.relative))?;
+            if !canonical.starts_with(root) {
+                return Err(format!("来源文件越过所选目录：{}", input.relative));
+            }
+            if metadata.len() != input.length {
+                return Err(format!("来源文件在扫描后发生变化：{}", input.relative));
+            }
+            let bytes = std::fs::read(&canonical)
+                .map_err(|error| format!("无法读取来源文件 {}：{error}", input.relative))?;
+            if bytes.len() as u64 != input.length {
+                return Err(format!("来源文件在读取期间发生变化：{}", input.relative));
+            }
+            Ok(bytes)
+        }
     }
-    if metadata.len() != input.length {
-        return Err(format!("来源文件在扫描后发生变化：{}", input.relative));
+}
+
+fn enumerate_snapshot_files(
+    files: &crate::workspace_snapshot::Files,
+) -> Result<Vec<InputFile<'_>>, String> {
+    if files.len() > MAX_IMPORT_FILES {
+        return Err("Markdown 来源文件数超过单次迁移预算".into());
     }
-    let bytes = std::fs::read(&canonical)
-        .map_err(|error| format!("无法读取来源文件 {}：{error}", input.relative))?;
-    if bytes.len() as u64 != input.length {
-        return Err(format!("来源文件在读取期间发生变化：{}", input.relative));
+    let mut entries_seen = files.len();
+    let mut portable_paths = BTreeMap::<String, String>::new();
+    let mut file_paths = BTreeSet::new();
+    let mut directories = BTreeSet::new();
+    let mut inputs = Vec::with_capacity(files.len());
+    for (path, bytes) in files {
+        let raw = path
+            .to_str()
+            .ok_or_else(|| format!("Markdown 来源路径不是 UTF-8：{}", path.display()))?;
+        let relative = raw.replace('\\', "/");
+        if path.is_absolute()
+            || relative.starts_with('/')
+            || relative
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+        {
+            return Err(format!("Markdown 来源路径不安全：{relative}"));
+        }
+        validate_import_relative_path(&relative)?;
+        let components = relative.split('/').collect::<Vec<_>>();
+        for end in 1..=components.len() {
+            let joined = components[..end].join("/");
+            let folded = joined.to_lowercase();
+            if portable_paths
+                .insert(folded, joined.clone())
+                .is_some_and(|previous| previous != joined)
+            {
+                return Err(format!("Markdown 来源包含大小写折叠后重名的路径：{joined}"));
+            }
+            if end < components.len() {
+                directories.insert(joined);
+            }
+        }
+        file_paths.insert(relative.clone());
+        inputs.push(InputFile {
+            relative,
+            length: bytes.len() as u64,
+            source: InputFileSource::Snapshot(bytes),
+        });
     }
-    Ok(bytes)
+    if file_paths.iter().any(|file| directories.contains(file)) {
+        return Err("Markdown 来源同一路径不能同时作为文件和目录".into());
+    }
+    entries_seen = entries_seen.saturating_add(directories.len());
+    if entries_seen > MAX_IMPORT_ENTRIES {
+        return Err("Markdown 来源目录项超过单次迁移预算".into());
+    }
+    inputs.sort_by(|left, right| left.relative.cmp(&right.relative));
+    Ok(inputs)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn enumerate_source_files(root: &Path) -> Result<Vec<InputFile>, String> {
+fn enumerate_source_files(root: &Path) -> Result<Vec<InputFile<'static>>, String> {
     let mut pending = vec![root.to_path_buf()];
     let mut files = Vec::new();
     let mut entries_seen = 0usize;
@@ -1351,8 +1606,11 @@ fn enumerate_source_files(root: &Path) -> Result<Vec<InputFile>, String> {
             } else if metadata.is_file() {
                 files.push(InputFile {
                     relative,
-                    absolute: path,
                     length: metadata.len(),
+                    source: InputFileSource::Disk {
+                        root: root.to_path_buf(),
+                        absolute: path,
+                    },
                 });
             } else {
                 return Err(format!("Markdown 来源包含特殊文件：{}", path.display()));
@@ -1723,12 +1981,12 @@ fn parse_page(relative: &str, bytes: &[u8], text: &str) -> Result<SourcePage, St
 fn resolve_page_ids(
     current: &crate::CompileResult,
     pages: &mut [SourcePage],
-    request: &MarkdownImportRequest,
+    options: &MarkdownImportOptions,
     conflicts: &mut Vec<MarkdownImportConflict>,
 ) {
     let mut used = BTreeSet::new();
     for page in pages {
-        let had_override = request.id_overrides.contains_key(&page.relative);
+        let had_override = options.id_overrides.contains_key(&page.relative);
         if page.invalid_front_matter_id && !had_override {
             conflicts.push(MarkdownImportConflict {
                 code: "INVALID_FRONT_MATTER_ID".into(),
@@ -1739,7 +1997,7 @@ fn resolve_page_ids(
             });
             continue;
         }
-        let preferred = request
+        let preferred = options
             .id_overrides
             .get(&page.relative)
             .cloned()
@@ -2231,11 +2489,37 @@ fn output_path_exists(project: &Project, relative: &str) -> Result<bool, String>
     Ok(false)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
+fn output_path_exists(project: &Project, relative: &str) -> Result<bool, String> {
+    let target = relative.to_lowercase();
+    let paths = crate::file_access::workspace_files(&project.root)
+        .map_err(|error| format!("无法检查导入目标路径：{error}"))?;
+    for path in paths
+        .iter()
+        .chain(project.documents.keys())
+        .chain(project.authoring_documents.keys())
+    {
+        let Ok(path) = path.strip_prefix(&project.root) else {
+            continue;
+        };
+        let Some(path) = path.to_str() else {
+            return Err("工程包含非 UTF-8 路径，不能安全检查 Markdown 导入目标".into());
+        };
+        let existing = path.replace('\\', "/").to_lowercase();
+        if existing == target
+            || existing.starts_with(&format!("{target}/"))
+            || target.starts_with(&format!("{existing}/"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn source_fingerprint(
-    inputs: &[InputFile],
+    inputs: &[InputFile<'_>],
     pages: &[SourcePage],
-    attachments: &[ResolvedAttachment],
+    attachments: &[ResolvedAttachment<'_>],
 ) -> Result<String, String> {
     let mut bytes = Vec::new();
     for input in inputs {

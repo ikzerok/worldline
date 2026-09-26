@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 thread_local! {
     static WEB_CHECKPOINTS: RefCell<BTreeMap<PathBuf, BTreeMap<String, CheckpointBundle>>> =
-        RefCell::new(BTreeMap::new());
+        const { RefCell::new(BTreeMap::new()) };
 }
 
 fn publish_checkpoint(
