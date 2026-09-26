@@ -767,17 +767,12 @@ fn markdown_front_matter_closing_separator_is_not_a_horizontal_rule_loss() {
         "---\nid: harbor\ntitle: 雾港\nkind: place\n---\n# 雾港\n正文。\n",
     )
     .unwrap();
+    fs::remove_file(fixture.source.join("media/map.bin")).unwrap();
     let project = fixture.project();
     let request = fixture.request(&project);
 
     let plan = project.preview_markdown_import(&request).unwrap();
 
-    assert!(
-        !plan
-            .losses
-            .iter()
-            .any(|loss| loss.source == "harbor.md" && loss.code == "UNSUPPORTED_HORIZONTAL_RULE"),
-        "{:?}",
-        plan.losses
-    );
+    assert!(plan.losses.is_empty(), "{:?}", plan.losses);
+    assert!(plan.can_apply);
 }
