@@ -646,6 +646,41 @@ fn replay_rpc_exposes_trace_checkpoint_and_pure_choice_explanations() {
 }
 
 #[test]
+fn replay_rpc_separates_invalid_dtos_from_story_failures() {
+    let source = "event start\n  choice \"continue\" if true\n    -> END\n";
+    let compiled = worldline_core::compile_source("未命名.wl", source);
+    assert!(!compiled.has_errors(), "{:#?}", compiled.diagnostics);
+    let mut fixture =
+        worldline_runtime::Story::new_with_seed(&compiled.program, &compiled.analysis, 9).unwrap();
+    fixture.continue_story().unwrap();
+    fixture.choose(0).unwrap();
+    fixture.continue_story().unwrap();
+    let trace = json!(fixture.replay_trace());
+    let changed_source = "event start\n  choice \"continue\" if 1 / 0 == 1\n    -> END\n";
+
+    let (_, responses) = exchange(&[
+        req(1, "compile", json!({ "source": source })),
+        req(2, "compile", json!({ "source": changed_source })),
+        req(
+            3,
+            "trace.replay",
+            json!({ "story_id": "s2", "trace": trace }),
+        ),
+        req(4, "trace.replay", json!({ "story_id": "s2", "trace": {} })),
+        req(5, "session.open", json!({ "story_id": "s1", "seed": -1 })),
+        req(6, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[2]["result"]["ok"], true);
+    assert_eq!(
+        responses[2]["result"]["replay"]["status"]["status"],
+        "story_failed"
+    );
+    assert_eq!(responses[2]["result"]["replay"]["status"]["line"], 2);
+    assert_eq!(responses[3]["error"]["code"], -32602);
+    assert_eq!(responses[4]["error"]["code"], -32602);
+}
+
+#[test]
 fn compile_error_returns_diagnostics() {
     let (_, resp) = exchange(&[
         req(
