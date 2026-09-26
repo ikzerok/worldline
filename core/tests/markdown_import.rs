@@ -220,9 +220,7 @@ fn markdown_apply_compiles_and_saves_the_whole_candidate_with_raw_sources() {
         .join("project")
         .join(&plan.attachments[0].output_path);
     assert_eq!(fs::read(copied_asset).unwrap(), [0, 1, 255]);
-    assert!(result
-        .changed_files
-        .contains(&fixture.root.join("project/world.wl")));
+    assert!(result.changed_files.contains(&project.entry));
 
     let compiled = project.compile();
     assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
