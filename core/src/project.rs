@@ -41,6 +41,8 @@ pub struct Project {
     recovery_conflicts: Vec<PathBuf>,
     language_version: LanguageVersion,
     source_selection: Option<crate::source_config::SourceSelection>,
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) checkpoint_session_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -322,6 +324,8 @@ impl Project {
             recovery_conflicts: recovery.conflicts,
             language_version: LanguageVersion::V1_9,
             source_selection: None,
+            #[cfg(target_arch = "wasm32")]
+            checkpoint_session_id: crate::checkpoints::next_checkpoint_session_id(),
         };
         project.refresh()?;
         if project.authoring_diagnostics.is_empty() {
@@ -373,6 +377,8 @@ impl Project {
             recovery_conflicts: Vec::new(),
             language_version: LanguageVersion::V1_9,
             source_selection: None,
+            #[cfg(target_arch = "wasm32")]
+            checkpoint_session_id: crate::checkpoints::next_checkpoint_session_id(),
         }
     }
 

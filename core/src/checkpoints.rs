@@ -127,6 +127,102 @@ struct CheckpointBundle {
     files: Files,
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CheckpointScopeKey {
+    root: PathBuf,
+    session_id: String,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl CheckpointScopeKey {
+    fn new(root: &Path, session_id: &str) -> Self {
+        Self {
+            root: crate::compiler::source_path(root),
+            session_id: session_id.to_owned(),
+        }
+    }
+}
+
+/// The browser production backend and its native regression test share this
+/// exact store implementation; session identity is part of every lookup key.
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Default)]
+struct InMemoryCheckpointStore {
+    records: BTreeMap<CheckpointScopeKey, BTreeMap<String, CheckpointBundle>>,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl InMemoryCheckpointStore {
+    fn publish(
+        &mut self,
+        scope: CheckpointScopeKey,
+        manifest: CheckpointManifest,
+        files: &Files,
+        limits: &CheckpointLimits,
+    ) -> Result<(), String> {
+        validate_checkpoint_id(&manifest.id)?;
+        let records = self.records.entry(scope).or_default();
+        if records.len() >= limits.max_count {
+            return Err("检查点数量配额已满，请显式删除旧记录".into());
+        }
+        let used_bytes = records
+            .values()
+            .try_fold(0u64, |total, checkpoint| {
+                total.checked_add(checkpoint.manifest.payload_bytes)
+            })
+            .ok_or("检查点历史字节数超出可表示范围")?;
+        if used_bytes.saturating_add(manifest.payload_bytes) > limits.max_total_bytes as u64 {
+            return Err("检查点历史字节配额已满，请显式删除旧记录".into());
+        }
+        if files_digest(files) != manifest.snapshot_digest {
+            return Err("检查点内存记录摘要不一致".into());
+        }
+        records.insert(
+            manifest.id.clone(),
+            CheckpointBundle {
+                manifest,
+                files: files.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    fn list(&self, scope: &CheckpointScopeKey) -> Vec<CheckpointListing> {
+        self.records
+            .get(scope)
+            .into_iter()
+            .flat_map(|records| records.values())
+            .map(|bundle| CheckpointListing {
+                summary: summary_for_manifest(&bundle.manifest),
+            })
+            .collect()
+    }
+
+    fn load(&self, scope: &CheckpointScopeKey, id: &str) -> Result<CheckpointBundle, String> {
+        validate_checkpoint_id(id)?;
+        self.records
+            .get(scope)
+            .and_then(|records| records.get(id))
+            .cloned()
+            .ok_or_else(|| "检查点不存在或已损坏".into())
+    }
+
+    fn delete(&mut self, scope: &CheckpointScopeKey, id: &str) -> Result<(), String> {
+        validate_checkpoint_id(id)?;
+        let Some(records) = self.records.get_mut(scope) else {
+            return Err("检查点不存在".into());
+        };
+        if records.remove(id).is_none() {
+            return Err("检查点不存在".into());
+        }
+        if records.is_empty() {
+            self.records.remove(scope);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 struct CheckpointListing {
     summary: CheckpointSummary,
@@ -170,13 +266,13 @@ impl Project {
         }
 
         let manifest = make_manifest(label, &files, payload_bytes)?;
-        publish_checkpoint(&self.root, manifest.clone(), &files, &limits)?;
+        publish_project_checkpoint(self, manifest.clone(), &files, &limits)?;
         Ok(summary_for_manifest(&manifest))
     }
 
     /// 校验所有完整记录后按创建时间倒序列举；受损记录会标记不可用。
     pub fn list_checkpoints(&self) -> Result<Vec<CheckpointSummary>, String> {
-        let mut records = list_checkpoint_records(&self.root)?;
+        let mut records = list_project_checkpoint_records(self)?;
         records.sort_by(|left, right| {
             right
                 .summary
@@ -190,14 +286,14 @@ impl Project {
     /// 显式删除单条历史，包括已损坏且不可恢复的记录。
     pub fn delete_checkpoint(&self, id: &str) -> Result<(), String> {
         validate_checkpoint_id(id)?;
-        delete_checkpoint_record(&self.root, id)
+        delete_project_checkpoint_record(self, id)
     }
 
     /// 创建绑定当前缓冲和完整磁盘快照的逐文件恢复计划。
     pub fn preview_checkpoint_restore(&self, id: &str) -> Result<CheckpointRestorePlan, String> {
         validate_checkpoint_id(id)?;
         self.checkpoint_disk_baselines_match()?;
-        let checkpoint = load_checkpoint(&self.root, id)?;
+        let checkpoint = load_project_checkpoint(self, id)?;
         preview_restore(self, checkpoint)
     }
 
@@ -210,7 +306,7 @@ impl Project {
             return Err("StaleCheckpointPlan：Project 缓冲已变化，请重新预览".into());
         }
         self.checkpoint_disk_baselines_match()?;
-        let checkpoint = load_checkpoint(&self.root, &plan.checkpoint_id)?;
+        let checkpoint = load_project_checkpoint(self, &plan.checkpoint_id)?;
         ensure_workspace_snapshot_limits(self, DEFAULT_MAX_CHECKPOINT_BYTES as u64)?;
         let current_files = crate::workspace_snapshot::snapshot_files(self)?;
         validate_snapshot_files(&current_files)?;
@@ -252,6 +348,95 @@ impl Project {
         };
         *self = candidate;
         Ok(result)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Project {
+    /// 身份不进入作品文件；宿主可在恢复同一浏览器保存时复用它。
+    pub fn checkpoint_session_id(&self) -> &str {
+        &self.checkpoint_session_id
+    }
+
+    /// 将浏览器检查点限定到宿主确认的工作区会话。
+    pub fn set_checkpoint_session_id(&mut self, id: impl Into<String>) -> Result<(), String> {
+        let id = id.into();
+        validate_checkpoint_session_id(&id)?;
+        self.checkpoint_session_id = id;
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn validate_checkpoint_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty()
+        || id.len() > 96
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("检查点会话标识无效".into());
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn next_checkpoint_session_id() -> String {
+    format!("browser-{}", next_checkpoint_id())
+}
+
+fn publish_project_checkpoint(
+    project: &Project,
+    manifest: CheckpointManifest,
+    files: &Files,
+    limits: &CheckpointLimits,
+) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        publish_checkpoint(&project.root, manifest, files, limits)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        publish_checkpoint(
+            &project.root,
+            &project.checkpoint_session_id,
+            manifest,
+            files,
+            limits,
+        )
+    }
+}
+
+fn list_project_checkpoint_records(project: &Project) -> Result<Vec<CheckpointListing>, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        list_checkpoint_records(&project.root)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        list_checkpoint_records(&project.root, &project.checkpoint_session_id)
+    }
+}
+
+fn load_project_checkpoint(project: &Project, id: &str) -> Result<CheckpointBundle, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        load_checkpoint(&project.root, id)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        load_checkpoint(&project.root, &project.checkpoint_session_id, id)
+    }
+}
+
+fn delete_project_checkpoint_record(project: &Project, id: &str) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        delete_checkpoint_record(&project.root, id)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        delete_checkpoint_record(&project.root, &project.checkpoint_session_id, id)
     }
 }
 
@@ -692,3 +877,94 @@ include!("checkpoints_native.rs");
 
 #[cfg(target_arch = "wasm32")]
 include!("checkpoints_wasm.rs");
+
+#[cfg(test)]
+mod browser_checkpoint_scope_tests {
+    use super::{make_manifest, CheckpointLimits, CheckpointScopeKey, InMemoryCheckpointStore};
+    use crate::workspace_snapshot::Files;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn browser_checkpoint_history_isolated_by_session_at_a_shared_mount_root() {
+        let files = Files::from([(PathBuf::from("world.wl"), b"event start\n".to_vec())]);
+        let manifest = make_manifest(None, &files, 12).unwrap();
+        let checkpoint_id = manifest.id.clone();
+        let limits = CheckpointLimits::default();
+        let root = Path::new("/world");
+        let session_a = CheckpointScopeKey::new(root, "browser-session-a");
+        let session_b = CheckpointScopeKey::new(root, "browser-session-b");
+        let same_session_after_reopen = CheckpointScopeKey::new(root, "browser-session-a");
+        let mut store = InMemoryCheckpointStore::default();
+
+        store
+            .publish(session_a.clone(), manifest, &files, &limits)
+            .unwrap();
+
+        assert_eq!(store.list(&session_a).len(), 1);
+        assert!(store.list(&session_b).is_empty());
+        assert!(store.load(&session_b, &checkpoint_id).is_err());
+        assert_eq!(
+            store
+                .load(&same_session_after_reopen, &checkpoint_id)
+                .unwrap()
+                .files,
+            files,
+            "the same persisted browser session can reopen its own checkpoint"
+        );
+        assert!(store.delete(&session_b, &checkpoint_id).is_err());
+        assert_eq!(store.list(&session_a).len(), 1);
+        store.delete(&session_a, &checkpoint_id).unwrap();
+        assert!(store.list(&session_a).is_empty());
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_project_checkpoint_session_tests {
+    use super::CheckpointLimits;
+    use crate::project::Project;
+    use crate::workspace_snapshot::{self, Files};
+    use std::path::{Path, PathBuf};
+
+    fn mount(files: &Files) {
+        crate::file_access::mount(
+            files
+                .iter()
+                .map(|(path, bytes)| (Path::new("/world").join(path), bytes.clone()))
+                .collect(),
+        );
+    }
+
+    #[test]
+    fn same_saved_session_keeps_history_but_a_new_project_at_world_cannot_restore_it() {
+        let files = Files::from([(
+            PathBuf::from("world.wl"),
+            "event start\n  Original.\n  -> END\n".as_bytes().to_vec(),
+        )]);
+        mount(&files);
+        let project = Project::open(Path::new("/world/world.wl")).unwrap();
+        let session_id = project.checkpoint_session_id().to_owned();
+        let checkpoint = project
+            .create_checkpoint(None, CheckpointLimits::default())
+            .unwrap();
+        let plan = project.preview_checkpoint_restore(&checkpoint.id).unwrap();
+
+        // Browser save/reopen restores the session identity alongside the package.
+        mount(&files);
+        let mut reopened = Project::open(Path::new("/world/world.wl")).unwrap();
+        reopened
+            .set_checkpoint_session_id(session_id.clone())
+            .unwrap();
+        assert_eq!(reopened.list_checkpoints().unwrap().len(), 1);
+        reopened.restore_checkpoint(&plan).unwrap();
+
+        // A second work can have the exact same mounted root and bytes; its fresh
+        // Project identity still hides the old history and invalidates the plan.
+        mount(&files);
+        let mut other = Project::open(Path::new("/world/world.wl")).unwrap();
+        assert_ne!(other.checkpoint_session_id(), session_id);
+        assert!(other.list_checkpoints().unwrap().is_empty());
+        let before = workspace_snapshot::snapshot_files(&other).unwrap();
+        assert!(other.restore_checkpoint(&plan).is_err());
+        assert_eq!(workspace_snapshot::snapshot_files(&other).unwrap(), before);
+    }
+}
