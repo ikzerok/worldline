@@ -1,0 +1,958 @@
+//! M4 协作：持久批注、提案基线与保守三方合并。
+//!
+//! 本模块只操作 Project 已跟踪的源码/展示文档。自动合并仅在证据充分时发生：
+//! JSON 对象按稳定键递归合并；数组和正文的并发改写一律显式冲突。
+use crate::catalog::TargetRef;
+use crate::presentation::MapIndex;
+use crate::presentation_commands::{document_hash, Revision};
+use crate::project::Project;
+use crate::workspace_documents::{manifest_path, parse_registry, parse_unique_json, valid_id};
+use crate::{CompileResult, Diagnostic, Span};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CommentAnchor {
+    Object {
+        target: TargetRef,
+    },
+    MapPlacement {
+        map_id: String,
+        placement_id: String,
+    },
+    TextRange {
+        path: String,
+        start_line: u32,
+        end_line: u32,
+        baseline_hash: String,
+        quote: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentDraft {
+    pub id: String,
+    pub author: String,
+    pub body: String,
+    pub anchor: CommentAnchor,
+    #[serde(default)]
+    pub resolved: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorStatus {
+    Attached,
+    Detached,
+}
+
+#[derive(Clone, Debug)]
+pub struct CommentDocument {
+    pub draft: CommentDraft,
+    pub path: PathBuf,
+    pub source: Value,
+    pub read_only: bool,
+    pub anchor_status: AnchorStatus,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CommentIndex {
+    pub comments: BTreeMap<String, CommentDocument>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CommentReference {
+    pub comment_id: String,
+    pub file: String,
+    pub anchor: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct CommentCommand {
+    pub expected_revision: Revision,
+    pub expected_baseline: String,
+    pub original: Option<String>,
+    pub draft: CommentDraft,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalStatus {
+    #[default]
+    Open,
+    Accepted,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalFileChange {
+    pub path: String,
+    pub domain: String,
+    pub base: Option<String>,
+    pub proposed: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalDraft {
+    pub id: String,
+    pub author: String,
+    pub reason: String,
+    #[serde(default)]
+    pub status: ProposalStatus,
+    pub changes: Vec<ProposalFileChange>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProposalDocument {
+    pub draft: ProposalDraft,
+    pub path: PathBuf,
+    pub source: Value,
+    pub read_only: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ProposalIndex {
+    pub proposals: BTreeMap<String, ProposalDocument>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProposalConflict {
+    pub path: String,
+    pub location: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProposalFilePreview {
+    pub path: String,
+    pub domain: String,
+    pub changed: bool,
+    pub conflicts: Vec<ProposalConflict>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProposalPreview {
+    pub proposal_id: String,
+    pub files: Vec<ProposalFilePreview>,
+    pub conflicts: Vec<ProposalConflict>,
+}
+
+impl ProposalPreview {
+    pub fn can_apply(&self) -> bool {
+        self.conflicts.is_empty()
+    }
+
+    pub fn content_files(&self) -> usize {
+        self.files
+            .iter()
+            .filter(|file| file.domain == "content" && file.changed)
+            .count()
+    }
+
+    pub fn presentation_files(&self) -> usize {
+        self.files
+            .iter()
+            .filter(|file| file.domain == "presentation" && file.changed)
+            .count()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProposalCommand {
+    pub expected_revision: Revision,
+    pub expected_baseline: String,
+    pub draft: ProposalDraft,
+}
+
+#[derive(Clone, Debug)]
+pub struct ApplyProposalCommand {
+    pub expected_revision: Revision,
+    pub proposal_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct CollaborationResult {
+    pub changed_files: Vec<PathBuf>,
+    pub new_revision: Revision,
+}
+
+fn report(
+    diagnostics: &mut Vec<Diagnostic>,
+    path: &Path,
+    code: &'static str,
+    message: impl Into<String>,
+) {
+    diagnostics.push(Diagnostic::error(
+        code,
+        &path.to_string_lossy(),
+        Span::new(1, 1, 1),
+        message,
+    ));
+}
+
+fn relative_path(project: &Project, path: &Path) -> Result<String, String> {
+    let relative = path
+        .strip_prefix(&project.root)
+        .map_err(|_| format!("文件不在工作区内:{}", path.display()))?;
+    Ok(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn absolute_path(project: &Project, relative: &str) -> Result<PathBuf, String> {
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative.contains(':')
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err("提案文件路径必须是工作区内规范相对路径".into());
+    }
+    crate::file_access::within(&project.root, &project.root.join(relative))
+}
+
+fn selected_lines(text: &str, start_line: u32, end_line: u32) -> Option<String> {
+    if start_line == 0 || end_line < start_line {
+        return None;
+    }
+    let lines = text.lines().collect::<Vec<_>>();
+    let start = usize::try_from(start_line - 1).ok()?;
+    let end = usize::try_from(end_line).ok()?;
+    if start >= lines.len() || end > lines.len() {
+        return None;
+    }
+    Some(lines[start..end].join("\n"))
+}
+
+pub fn capture_text_anchor(
+    project: &Project,
+    path: &Path,
+    start_line: u32,
+    end_line: u32,
+) -> Result<CommentAnchor, String> {
+    let text = project.document(path)?;
+    let quote =
+        selected_lines(text, start_line, end_line).ok_or("正文批注范围无效，请重新选择行号")?;
+    Ok(CommentAnchor::TextRange {
+        path: relative_path(project, path)?,
+        start_line,
+        end_line,
+        baseline_hash: document_hash(quote.as_bytes()),
+        quote,
+    })
+}
+
+fn anchor_status(
+    project: &Project,
+    content: &CompileResult,
+    maps: &MapIndex,
+    anchor: &CommentAnchor,
+) -> AnchorStatus {
+    let attached = match anchor {
+        CommentAnchor::Object { target } => content.analysis.catalog.object(target).is_some(),
+        CommentAnchor::MapPlacement {
+            map_id,
+            placement_id,
+        } => maps
+            .maps
+            .get(map_id)
+            .is_some_and(|map| map.placements.contains_key(placement_id)),
+        CommentAnchor::TextRange {
+            path,
+            start_line,
+            end_line,
+            baseline_hash,
+            quote,
+        } => absolute_path(project, path)
+            .ok()
+            .and_then(|path| project.document(&path).ok())
+            .and_then(|text| selected_lines(text, *start_line, *end_line))
+            .is_some_and(|current| {
+                &current == quote && document_hash(current.as_bytes()) == *baseline_hash
+            }),
+    };
+    if attached {
+        AnchorStatus::Attached
+    } else {
+        AnchorStatus::Detached
+    }
+}
+
+fn validate_new_anchor(
+    project: &Project,
+    content: &CompileResult,
+    maps: &MapIndex,
+    anchor: &CommentAnchor,
+) -> Result<(), String> {
+    if anchor_status(project, content, maps, anchor) == AnchorStatus::Attached {
+        Ok(())
+    } else {
+        Err("批注锚点当前无法解析；请重新选择对象、标记或正文范围".into())
+    }
+}
+
+pub fn build_comment_index(
+    project: &Project,
+    content: &CompileResult,
+    maps: &MapIndex,
+) -> CommentIndex {
+    let mut index = CommentIndex::default();
+    let manifest = manifest_path(&project.root);
+    let Ok(document) = project.authoring_document(&manifest) else {
+        return index;
+    };
+    if document.is_deleted() {
+        return index;
+    }
+    let registry = parse_registry(&project.root, document.bytes());
+    index.diagnostics.extend(registry.diagnostics);
+    for (id, path) in registry.comments {
+        let parsed = (|| -> Result<(CommentDraft, Value, bool), String> {
+            let document = project.authoring_document(&path)?;
+            if document.is_deleted() {
+                return Err("注册的批注文档已删除".into());
+            }
+            let source = parse_unique_json(document.bytes())
+                .map_err(|error| format!("批注 JSON 无法解析：{error}"))?;
+            if source.get("schema_version").and_then(Value::as_u64) != Some(1) {
+                return Err("批注 schema_version 不受支持".into());
+            }
+            let draft: CommentDraft = serde_json::from_value(source.clone())
+                .map_err(|error| format!("批注结构无效：{error}"))?;
+            if draft.id != id {
+                return Err("批注 ID 与清单注册 ID 不一致".into());
+            }
+            Ok((draft, source, document.is_read_only()))
+        })();
+        match parsed {
+            Ok((draft, source, read_only)) => {
+                let anchor_status = anchor_status(project, content, maps, &draft.anchor);
+                index.comments.insert(
+                    id,
+                    CommentDocument {
+                        draft,
+                        path,
+                        source,
+                        read_only,
+                        anchor_status,
+                    },
+                );
+            }
+            Err(error) => report(&mut index.diagnostics, &path, "COLLAB001", error),
+        }
+    }
+    crate::sort_diagnostics(&mut index.diagnostics);
+    index
+}
+
+impl CommentIndex {
+    pub fn references_to(&self, target: &TargetRef) -> Vec<CommentReference> {
+        self.comments
+            .values()
+            .filter_map(|comment| match &comment.draft.anchor {
+                CommentAnchor::Object { target: anchor } if anchor == target => {
+                    Some(CommentReference {
+                        comment_id: comment.draft.id.clone(),
+                        file: comment.path.to_string_lossy().into_owned(),
+                        anchor: "object".into(),
+                    })
+                }
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+fn update_known_fields(source: &mut Value, fresh: &Value) -> Result<(), String> {
+    let target = source.as_object_mut().ok_or("协作文档顶层必须是对象")?;
+    let fresh = fresh.as_object().ok_or("协作文档序列化无效")?;
+    for (key, value) in fresh {
+        target.insert(key.clone(), value.clone());
+    }
+    target.insert("schema_version".into(), json!(1));
+    Ok(())
+}
+
+fn register_new_document(
+    project: &Project,
+    candidate: &mut Project,
+    registry_key: &str,
+    feature: &str,
+    id: &str,
+    path: &Path,
+    bytes: Vec<u8>,
+) -> Result<Vec<PathBuf>, String> {
+    let manifest = manifest_path(&project.root);
+    let manifest_document = project.authoring_document(&manifest)?;
+    if manifest_document.is_deleted() || manifest_document.is_read_only() {
+        return Err("协作文档需要可写的工作区清单".into());
+    }
+    let mut value = parse_unique_json(manifest_document.bytes())
+        .map_err(|error| format!("工作区清单无法解析：{error}"))?;
+    if value.get(registry_key).is_none() {
+        value[registry_key] = json!({});
+    }
+    let registry_object = value[registry_key]
+        .as_object_mut()
+        .ok_or_else(|| format!("清单 {registry_key} 必须是对象"))?;
+    if registry_object.contains_key(id) {
+        return Err(format!("{registry_key} ID 已注册，不能覆盖"));
+    }
+    let relative = relative_path(project, path)?;
+    registry_object.insert(id.into(), json!(relative));
+    if value.get("required_features").is_none() {
+        value["required_features"] = json!([]);
+    }
+    let features = value["required_features"]
+        .as_array_mut()
+        .ok_or("清单 required_features 必须是数组")?;
+    if !features.iter().any(|item| item.as_str() == Some(feature)) {
+        features.push(json!(feature));
+    }
+    candidate.set_authoring_document(
+        &manifest,
+        serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?,
+    )?;
+    candidate.create_authoring_document(path, bytes)?;
+    Ok(vec![manifest, path.to_path_buf()])
+}
+
+pub fn write_comment(
+    project: &mut Project,
+    revision: &mut Revision,
+    command: CommentCommand,
+) -> Result<CollaborationResult, String> {
+    if command.expected_revision != *revision
+        || command.expected_baseline != project.content_baseline()
+    {
+        return Err("StaleRevision：批注基线已过期，请重新检查后提交".into());
+    }
+    if !valid_id(&command.draft.id)
+        || command.draft.author.trim().is_empty()
+        || command.draft.body.trim().is_empty()
+    {
+        return Err("批注需要有效 ID、作者和正文".into());
+    }
+    if command
+        .original
+        .as_deref()
+        .is_some_and(|id| id != command.draft.id)
+    {
+        return Err("批注 ID 是稳定身份，不能在编辑时改名".into());
+    }
+    let content = project.compile();
+    let maps = crate::presentation_commands::map_index_with_content(project, &content);
+    validate_new_anchor(project, &content, &maps, &command.draft.anchor)?;
+    let index = build_comment_index(project, &content, &maps);
+    if index
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == crate::Severity::Error)
+    {
+        return Err("批注索引含错误，请先修复后再写入".into());
+    }
+    let old = command
+        .original
+        .as_deref()
+        .and_then(|id| index.comments.get(id));
+    if command.original.is_some() && old.is_none() {
+        return Err("待编辑批注不存在".into());
+    }
+    if old.is_some_and(|comment| comment.read_only) {
+        return Err("批注文档为只读，不能覆盖".into());
+    }
+    if command.original.is_none() && index.comments.contains_key(&command.draft.id) {
+        return Err("批注 ID 已存在".into());
+    }
+    let path = old.map(|comment| comment.path.clone()).unwrap_or_else(|| {
+        project
+            .root
+            .join(format!(".world/comments/{}.json", command.draft.id))
+    });
+    let mut source = old
+        .map(|comment| comment.source.clone())
+        .unwrap_or_else(|| json!({"schema_version":1}));
+    update_known_fields(
+        &mut source,
+        &serde_json::to_value(&command.draft).map_err(|error| error.to_string())?,
+    )?;
+    let bytes = serde_json::to_vec_pretty(&source).map_err(|error| error.to_string())?;
+    let mut candidate = project.clone();
+    let changed_files = if old.is_some() {
+        candidate.set_authoring_document(&path, bytes)?;
+        vec![path]
+    } else {
+        register_new_document(
+            project,
+            &mut candidate,
+            "comments",
+            "collaboration.comments.v1",
+            &command.draft.id,
+            &path,
+            bytes,
+        )?
+    };
+    *project = candidate;
+    *revision = revision.next_presentation();
+    Ok(CollaborationResult {
+        changed_files,
+        new_revision: *revision,
+    })
+}
+
+fn collaboration_bookkeeping_path(relative: &str) -> bool {
+    relative == ".world/project.json"
+        || relative.starts_with(".world/comments/")
+        || relative.starts_with(".world/proposals/")
+}
+
+pub fn capture_dirty_proposal(
+    project: &Project,
+    id: impl Into<String>,
+    author: impl Into<String>,
+    reason: impl Into<String>,
+) -> Result<ProposalDraft, String> {
+    let mut changes = Vec::new();
+    for state in project.dirty_tracked_files() {
+        let relative = relative_path(project, &state.path)?;
+        if collaboration_bookkeeping_path(&relative) {
+            continue;
+        }
+        let base = state
+            .baseline
+            .map(String::from_utf8)
+            .transpose()
+            .map_err(|_| format!("提案基线不是 UTF-8：{relative}"))?;
+        let proposed = state
+            .current
+            .map(String::from_utf8)
+            .transpose()
+            .map_err(|_| format!("提案内容不是 UTF-8：{relative}"))?;
+        if base == proposed {
+            continue;
+        }
+        changes.push(ProposalFileChange {
+            path: relative,
+            domain: if state.authoring {
+                "presentation".into()
+            } else {
+                "content".into()
+            },
+            base,
+            proposed,
+        });
+    }
+    if changes.is_empty() {
+        return Err("当前没有可纳入提案的未保存内容或展示修改".into());
+    }
+    Ok(ProposalDraft {
+        id: id.into(),
+        author: author.into(),
+        reason: reason.into(),
+        status: ProposalStatus::Open,
+        changes,
+    })
+}
+
+fn validate_proposal(project: &Project, draft: &ProposalDraft) -> Result<(), String> {
+    if !valid_id(&draft.id)
+        || draft.author.trim().is_empty()
+        || draft.reason.trim().is_empty()
+        || draft.changes.is_empty()
+    {
+        return Err("提案需要有效 ID、作者、理由和至少一个文件修改".into());
+    }
+    let mut paths = BTreeSet::new();
+    for change in &draft.changes {
+        absolute_path(project, &change.path)?;
+        if collaboration_bookkeeping_path(&change.path) {
+            return Err("提案不能修改协作注册清单或协作文档自身".into());
+        }
+        if !matches!(change.domain.as_str(), "content" | "presentation") {
+            return Err("提案文件 domain 只能是 content 或 presentation".into());
+        }
+        if !paths.insert(change.path.clone()) {
+            return Err(format!("提案包含重复文件：{}", change.path));
+        }
+        if change.base == change.proposed {
+            return Err(format!("提案文件没有实际变化：{}", change.path));
+        }
+    }
+    Ok(())
+}
+
+pub fn build_proposal_index(project: &Project) -> ProposalIndex {
+    let mut index = ProposalIndex::default();
+    let manifest = manifest_path(&project.root);
+    let Ok(document) = project.authoring_document(&manifest) else {
+        return index;
+    };
+    if document.is_deleted() {
+        return index;
+    }
+    let registry = parse_registry(&project.root, document.bytes());
+    index.diagnostics.extend(registry.diagnostics);
+    for (id, path) in registry.proposals {
+        let parsed = (|| -> Result<(ProposalDraft, Value, bool), String> {
+            let document = project.authoring_document(&path)?;
+            if document.is_deleted() {
+                return Err("注册的提案文档已删除".into());
+            }
+            let source = parse_unique_json(document.bytes())
+                .map_err(|error| format!("提案 JSON 无法解析：{error}"))?;
+            if source.get("schema_version").and_then(Value::as_u64) != Some(1) {
+                return Err("提案 schema_version 不受支持".into());
+            }
+            let draft: ProposalDraft = serde_json::from_value(source.clone())
+                .map_err(|error| format!("提案结构无效：{error}"))?;
+            if draft.id != id {
+                return Err("提案 ID 与清单注册 ID 不一致".into());
+            }
+            validate_proposal(project, &draft)?;
+            Ok((draft, source, document.is_read_only()))
+        })();
+        match parsed {
+            Ok((draft, source, read_only)) => {
+                index.proposals.insert(
+                    id,
+                    ProposalDocument {
+                        draft,
+                        path,
+                        source,
+                        read_only,
+                    },
+                );
+            }
+            Err(error) => report(&mut index.diagnostics, &path, "COLLAB002", error),
+        }
+    }
+    crate::sort_diagnostics(&mut index.diagnostics);
+    index
+}
+
+pub fn write_proposal(
+    project: &mut Project,
+    revision: &mut Revision,
+    command: ProposalCommand,
+) -> Result<CollaborationResult, String> {
+    if command.expected_revision != *revision
+        || command.expected_baseline != project.content_baseline()
+    {
+        return Err("StaleRevision：提案创建基线已过期".into());
+    }
+    validate_proposal(project, &command.draft)?;
+    if command.draft.status != ProposalStatus::Open {
+        return Err("新建提案状态必须为 open".into());
+    }
+    let index = build_proposal_index(project);
+    if index.proposals.contains_key(&command.draft.id) {
+        return Err("提案 ID 已存在".into());
+    }
+    let path = project
+        .root
+        .join(format!(".world/proposals/{}.json", command.draft.id));
+    let mut source = json!({"schema_version":1});
+    update_known_fields(
+        &mut source,
+        &serde_json::to_value(&command.draft).map_err(|error| error.to_string())?,
+    )?;
+    let bytes = serde_json::to_vec_pretty(&source).map_err(|error| error.to_string())?;
+    let mut candidate = project.clone();
+    let changed_files = register_new_document(
+        project,
+        &mut candidate,
+        "proposals",
+        "collaboration.proposals.v1",
+        &command.draft.id,
+        &path,
+        bytes,
+    )?;
+    *project = candidate;
+    *revision = revision.next_presentation();
+    Ok(CollaborationResult {
+        changed_files,
+        new_revision: *revision,
+    })
+}
+
+fn conflict(
+    path: &str,
+    location: impl Into<String>,
+    message: impl Into<String>,
+) -> ProposalConflict {
+    ProposalConflict {
+        path: path.into(),
+        location: location.into(),
+        message: message.into(),
+    }
+}
+
+fn pointer_child(pointer: &str, key: &str) -> String {
+    let key = key.replace('~', "~0").replace('/', "~1");
+    if pointer.is_empty() {
+        format!("/{key}")
+    } else {
+        format!("{pointer}/{key}")
+    }
+}
+
+fn merge_json_option(
+    path: &str,
+    pointer: &str,
+    base: Option<&Value>,
+    current: Option<&Value>,
+    proposed: Option<&Value>,
+) -> (Option<Value>, Vec<ProposalConflict>) {
+    if current == base {
+        return (proposed.cloned(), Vec::new());
+    }
+    if proposed == base || current == proposed {
+        return (current.cloned(), Vec::new());
+    }
+    match (base, current, proposed) {
+        (
+            Some(Value::Object(base)),
+            Some(Value::Object(current)),
+            Some(Value::Object(proposed)),
+        ) => {
+            let keys = base
+                .keys()
+                .chain(current.keys())
+                .chain(proposed.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let mut merged = Map::new();
+            let mut conflicts = Vec::new();
+            for key in keys {
+                let (value, mut nested) = merge_json_option(
+                    path,
+                    &pointer_child(pointer, &key),
+                    base.get(&key),
+                    current.get(&key),
+                    proposed.get(&key),
+                );
+                if let Some(value) = value {
+                    merged.insert(key, value);
+                }
+                conflicts.append(&mut nested);
+            }
+            (Some(Value::Object(merged)), conflicts)
+        }
+        (Some(Value::Array(_)), Some(Value::Array(_)), Some(Value::Array(_))) => (
+            current.cloned(),
+            vec![conflict(
+                path,
+                pointer,
+                "数组被双方并行修改；顺序和删除语义不能自动合并",
+            )],
+        ),
+        (Some(_), None, Some(_)) | (Some(_), Some(_), None) => (
+            current.cloned(),
+            vec![conflict(path, pointer, "删除与修改并发冲突")],
+        ),
+        (None, Some(_), Some(_)) => (
+            current.cloned(),
+            vec![conflict(path, pointer, "双方新增了不同值")],
+        ),
+        _ => (
+            current.cloned(),
+            vec![conflict(path, pointer, "同一字段被双方修改为不同值")],
+        ),
+    }
+}
+
+fn current_text(
+    project: &Project,
+    relative: &str,
+) -> Result<(Option<String>, Option<bool>), String> {
+    let path = absolute_path(project, relative)?;
+    let Some(state) = project.tracked_file_state(&path) else {
+        return Ok((None, None));
+    };
+    let current = state
+        .current
+        .map(String::from_utf8)
+        .transpose()
+        .map_err(|_| format!("当前文件不是 UTF-8：{relative}"))?;
+    Ok((current, Some(state.authoring)))
+}
+
+fn merge_change(
+    project: &Project,
+    change: &ProposalFileChange,
+) -> Result<(Option<String>, Vec<ProposalConflict>), String> {
+    let (current, _) = current_text(project, &change.path)?;
+    if current == change.base {
+        return Ok((change.proposed.clone(), Vec::new()));
+    }
+    if change.proposed == change.base || current == change.proposed {
+        return Ok((current, Vec::new()));
+    }
+    if change.domain == "presentation" {
+        if let (Some(base), Some(current_text), Some(proposed)) =
+            (&change.base, &current, &change.proposed)
+        {
+            let base_json = parse_unique_json(base.as_bytes());
+            let current_json = parse_unique_json(current_text.as_bytes());
+            let proposed_json = parse_unique_json(proposed.as_bytes());
+            if let (Ok(base_json), Ok(current_json), Ok(proposed_json)) =
+                (base_json, current_json, proposed_json)
+            {
+                let (merged, conflicts) = merge_json_option(
+                    &change.path,
+                    "",
+                    Some(&base_json),
+                    Some(&current_json),
+                    Some(&proposed_json),
+                );
+                return Ok((
+                    merged
+                        .map(|value| serde_json::to_string_pretty(&value))
+                        .transpose()
+                        .map_err(|error| error.to_string())?,
+                    conflicts,
+                ));
+            }
+        }
+    }
+    let message = if change.domain == "content" {
+        "正文文件基线与当前稿均已变化；为避免文学内容误合并，需要人工比对"
+    } else if current.is_none() || change.proposed.is_none() {
+        "展示文档发生删除/修改冲突，需要人工决定"
+    } else {
+        "展示文档无法进行安全结构化三方合并"
+    };
+    Ok((current, vec![conflict(&change.path, "", message)]))
+}
+
+pub fn preview_proposal(
+    project: &Project,
+    proposal: &ProposalDraft,
+) -> Result<ProposalPreview, String> {
+    validate_proposal(project, proposal)?;
+    let mut files = Vec::new();
+    let mut all_conflicts = Vec::new();
+    for change in &proposal.changes {
+        let (merged, conflicts) = merge_change(project, change)?;
+        let (current, tracked_kind) = current_text(project, &change.path)?;
+        let mut conflicts = conflicts;
+        if tracked_kind.is_none()
+            && current.is_none()
+            && change.base.is_none()
+            && change.proposed.is_some()
+        {
+            conflicts.push(conflict(
+                &change.path,
+                "",
+                "新文件尚未由当前工作区注册，不能自动接管",
+            ));
+        }
+        let changed = merged != current;
+        all_conflicts.extend(conflicts.iter().cloned());
+        files.push(ProposalFilePreview {
+            path: change.path.clone(),
+            domain: change.domain.clone(),
+            changed,
+            conflicts,
+        });
+    }
+    Ok(ProposalPreview {
+        proposal_id: proposal.id.clone(),
+        files,
+        conflicts: all_conflicts,
+    })
+}
+
+pub fn apply_proposal(
+    project: &mut Project,
+    revision: &mut Revision,
+    command: ApplyProposalCommand,
+) -> Result<CollaborationResult, String> {
+    if command.expected_revision != *revision {
+        return Err("StaleRevision：审阅开始后工程修订已变化，请重新预览".into());
+    }
+    let index = build_proposal_index(project);
+    if index
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == crate::Severity::Error)
+    {
+        return Err("提案索引含错误，请先修复后再采纳".into());
+    }
+    let proposal = index
+        .proposals
+        .get(&command.proposal_id)
+        .ok_or("提案不存在")?;
+    if proposal.read_only {
+        return Err("提案文档为只读，不能采纳".into());
+    }
+    if proposal.draft.status != ProposalStatus::Open {
+        return Err("提案已经结束，不能重复采纳".into());
+    }
+    let preview = preview_proposal(project, &proposal.draft)?;
+    if !preview.can_apply() {
+        let summary = preview
+            .conflicts
+            .iter()
+            .map(|item| format!("{}{}：{}", item.path, item.location, item.message))
+            .collect::<Vec<_>>()
+            .join("；");
+        return Err(format!("提案存在未解决的三方冲突：{summary}"));
+    }
+
+    let mut candidate = project.clone();
+    let mut changed_files = Vec::new();
+    let mut touched_content = false;
+    for change in &proposal.draft.changes {
+        let (merged, conflicts) = merge_change(project, change)?;
+        if !conflicts.is_empty() {
+            return Err("提案预览已过期，请重新预览".into());
+        }
+        let path = absolute_path(project, &change.path)?;
+        let (_, tracked_kind) = current_text(project, &change.path)?;
+        let Some(authoring) = tracked_kind else {
+            return Err(format!("提案目标未被当前 Project 跟踪：{}", change.path));
+        };
+        match merged {
+            Some(text) if authoring => {
+                candidate.set_authoring_document(&path, text.into_bytes())?;
+            }
+            Some(text) => {
+                candidate.set_text(&path, text)?;
+                touched_content = true;
+            }
+            None => {
+                candidate.delete_document(&path)?;
+                touched_content |= !authoring;
+            }
+        }
+        changed_files.push(path);
+    }
+
+    if touched_content && candidate.compile().has_errors() {
+        return Err("提案采纳后的内容未通过编译检查，未写入任何文件".into());
+    }
+
+    let mut accepted = proposal.draft.clone();
+    accepted.status = ProposalStatus::Accepted;
+    let mut proposal_source = proposal.source.clone();
+    update_known_fields(
+        &mut proposal_source,
+        &serde_json::to_value(&accepted).map_err(|error| error.to_string())?,
+    )?;
+    candidate.set_authoring_document(
+        &proposal.path,
+        serde_json::to_vec_pretty(&proposal_source).map_err(|error| error.to_string())?,
+    )?;
+    changed_files.push(proposal.path.clone());
+
+    *project = candidate;
+    *revision = revision.next_presentation();
+    Ok(CollaborationResult {
+        changed_files,
+        new_revision: *revision,
+    })
+}

@@ -22,7 +22,8 @@ pub struct DeletionImpact {
     pub map_scopes: Vec<MapPlacementRef>,
     pub map_rasters: Vec<MapRasterRef>,
     pub graph_views: Vec<crate::graph_views::GraphViewReference>,
-    /// 有错误的内容或地图可能隐藏引用，不能将部分结果当作无引用。
+    pub comments: Vec<crate::collaboration::CommentReference>,
+    /// 有错误的内容、地图或协作文档可能隐藏引用，不能将部分结果当作无引用。
     pub complete: bool,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -36,6 +37,7 @@ impl DeletionImpact {
             && self.map_scopes.is_empty()
             && self.map_rasters.is_empty()
             && self.graph_views.is_empty()
+            && self.comments.is_empty()
     }
 }
 
@@ -96,6 +98,7 @@ pub fn deletion_impact(
         map_scopes,
         map_rasters,
         graph_views: Vec::new(),
+        comments: Vec::new(),
         complete: diagnostics
             .iter()
             .all(|item| item.severity != Severity::Error),
@@ -134,12 +137,45 @@ pub fn deletion_impact_with_views(
     impact
 }
 
+/// 使用同一内容、地图、网络视图和批注快照生成完整删除影响。
+pub fn deletion_impact_with_collaboration(
+    content: &CompileResult,
+    maps: &MapIndex,
+    views: &crate::graph_views::GraphViewIndex,
+    comments: &crate::collaboration::CommentIndex,
+    target: &TargetRef,
+) -> DeletionImpact {
+    let mut impact = deletion_impact_with_views(content, maps, views, target);
+    impact.comments = comments.references_to(target);
+    for diagnostic in &comments.diagnostics {
+        if !impact.diagnostics.iter().any(|existing| {
+            existing.code == diagnostic.code
+                && existing.file == diagnostic.file
+                && existing.span == diagnostic.span
+                && existing.severity == diagnostic.severity
+                && existing.message == diagnostic.message
+                && existing.note == diagnostic.note
+                && existing.suggestion == diagnostic.suggestion
+                && existing.related == diagnostic.related
+        }) {
+            impact.diagnostics.push(diagnostic.clone());
+        }
+    }
+    crate::diagnostic::sort_diagnostics(&mut impact.diagnostics);
+    impact.complete = impact
+        .diagnostics
+        .iter()
+        .all(|item| item.severity != Severity::Error);
+    impact
+}
+
 impl Project {
     /// 返回当前缓冲的影响计划；调用删除命令时仍须重新检查，不能用旧计划授权写入。
     pub fn deletion_impact(&self, target: &TargetRef) -> DeletionImpact {
         let content = self.compile_current();
         let maps = build_map_index(self, &content);
         let views = crate::graph_views::build_graph_view_index(self, &content);
-        deletion_impact_with_views(&content, &maps, &views, target)
+        let comments = crate::collaboration::build_comment_index(self, &content, &maps);
+        deletion_impact_with_collaboration(&content, &maps, &views, &comments, target)
     }
 }

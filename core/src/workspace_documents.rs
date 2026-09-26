@@ -64,6 +64,8 @@ pub(crate) struct Registry {
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) graph_views: BTreeMap<String, PathBuf>,
     pub(crate) presets: BTreeMap<String, PathBuf>,
+    pub(crate) comments: BTreeMap<String, PathBuf>,
+    pub(crate) proposals: BTreeMap<String, PathBuf>,
     pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
@@ -174,7 +176,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     }
 
     let mut paths = BTreeSet::new();
-    for key in ["maps", "graph_views", "presets"] {
+    for key in ["maps", "graph_views", "presets", "comments", "proposals"] {
         let Some(value) = object.get(key) else {
             continue;
         };
@@ -212,6 +214,12 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "presets" => {
                         registry.presets.insert(id.clone(), path);
+                    }
+                    "comments" => {
+                        registry.comments.insert(id.clone(), path);
+                    }
+                    "proposals" => {
+                        registry.proposals.insert(id.clone(), path);
                     }
                     _ => unreachable!(),
                 }
@@ -377,6 +385,8 @@ fn supported_feature(feature: &str) -> bool {
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
             | "presentation.presets.v1"
+            | "collaboration.comments.v1"
+            | "collaboration.proposals.v1"
             | "workspace.source_sets.v1"
     )
 }

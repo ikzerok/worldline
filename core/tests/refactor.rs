@@ -39,9 +39,10 @@ event start
         &root.join(".world/project.json"),
         br#"{
           "schema_version":1,"language_version":"1.10",
-          "required_features":["content.entities.v1","content.relations.v1","presentation.graph_views.v1"],
+          "required_features":["content.entities.v1","content.relations.v1","presentation.graph_views.v1","collaboration.comments.v1"],
           "maps":{"m":".world/maps/m.json"},
-          "graph_views":{"v":".world/graph-views/v.json"}
+          "graph_views":{"v":".world/graph-views/v.json"},
+          "comments":{"c":".world/comments/c.json"}
         }"#.to_vec(),
     ).unwrap();
     project
@@ -72,6 +73,18 @@ event start
           "positions":{"entity:a":[0,0],"entity:b":[120,0],"relation:r":[60,50]},
           "hidden_relation_ids":["r"]
         }"#
+            .as_bytes()
+            .to_vec(),
+        )
+        .unwrap();
+    project
+        .create_authoring_document(
+            &root.join(".world/comments/c.json"),
+            r#"{
+              "schema_version":1,"id":"c","author":"甲","body":"对象批注",
+              "anchor":{"kind":"object","target":{"kind":"entity","id":"a"}},
+              "resolved":false
+            }"#
             .as_bytes()
             .to_vec(),
         )
@@ -132,6 +145,18 @@ fn entity_id_rename_updates_sources_maps_and_graph_views_atomically() {
         .positions
         .contains_key("entity:alpha"));
     assert!(!views.views["v"].draft.positions.contains_key("entity:a"));
+    let comments = worldline_core::collaboration::build_comment_index(&project, &compiled, &maps);
+    assert!(
+        comments.diagnostics.is_empty(),
+        "{:?}",
+        comments.diagnostics
+    );
+    assert_eq!(
+        comments.comments["c"].draft.anchor,
+        worldline_core::collaboration::CommentAnchor::Object {
+            target: TargetRef::new("entity", "alpha")
+        }
+    );
 }
 
 #[test]

@@ -8,6 +8,7 @@ pub mod authoring;
 pub mod catalog;
 pub mod catalog_edit;
 mod catalog_syntax;
+pub mod collaboration;
 mod compiler;
 mod content_baseline;
 pub mod content_templates;

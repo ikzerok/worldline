@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CommentDocument v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "id", "author", "body", "anchor", "resolved"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+    "author": { "type": "string", "minLength": 1 },
+    "body": { "type": "string", "minLength": 1 },
+    "resolved": { "type": "boolean" },
+    "anchor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "target"],
+          "properties": {
+            "kind": { "const": "object" },
+            "target": {
+              "type": "object",
+              "required": ["kind", "id"],
+              "properties": {
+                "kind": { "type": "string", "minLength": 1 },
+                "id": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "map_id", "placement_id"],
+          "properties": {
+            "kind": { "const": "map_placement" },
+            "map_id": { "type": "string", "minLength": 1 },
+            "placement_id": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind", "path", "start_line", "end_line", "baseline_hash", "quote"
+          ],
+          "properties": {
+            "kind": { "const": "text_range" },
+            "path": { "type": "string", "minLength": 1 },
+            "start_line": { "type": "integer", "minimum": 1 },
+            "end_line": { "type": "integer", "minimum": 1 },
+            "baseline_hash": { "type": "string", "minLength": 1 },
+            "quote": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

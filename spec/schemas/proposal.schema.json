@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProposalDocument v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "id", "author", "reason", "status", "changes"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+    "author": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["open", "accepted"] },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["path", "domain", "base", "proposed"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "domain": { "enum": ["content", "presentation"] },
+          "base": { "type": ["string", "null"] },
+          "proposed": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

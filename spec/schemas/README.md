@@ -2,7 +2,7 @@
 
 本目录是 worldline 共同展示与文件契约的唯一机器格式真源。Schema 描述设计目标，不代表当前 Rust 客户端已经实现全部能力；能力协商和跨文件引用约束见 [共同契约](../presentation.md)。
 
-JSON Schema 采用 2020-12 语法。已实现的清单、地图、独立关系、模板、共享网络视图与展示预设需同时满足本目录形状和核心语义验证；Schema 本身仍不能替代产品行为验收。地图已支持点、折线及简单多边形，遇未知必需能力只读。
+JSON Schema 采用 2020-12 语法。已实现的清单、地图、独立关系、模板、共享网络视图、展示预设、批注与提案需同时满足本目录形状和核心语义验证；Schema 本身仍不能替代产品行为验收。`comment.schema.json` 与 `proposal.schema.json` 分别约束 M4 锚定讨论和带基线的三方修改提案。地图已支持点、折线及简单多边形，遇未知必需能力只读。
 
 relation.schema.json 对应语言 1.10 的 Catalog.relations 单项 SemanticRelationInfo：来源说明可为 null，properties 为非执行字面量；版本由查询外层携带，仍接受早期样例的逐项 schema_version。关系真源是 .wl 声明，不另存一份关系 JSON；地图/图布局 JSON 才是持久展示配置。
 

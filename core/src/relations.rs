@@ -977,8 +977,11 @@ impl crate::project::Project {
         if !impact.map_placements.is_empty()
             || !impact.map_scopes.is_empty()
             || !impact.graph_views.is_empty()
+            || !impact.comments.is_empty()
         {
-            return Err(format!("关系 `{id}` 仍被展示文档引用，请先解除这些引用"));
+            return Err(format!(
+                "关系 `{id}` 仍被展示或批注文档引用，请先解除这些引用"
+            ));
         }
         replace_relation_block(
             self,

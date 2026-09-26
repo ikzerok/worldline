@@ -221,6 +221,31 @@ fn validate_candidate(
     {
         return Err(format!("{} {}", error.code, error.message));
     }
+    let presets =
+        crate::presentation_presets::build_preset_index(project, &compiled, &maps, &views);
+    if let Some(error) = presets
+        .diagnostics
+        .iter()
+        .find(|item| item.severity == Severity::Error)
+    {
+        return Err(format!("{} {}", error.code, error.message));
+    }
+    let comments = crate::collaboration::build_comment_index(project, &compiled, &maps);
+    if let Some(error) = comments
+        .diagnostics
+        .iter()
+        .find(|item| item.severity == Severity::Error)
+    {
+        return Err(format!("{} {}", error.code, error.message));
+    }
+    let proposals = crate::collaboration::build_proposal_index(project);
+    if let Some(error) = proposals
+        .diagnostics
+        .iter()
+        .find(|item| item.severity == Severity::Error)
+    {
+        return Err(format!("{} {}", error.code, error.message));
+    }
     if before.analysis.fingerprint != compiled.analysis.fingerprint {
         return Err("entity / relation ID 重命名不应改变运行指纹".into());
     }

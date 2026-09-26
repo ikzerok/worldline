@@ -60,6 +60,15 @@ pub struct ConflictSnapshot {
     pub disk: Option<Vec<u8>>,
 }
 
+/// 提案捕获使用的受控文件状态；只暴露 Project 已跟踪缓冲与其保存基线。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackedFileState {
+    pub path: PathBuf,
+    pub baseline: Option<Vec<u8>>,
+    pub current: Option<Vec<u8>>,
+    pub authoring: bool,
+}
+
 impl Project {
     #[cfg(not(target_arch = "wasm32"))]
     fn validate_destination(&self, destination: &Path) -> Result<(), String> {
@@ -840,6 +849,48 @@ impl Project {
             .filter(|d| !d.is_deleted())
             .map(|d| d.text.as_str())
             .ok_or_else(|| format!("文件未载入:{}", path.display()))
+    }
+
+    /// 返回一个已跟踪文件的保存基线和当前缓冲；不读取磁盘、不推进基线。
+    pub fn tracked_file_state(&self, path: &Path) -> Option<TrackedFileState> {
+        let path = source_path(path);
+        if let Some(document) = self.documents.get(&path) {
+            return Some(TrackedFileState {
+                path,
+                baseline: document.saved.as_ref().map(|text| text.as_bytes().to_vec()),
+                current: (!document.deleted).then(|| document.text.as_bytes().to_vec()),
+                authoring: false,
+            });
+        }
+        self.authoring_documents
+            .get(&path)
+            .map(|document| TrackedFileState {
+                path,
+                baseline: document.saved.clone(),
+                current: (!document.deleted).then(|| document.bytes.clone()),
+                authoring: true,
+            })
+    }
+
+    /// 只返回相对保存基线发生变化的受控文档；普通附件不进入结构化提案。
+    pub fn dirty_tracked_files(&self) -> Vec<TrackedFileState> {
+        let mut out = Vec::new();
+        for (path, document) in &self.documents {
+            if document.is_dirty() {
+                if let Some(state) = self.tracked_file_state(path) {
+                    out.push(state);
+                }
+            }
+        }
+        for (path, document) in &self.authoring_documents {
+            if document.is_dirty() {
+                if let Some(state) = self.tracked_file_state(path) {
+                    out.push(state);
+                }
+            }
+        }
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        out
     }
 
     pub(crate) fn ensure_workspace_writable(&self) -> Result<(), String> {
