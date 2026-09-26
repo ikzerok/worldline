@@ -2,6 +2,9 @@
 
 **协议版本:** 1（语言 v1.10 entity 字段扩展）
 
+CAP-01A 的[就地建档组合意图](authoring-intents.md)首期仅提供进程内 Project API。
+CLI/RPC 尚无跨正文、实体及地图的组合写入入口；既有单对象写入不代表此事务能力。
+
 时段包含扩展：`timeline.periods[]` 新增 `parent: string | null`，保存直接上级 ID。父子层级由 core 验证，未知上级及循环包含为 A219 编译诊断。CLI 与 RPC 同时返回该字段，不影响会话状态和运行指纹。
 
 资料导航扩展：CLI `catalog --json` 与 agent `analyze.catalog` 的目录新增 `aliases`（target/name/file/line）和 `text_links`（source/target/label/file/line/column）数组；正文引用同时出现在 references。属于向后兼容的附加字段，旧消费者可忽略。未知别名／正文链接目标为 A218 编译诊断；格式错误为 P004；故事层仍返回 `ok:false`，不变成 JSON-RPC 协议错误。播放输出只包含链接的显示文字，不增加运行记录或另一份状态。

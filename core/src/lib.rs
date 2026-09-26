@@ -5,6 +5,7 @@ mod analysis_metadata;
 pub mod anchors;
 pub mod ast;
 pub mod authoring;
+pub mod authoring_intents;
 pub mod catalog;
 pub mod catalog_edit;
 mod catalog_syntax;
