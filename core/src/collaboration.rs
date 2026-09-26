@@ -1261,6 +1261,20 @@ fn review_differences(
     (result, truncated, false, raw)
 }
 
+pub(crate) fn review_checkpoint_text(
+    base: Option<&str>,
+    current: Option<&str>,
+    checkpoint: Option<&str>,
+) -> (Vec<ProposalDifference>, bool, bool, ProposalRawSources) {
+    let change = ProposalFileChange {
+        path: String::new(),
+        domain: "content".into(),
+        base: base.map(str::to_owned),
+        proposed: checkpoint.map(str::to_owned),
+    };
+    review_differences(&change, current)
+}
+
 type LimitedReferenceLocations = (Vec<ProposalReferenceLocation>, bool);
 
 fn index_reference_locations(

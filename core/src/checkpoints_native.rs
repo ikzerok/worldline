@@ -25,6 +25,7 @@ fn publish_checkpoint(
     root: &Path,
     manifest: CheckpointManifest,
     files: &Files,
+    text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
     limits: &CheckpointLimits,
 ) -> Result<(), String> {
     let _lock = lock_checkpoints()?;
@@ -64,6 +65,18 @@ fn publish_checkpoint(
                 return Err("检查点故障注入：payload".into());
             }
             write_checkpoint_file(&staging.join(&entry.payload), bytes)?;
+        }
+        for entry in manifest.text_base.as_deref().unwrap_or_default() {
+            if let CheckpointTextBaseSource::Stored { payload, .. } = &entry.source {
+                let bytes = text_base
+                    .get(Path::new(&entry.path))
+                    .and_then(Option::as_ref)
+                    .ok_or_else(|| format!("检查点文本基线引用了缺失文件：{}", entry.path))?;
+                if failure_requested("payload") {
+                    return Err("检查点故障注入：payload".into());
+                }
+                write_checkpoint_file(&staging.join(payload), bytes)?;
+            }
         }
         if failure_requested("manifest") {
             return Err("检查点故障注入：manifest".into());
@@ -162,9 +175,22 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
         &fs::read(&manifest_path).map_err(|error| error.to_string())?,
     )
     .map_err(|error| format!("检查点清单损坏：{error}"))?;
-    if manifest.version != CHECKPOINT_FORMAT_VERSION
+    let format_is_valid = match manifest.version {
+        LEGACY_CHECKPOINT_FORMAT_VERSION => {
+            manifest.text_base.is_none() && manifest.text_base_digest.is_none()
+        }
+        CHECKPOINT_FORMAT_VERSION => {
+            manifest.text_base.is_some() && manifest.text_base_digest.is_some()
+        }
+        _ => false,
+    };
+    if !format_is_valid
         || manifest.id != id
         || manifest.files.len() > MAX_CHECKPOINT_FILES
+        || manifest
+            .text_base
+            .as_ref()
+            .is_some_and(|entries| entries.len() > MAX_CHECKPOINT_FILES)
         || manifest.label.as_ref().is_some_and(|label| label.chars().count() > 120)
     {
         return Err("检查点清单版本或字段无效".into());
@@ -176,6 +202,7 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
         return Err("检查点负载目录无效".into());
     }
     let mut files = Files::new();
+    let mut text_base = manifest.text_base.as_ref().map(|_| BTreeMap::new());
     let mut payloads = BTreeSet::new();
     let mut total = 0u64;
     for file in &manifest.files {
@@ -207,9 +234,58 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
             return Err("检查点包含重复文件路径".into());
         }
     }
+    if let (Some(entries), Some(bases)) = (&manifest.text_base, &mut text_base) {
+        for entry in entries {
+            let path = parse_relative_file(&entry.path)?;
+            if !path.extension().is_some_and(|extension| extension == "wl")
+                || bases.contains_key(&path)
+            {
+                return Err("检查点文本基线路径无效或重复".into());
+            }
+            let bytes = match &entry.source {
+                CheckpointTextBaseSource::Snapshot => files
+                    .get(&path)
+                    .cloned()
+                    .ok_or_else(|| format!("检查点文本基线引用了不存在的快照文件：{}", entry.path))?,
+                CheckpointTextBaseSource::Absent => {
+                    bases.insert(path, None);
+                    continue;
+                }
+                CheckpointTextBaseSource::Stored {
+                    payload,
+                    bytes,
+                    checksum,
+                } => {
+                    let payload_path = validate_payload_path(payload)?;
+                    if !payloads.insert(payload.clone()) {
+                        return Err("检查点包含重复负载路径".into());
+                    }
+                    total = total.checked_add(*bytes).ok_or("检查点文件大小无效")?;
+                    if total > DEFAULT_MAX_CHECKPOINT_BYTES as u64 {
+                        return Err("检查点负载超过格式上限".into());
+                    }
+                    let path_on_disk = directory.join(payload_path);
+                    let metadata = fs::symlink_metadata(&path_on_disk)
+                        .map_err(|error| format!("检查点文本基线负载缺失：{error}"))?;
+                    if crate::file_access::is_link_or_junction(&metadata)
+                        || !metadata.is_file()
+                        || metadata.len() != *bytes
+                    {
+                        return Err(format!("检查点文本基线负载大小或类型无效：{}", entry.path));
+                    }
+                    let data = fs::read(&path_on_disk).map_err(|error| error.to_string())?;
+                    if *checksum != file_checksum(&data) {
+                        return Err(format!("检查点文本基线校验失败：{}", entry.path));
+                    }
+                    data
+                }
+            };
+            bases.insert(path, Some(bytes));
+        }
+    }
     let mut actual_payloads = BTreeSet::new();
     for entry in fs::read_dir(&payload_directory).map_err(|error| error.to_string())? {
-        if actual_payloads.len() >= MAX_CHECKPOINT_FILES {
+        if actual_payloads.len() >= MAX_CHECKPOINT_PAYLOADS {
             return Err("检查点负载文件数超过格式上限".into());
         }
         let entry = entry.map_err(|error| error.to_string())?;
@@ -229,6 +305,12 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
     if files_digest(&files) != manifest.snapshot_digest {
         return Err("检查点整体校验失败".into());
     }
+    if manifest.version == CHECKPOINT_FORMAT_VERSION
+        && (manifest.text_base_digest.as_deref() != text_base_digest(text_base.as_ref()).as_deref()
+            || manifest.text_base_digest.is_none())
+    {
+        return Err("检查点文本基线整体校验失败".into());
+    }
     let mut actual_root_entries = BTreeSet::new();
     for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
         if actual_root_entries.len() >= 2 {
@@ -240,7 +322,11 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
     if actual_root_entries != BTreeSet::from([MANIFEST_NAME.into(), "files".into()]) {
         return Err("检查点记录含有未登记文件".into());
     }
-    Ok(CheckpointBundle { manifest, files })
+    Ok(CheckpointBundle {
+        manifest,
+        files,
+        text_base,
+    })
 }
 
 fn delete_checkpoint_record(root: &Path, id: &str) -> Result<(), String> {
@@ -312,7 +398,7 @@ fn unavailable_payload_bytes(path: &Path) -> Result<u64, String> {
     let mut count = 0;
     for entry in fs::read_dir(&payload_directory).map_err(|error| error.to_string())? {
         count += 1;
-        if count > MAX_CHECKPOINT_FILES {
+        if count > MAX_CHECKPOINT_PAYLOADS {
             return Ok(DEFAULT_MAX_CHECKPOINT_BYTES as u64 + 1);
         }
         let entry = entry.map_err(|error| error.to_string())?;

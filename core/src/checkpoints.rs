@@ -14,10 +14,15 @@ pub const DEFAULT_MAX_CHECKPOINT_BYTES: usize = 64 * 1024 * 1024;
 pub const DEFAULT_MAX_CHECKPOINT_HISTORY_BYTES: usize = 256 * 1024 * 1024;
 const MAX_CHECKPOINT_FILES: usize = 4096;
 #[cfg(not(target_arch = "wasm32"))]
+const MAX_CHECKPOINT_PAYLOADS: usize = MAX_CHECKPOINT_FILES * 2;
+const MAX_CHECKPOINT_TEXT_FILES: usize = 32;
+const MAX_CHECKPOINT_TEXT_BYTES: usize = 16 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CHECKPOINT_RECORDS_ON_DISK: usize = 128;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_CHECKPOINT_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
-const CHECKPOINT_FORMAT_VERSION: u32 = 1;
+const CHECKPOINT_FORMAT_VERSION: u32 = 2;
+const LEGACY_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckpointLimits {
@@ -57,7 +62,7 @@ pub struct CheckpointSummary {
     pub label: Option<String>,
     pub created_at_unix_ms: u64,
     pub file_count: usize,
-    /// 文件原始字节总数，不包括清单与文件系统开销。
+    /// 当前工作区与额外保存基线负载的原始字节总数，不含清单与文件系统开销。
     pub payload_bytes: u64,
     pub available: bool,
     pub unavailable_reason: Option<String>,
@@ -83,6 +88,55 @@ pub struct CheckpointFileChange {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointTextSourceRange {
+    pub start_byte: usize,
+    pub end_byte: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointTextDifference {
+    pub path: PathBuf,
+    pub base: Option<String>,
+    pub current: Option<String>,
+    pub checkpoint: Option<String>,
+    pub base_range: Option<CheckpointTextSourceRange>,
+    pub current_range: Option<CheckpointTextSourceRange>,
+    pub checkpoint_range: Option<CheckpointTextSourceRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointTextSourceSnippets {
+    pub base: Option<String>,
+    pub current: Option<String>,
+    pub checkpoint: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointTextDiffSummary {
+    pub base_bytes: Option<u64>,
+    pub current_bytes: Option<u64>,
+    pub checkpoint_bytes: Option<u64>,
+    /// None means unknown or undecodable; a known absent side is reported as Some(0).
+    pub base_lines: Option<usize>,
+    pub current_lines: Option<usize>,
+    pub checkpoint_lines: Option<usize>,
+    pub difference_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointTextDiff {
+    pub path: PathBuf,
+    /// False for version 1 records, which did not capture a saved-text baseline.
+    pub base_available: bool,
+    pub summary: CheckpointTextDiffSummary,
+    pub differences: Vec<CheckpointTextDifference>,
+    pub raw: CheckpointTextSourceSnippets,
+    pub alignment_uncertain: bool,
+    pub undecodable: bool,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckpointRestorePlan {
     pub checkpoint_id: String,
     pub expected_content_baseline: String,
@@ -92,6 +146,10 @@ pub struct CheckpointRestorePlan {
     pub fingerprint_before: u64,
     pub fingerprint_after: u64,
     pub changes: Vec<CheckpointFileChange>,
+    #[serde(default)]
+    pub text_differences: Vec<CheckpointTextDiff>,
+    #[serde(default)]
+    pub text_differences_truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +170,28 @@ struct CheckpointManifest {
     payload_bytes: u64,
     snapshot_digest: String,
     files: Vec<CheckpointFileEntry>,
+    #[serde(default)]
+    text_base: Option<Vec<CheckpointTextBaseEntry>>,
+    #[serde(default)]
+    text_base_digest: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CheckpointTextBaseEntry {
+    path: String,
+    source: CheckpointTextBaseSource,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "storage", rename_all = "snake_case")]
+enum CheckpointTextBaseSource {
+    Absent,
+    Snapshot,
+    Stored {
+        payload: String,
+        bytes: u64,
+        checksum: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,6 +206,7 @@ struct CheckpointFileEntry {
 struct CheckpointBundle {
     manifest: CheckpointManifest,
     files: Files,
+    text_base: Option<BTreeMap<PathBuf, Option<Vec<u8>>>>,
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -160,6 +241,7 @@ impl InMemoryCheckpointStore {
         scope: CheckpointScopeKey,
         manifest: CheckpointManifest,
         files: &Files,
+        text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
         limits: &CheckpointLimits,
     ) -> Result<(), String> {
         validate_checkpoint_id(&manifest.id)?;
@@ -176,7 +258,9 @@ impl InMemoryCheckpointStore {
         if used_bytes.saturating_add(manifest.payload_bytes) > limits.max_total_bytes as u64 {
             return Err("检查点历史字节配额已满，请显式删除旧记录".into());
         }
-        if files_digest(files) != manifest.snapshot_digest {
+        if files_digest(files) != manifest.snapshot_digest
+            || manifest.text_base_digest.as_deref() != text_base_digest(Some(text_base)).as_deref()
+        {
             return Err("检查点内存记录摘要不一致".into());
         }
         records.insert(
@@ -184,6 +268,7 @@ impl InMemoryCheckpointStore {
             CheckpointBundle {
                 manifest,
                 files: files.clone(),
+                text_base: Some(text_base.clone()),
             },
         );
         Ok(())
@@ -255,19 +340,17 @@ impl Project {
         ensure_workspace_snapshot_limits(self, limits.max_checkpoint_bytes as u64)?;
         let files = crate::workspace_snapshot::snapshot_files(self)?;
         validate_snapshot_files(&files)?;
-        let payload_bytes = files
-            .values()
-            .try_fold(0u64, |total, bytes| total.checked_add(bytes.len() as u64))
-            .ok_or("检查点字节数超出可表示范围")?;
-        if files.len() > MAX_CHECKPOINT_FILES {
-            return Err("工作区文件数超过检查点上限".into());
+        let text_base = saved_source_baselines(self);
+        let payload_bytes = checkpoint_payload_bytes(&files, &text_base)?;
+        if files.len() > MAX_CHECKPOINT_FILES || text_base.len() > MAX_CHECKPOINT_FILES {
+            return Err("工作区文件或保存基线数量超过检查点上限".into());
         }
         if payload_bytes > limits.max_checkpoint_bytes as u64 {
             return Err("检查点超过单条字节配额".into());
         }
 
-        let manifest = make_manifest(label, &files, payload_bytes)?;
-        publish_project_checkpoint(self, manifest.clone(), &files, &limits)?;
+        let manifest = make_manifest(label, &files, &text_base, payload_bytes)?;
+        publish_project_checkpoint(self, manifest.clone(), &files, &text_base, &limits)?;
         Ok(summary_for_manifest(&manifest))
     }
 
@@ -314,7 +397,7 @@ impl Project {
         let disk_files = disk_workspace_files(&self.root)?;
         if files_digest(&current_files) != plan.expected_workspace_digest
             || files_digest(&disk_files) != plan.expected_disk_digest
-            || checkpoint.manifest.snapshot_digest != plan.checkpoint_digest
+            || checkpoint_record_digest(&checkpoint.manifest) != plan.checkpoint_digest
         {
             return Err("StaleCheckpointPlan：工作区或检查点已变化，请重新预览".into());
         }
@@ -390,11 +473,12 @@ fn publish_project_checkpoint(
     project: &Project,
     manifest: CheckpointManifest,
     files: &Files,
+    text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
     limits: &CheckpointLimits,
 ) -> Result<(), String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        publish_checkpoint(&project.root, manifest, files, limits)
+        publish_checkpoint(&project.root, manifest, files, text_base, limits)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -403,6 +487,7 @@ fn publish_project_checkpoint(
             &project.checkpoint_session_id,
             manifest,
             files,
+            text_base,
             limits,
         )
     }
@@ -494,16 +579,254 @@ fn preview_restore(
                     && !checkpoint_compile.has_errors()),
         });
     }
+    let (text_differences, text_differences_truncated) =
+        checkpoint_text_differences(&current_files, &checkpoint);
     Ok(CheckpointRestorePlan {
         checkpoint_id: checkpoint.manifest.id.clone(),
         expected_content_baseline: project.content_baseline(),
         expected_workspace_digest: files_digest(&current_files),
         expected_disk_digest: files_digest(&disk_files),
-        checkpoint_digest: checkpoint.manifest.snapshot_digest.clone(),
+        checkpoint_digest: checkpoint_record_digest(&checkpoint.manifest),
         fingerprint_before: before_fingerprint,
         fingerprint_after: after_fingerprint,
         changes,
+        text_differences,
+        text_differences_truncated,
     })
+}
+
+fn checkpoint_text_differences(
+    current_files: &Files,
+    checkpoint: &CheckpointBundle,
+) -> (Vec<CheckpointTextDiff>, bool) {
+    let mut paths = BTreeSet::new();
+    for files in [current_files, &checkpoint.files] {
+        paths.extend(
+            files
+                .keys()
+                .filter(|path| path.extension().is_some_and(|extension| extension == "wl"))
+                .cloned(),
+        );
+    }
+    if let Some(bases) = &checkpoint.text_base {
+        paths.extend(bases.keys().cloned());
+    }
+
+    let mut result = Vec::new();
+    let mut truncated_files = false;
+    for path in paths {
+        let current = current_files.get(&path);
+        let target = checkpoint.files.get(&path);
+        let captured_base = checkpoint
+            .text_base
+            .as_ref()
+            .and_then(|bases| bases.get(&path));
+        let base_available = captured_base.is_some();
+        let base = captured_base.and_then(Option::as_ref);
+        let differs = if base_available {
+            base != current && base != target || current != target
+        } else {
+            current != target
+        };
+        if !differs {
+            continue;
+        }
+        if result.len() == MAX_CHECKPOINT_TEXT_FILES {
+            truncated_files = true;
+            break;
+        }
+        result.push(project_checkpoint_text_diff(
+            path,
+            base_available,
+            base.map(Vec::as_slice),
+            current.map(Vec::as_slice),
+            target.map(Vec::as_slice),
+        ));
+    }
+    (result, truncated_files)
+}
+
+fn project_checkpoint_text_diff(
+    path: PathBuf,
+    base_available: bool,
+    base: Option<&[u8]>,
+    current: Option<&[u8]>,
+    checkpoint: Option<&[u8]>,
+) -> CheckpointTextDiff {
+    let decoded_base = base.map(std::str::from_utf8).transpose();
+    let decoded_current = current.map(std::str::from_utf8).transpose();
+    let decoded_checkpoint = checkpoint.map(std::str::from_utf8).transpose();
+    let undecodable =
+        decoded_base.is_err() || decoded_current.is_err() || decoded_checkpoint.is_err();
+    let mut truncated = false;
+    let (differences, alignment_uncertain, raw) = if undecodable {
+        (
+            Vec::new(),
+            true,
+            CheckpointTextSourceSnippets {
+                base: base.map(|bytes| escaped_byte_snippet(bytes, &mut truncated)),
+                current: current.map(|bytes| escaped_byte_snippet(bytes, &mut truncated)),
+                checkpoint: checkpoint.map(|bytes| escaped_byte_snippet(bytes, &mut truncated)),
+            },
+        )
+    } else if !base_available {
+        (
+            Vec::new(),
+            true,
+            CheckpointTextSourceSnippets {
+                base: None,
+                current: decoded_current
+                    .ok()
+                    .flatten()
+                    .map(|text| bounded_text(text, &mut truncated)),
+                checkpoint: decoded_checkpoint
+                    .ok()
+                    .flatten()
+                    .map(|text| bounded_text(text, &mut truncated)),
+            },
+        )
+    } else {
+        let (proposal_differences, review_truncated, uncertain, raw) =
+            crate::collaboration::review_checkpoint_text(
+                decoded_base.ok().flatten(),
+                decoded_current.ok().flatten(),
+                decoded_checkpoint.ok().flatten(),
+            );
+        truncated |= review_truncated;
+        let mut differences = proposal_differences
+            .into_iter()
+            .map(|difference| CheckpointTextDifference {
+                path: path.clone(),
+                base: difference.base,
+                current: difference.current,
+                checkpoint: difference.proposed,
+                base_range: difference.base_range.map(checkpoint_source_range),
+                current_range: difference.current_range.map(checkpoint_source_range),
+                checkpoint_range: difference.proposed_range.map(checkpoint_source_range),
+            })
+            .collect::<Vec<_>>();
+        truncated |= limit_checkpoint_hunks(&mut differences);
+        (
+            differences,
+            uncertain,
+            CheckpointTextSourceSnippets {
+                base: raw.base,
+                current: raw.current,
+                checkpoint: raw.proposed,
+            },
+        )
+    };
+    let summary = CheckpointTextDiffSummary {
+        base_bytes: base.map(|bytes| bytes.len() as u64),
+        current_bytes: current.map(|bytes| bytes.len() as u64),
+        checkpoint_bytes: checkpoint.map(|bytes| bytes.len() as u64),
+        base_lines: if !base_available || decoded_base.is_err() {
+            None
+        } else {
+            Some(
+                decoded_base
+                    .ok()
+                    .flatten()
+                    .map_or(0, |text| text.lines().count()),
+            )
+        },
+        current_lines: if decoded_current.is_err() {
+            None
+        } else {
+            Some(
+                decoded_current
+                    .ok()
+                    .flatten()
+                    .map_or(0, |text| text.lines().count()),
+            )
+        },
+        checkpoint_lines: if decoded_checkpoint.is_err() {
+            None
+        } else {
+            Some(
+                decoded_checkpoint
+                    .ok()
+                    .flatten()
+                    .map_or(0, |text| text.lines().count()),
+            )
+        },
+        difference_count: differences.len(),
+    };
+    CheckpointTextDiff {
+        path,
+        base_available,
+        summary,
+        differences,
+        raw,
+        alignment_uncertain,
+        undecodable,
+        truncated,
+    }
+}
+
+fn checkpoint_source_range(
+    range: crate::collaboration::ProposalSourceRange,
+) -> CheckpointTextSourceRange {
+    CheckpointTextSourceRange {
+        start_byte: range.start_byte,
+        end_byte: range.end_byte,
+    }
+}
+
+fn bounded_text(value: &str, truncated: &mut bool) -> String {
+    if value.len() <= MAX_CHECKPOINT_TEXT_BYTES {
+        return value.to_owned();
+    }
+    *truncated = true;
+    let mut end = MAX_CHECKPOINT_TEXT_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
+fn escaped_byte_snippet(bytes: &[u8], truncated: &mut bool) -> String {
+    const PREFIX: &str = "hex:";
+    let max_bytes = (MAX_CHECKPOINT_TEXT_BYTES - PREFIX.len()) / 2;
+    let shown = bytes.len().min(max_bytes);
+    if shown < bytes.len() {
+        *truncated = true;
+    }
+    let mut output = String::with_capacity(PREFIX.len() + shown * 2);
+    output.push_str(PREFIX);
+    for byte in &bytes[..shown] {
+        use std::fmt::Write as _;
+        let _ = write!(&mut output, "{byte:02x}");
+    }
+    output
+}
+
+fn limit_checkpoint_hunks(differences: &mut [CheckpointTextDifference]) -> bool {
+    let mut remaining = MAX_CHECKPOINT_TEXT_BYTES;
+    let mut truncated = false;
+    for difference in differences {
+        for snippet in [
+            &mut difference.base,
+            &mut difference.current,
+            &mut difference.checkpoint,
+        ] {
+            let Some(text) = snippet else {
+                continue;
+            };
+            if text.len() <= remaining {
+                remaining -= text.len();
+                continue;
+            }
+            let mut end = remaining;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            remaining = 0;
+            truncated = true;
+        }
+    }
+    truncated
 }
 
 fn objects_by_source(result: &crate::CompileResult) -> BTreeMap<PathBuf, BTreeSet<TargetRef>> {
@@ -720,9 +1043,78 @@ fn file_checksum(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
+fn saved_source_baselines(project: &Project) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+    let root = crate::compiler::source_path(&project.root);
+    project
+        .documents
+        .keys()
+        .filter_map(|path| {
+            let path = crate::compiler::source_path(path);
+            if !path.extension().is_some_and(|extension| extension == "wl") {
+                return None;
+            }
+            let relative = path.strip_prefix(&root).ok()?.to_path_buf();
+            let state = project.tracked_file_state(&path)?;
+            Some((relative, state.baseline))
+        })
+        .collect()
+}
+
+fn checkpoint_payload_bytes(
+    files: &Files,
+    text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
+) -> Result<u64, String> {
+    files
+        .values()
+        .chain(text_base.iter().filter_map(|(path, bytes)| {
+            bytes
+                .as_ref()
+                .filter(|bytes| files.get(path) != Some(*bytes))
+        }))
+        .try_fold(0u64, |total, bytes| total.checked_add(bytes.len() as u64))
+        .ok_or_else(|| "检查点字节数超出可表示范围".into())
+}
+
+fn text_base_digest(text_base: Option<&BTreeMap<PathBuf, Option<Vec<u8>>>>) -> Option<String> {
+    let text_base = text_base?;
+    let mut hash = 0xcbf29ce484222325u64;
+    mix(&mut hash, b"worldline-checkpoint-text-base-v1");
+    for (path, bytes) in text_base {
+        let path = path.to_string_lossy().replace('\\', "/");
+        mix(&mut hash, path.as_bytes());
+        match bytes {
+            Some(bytes) => {
+                mix(&mut hash, b"present");
+                mix(&mut hash, bytes);
+            }
+            None => mix(&mut hash, b"absent"),
+        }
+    }
+    Some(format!("{hash:016x}"))
+}
+
+fn checkpoint_record_digest(manifest: &CheckpointManifest) -> String {
+    if manifest.version == LEGACY_CHECKPOINT_FORMAT_VERSION {
+        return manifest.snapshot_digest.clone();
+    }
+    let mut hash = 0xcbf29ce484222325u64;
+    mix(&mut hash, b"worldline-checkpoint-record-v2");
+    mix(&mut hash, manifest.snapshot_digest.as_bytes());
+    mix(
+        &mut hash,
+        manifest
+            .text_base_digest
+            .as_deref()
+            .unwrap_or_default()
+            .as_bytes(),
+    );
+    format!("{hash:016x}")
+}
+
 fn make_manifest(
     label: Option<String>,
     files: &Files,
+    text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
     payload_bytes: u64,
 ) -> Result<CheckpointManifest, String> {
     let id = next_checkpoint_id();
@@ -744,6 +1136,29 @@ fn make_manifest(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let base_entries = text_base
+        .iter()
+        .enumerate()
+        .map(|(index, (path, bytes))| {
+            validate_relative_file(path)?;
+            if !path.extension().is_some_and(|extension| extension == "wl") {
+                return Err("检查点文本基线只能引用 .wl 文件".into());
+            }
+            let source = match bytes {
+                None => CheckpointTextBaseSource::Absent,
+                Some(bytes) if files.get(path) == Some(bytes) => CheckpointTextBaseSource::Snapshot,
+                Some(bytes) => CheckpointTextBaseSource::Stored {
+                    payload: format!("files/base-{index:08}.bin"),
+                    bytes: bytes.len() as u64,
+                    checksum: file_checksum(bytes),
+                },
+            };
+            Ok(CheckpointTextBaseEntry {
+                path: path.to_string_lossy().replace('\\', "/"),
+                source,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     Ok(CheckpointManifest {
         version: CHECKPOINT_FORMAT_VERSION,
         id,
@@ -752,6 +1167,8 @@ fn make_manifest(
         payload_bytes,
         snapshot_digest: files_digest(files),
         files: entries,
+        text_base: Some(base_entries),
+        text_base_digest: text_base_digest(Some(text_base)),
     })
 }
 
@@ -883,12 +1300,14 @@ include!("checkpoints_wasm.rs");
 mod browser_checkpoint_scope_tests {
     use super::{make_manifest, CheckpointLimits, CheckpointScopeKey, InMemoryCheckpointStore};
     use crate::workspace_snapshot::Files;
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
     #[test]
     fn browser_checkpoint_history_isolated_by_session_at_a_shared_mount_root() {
         let files = Files::from([(PathBuf::from("world.wl"), b"event start\n".to_vec())]);
-        let manifest = make_manifest(None, &files, 12).unwrap();
+        let text_base = BTreeMap::new();
+        let manifest = make_manifest(None, &files, &text_base, 12).unwrap();
         let checkpoint_id = manifest.id.clone();
         let limits = CheckpointLimits::default();
         let root = Path::new("/world");
@@ -898,7 +1317,7 @@ mod browser_checkpoint_scope_tests {
         let mut store = InMemoryCheckpointStore::default();
 
         store
-            .publish(session_a.clone(), manifest, &files, &limits)
+            .publish(session_a.clone(), manifest, &files, &text_base, &limits)
             .unwrap();
 
         assert_eq!(store.list(&session_a).len(), 1);
@@ -923,13 +1342,15 @@ mod browser_checkpoint_scope_tests {
 mod checkpoint_clock_tests {
     use super::{make_manifest, next_checkpoint_id};
     use crate::workspace_snapshot::Files;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
     fn checkpoint_ids_are_unique_and_manifest_times_are_available() {
         let files = Files::from([(PathBuf::from("world.wl"), b"event start\n".to_vec())]);
-        let first = make_manifest(None, &files, 12).unwrap();
-        let second = make_manifest(None, &files, 12).unwrap();
+        let text_base = BTreeMap::new();
+        let first = make_manifest(None, &files, &text_base, 12).unwrap();
+        let second = make_manifest(None, &files, &text_base, 12).unwrap();
 
         assert_ne!(next_checkpoint_id(), next_checkpoint_id());
         assert_ne!(first.id, second.id);

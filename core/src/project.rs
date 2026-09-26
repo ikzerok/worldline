@@ -6,7 +6,8 @@ use std::path::{Component, Path, PathBuf};
 
 pub use crate::checkpoints::{
     CheckpointFileChange, CheckpointFileOperation, CheckpointLimits, CheckpointRestorePlan,
-    CheckpointRestoreResult, CheckpointSummary,
+    CheckpointRestoreResult, CheckpointSummary, CheckpointTextDiff, CheckpointTextDiffSummary,
+    CheckpointTextDifference, CheckpointTextSourceRange, CheckpointTextSourceSnippets,
 };
 pub use crate::workspace_documents::AuthoringDocument;
 

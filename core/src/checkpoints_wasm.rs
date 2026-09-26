@@ -10,13 +10,14 @@ fn publish_checkpoint(
     session_id: &str,
     manifest: CheckpointManifest,
     files: &Files,
+    text_base: &BTreeMap<PathBuf, Option<Vec<u8>>>,
     limits: &CheckpointLimits,
 ) -> Result<(), String> {
     let scope = CheckpointScopeKey::new(root, session_id);
     WEB_CHECKPOINTS.with(|storage| {
         storage
             .borrow_mut()
-            .publish(scope, manifest, files, limits)
+            .publish(scope, manifest, files, text_base, limits)
     })
 }
 
