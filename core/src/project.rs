@@ -1097,7 +1097,7 @@ impl Project {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn ensure_storage_ready(&self) -> Result<(), String> {
+    pub(crate) fn ensure_storage_ready(&self) -> Result<(), String> {
         if !self.recovery_conflicts.is_empty()
             || crate::storage::has_unresolved_transactions(&self.root)?
         {

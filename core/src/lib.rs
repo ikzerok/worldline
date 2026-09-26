@@ -34,6 +34,7 @@ pub mod presentation_presets;
 pub mod project;
 pub mod project_templates;
 pub mod queries;
+pub mod reader_export;
 pub mod recovery;
 pub mod refactor;
 pub mod reference_impact;

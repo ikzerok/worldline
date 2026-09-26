@@ -1,4 +1,6 @@
 //! 源文件与素材读取；浏览器只读取用户显式导入的文件，桌面仍读取磁盘。
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Read;
 use std::path::Path;
 
 /// 枚举整个工作区；链接不属于可移植工程，拒绝跟随。
@@ -117,6 +119,48 @@ pub fn readable(path: &Path) -> bool {
             files
                 .borrow()
                 .contains_key(&crate::compiler::source_path(path))
+        })
+    }
+}
+
+/// 读取受限大小的文件，避免静态附件预览复制任意大的工作区文件。
+pub fn read_limited(path: impl AsRef<Path>, max_bytes: usize) -> std::io::Result<Vec<u8>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let file = std::fs::File::open(path)?;
+        if file.metadata()?.len() > max_bytes as u64 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "文件超过大小限制",
+            ));
+        }
+        let mut limited = file.take((max_bytes as u64).saturating_add(1));
+        let mut bytes = Vec::new();
+        limited.read_to_end(&mut bytes)?;
+        if bytes.len() > max_bytes {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "文件超过大小限制",
+            ));
+        }
+        Ok(bytes)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        FILES.with(|files| {
+            let files = files.borrow();
+            let bytes = files
+                .get(&crate::compiler::source_path(path.as_ref()))
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "文件尚未导入浏览器")
+                })?;
+            if bytes.len() > max_bytes {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "文件超过大小限制",
+                ));
+            }
+            Ok(bytes.clone())
         })
     }
 }
