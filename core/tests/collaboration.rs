@@ -639,6 +639,65 @@ fn proposal_resolution_can_choose_deletion_and_replace_a_text_conflict() {
 }
 
 #[test]
+fn array_conflict_resolution_replaces_the_whole_array_value() {
+    let mut project = project("resolve_array");
+    let path = project.root.join(".world/maps/city.json");
+    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
+        .unwrap();
+    let draft = proposal(
+        "resolve_array",
+        base,
+        map_json(0, 0, &["a"], true),
+    );
+    let mut revision = Revision::default();
+    let baseline = project.content_baseline();
+    let expected_revision = revision;
+    collaboration::write_proposal(
+        &mut project,
+        &mut revision,
+        ProposalCommand {
+            expected_revision,
+            expected_baseline: baseline,
+            draft,
+        },
+    )
+    .unwrap();
+    project
+        .set_authoring_document(
+            &path,
+            map_json(0, 0, &["b", "a"], true).into_bytes(),
+        )
+        .unwrap();
+    let indexed = collaboration::build_proposal_index(&project);
+    let preview =
+        collaboration::preview_proposal(&project, &indexed.proposals["resolve_array"].draft)
+            .unwrap();
+    assert_eq!(preview.conflicts.len(), 1, "{:?}", preview.conflicts);
+    assert_eq!(preview.conflicts[0].location, "/layer_order");
+
+    let conflict = &preview.conflicts[0];
+    let expected_revision = revision;
+    collaboration::apply_proposal_with_resolutions(
+        &mut project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline,
+            proposal_id: "resolve_array".into(),
+        },
+        &[ProposalResolution {
+            path: conflict.path.clone(),
+            location: conflict.location.clone(),
+            value: Some("[\"b\"]".into()),
+        }],
+    )
+    .unwrap();
+    let merged: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&path).unwrap().bytes()).unwrap();
+    assert_eq!(merged["layer_order"], serde_json::json!(["b"]));
+}
+
+#[test]
 fn proposal_review_baseline_rejects_changes_even_when_revision_did_not_advance() {
     let mut project = project("review_stale");
     let path = project.root.join(".world/maps/city.json");

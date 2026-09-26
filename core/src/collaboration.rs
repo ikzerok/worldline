@@ -228,7 +228,7 @@ pub struct ApplyProposalCommand {
 }
 
 /// A resolver's explicit value for one core-reported proposal conflict.
-/// `None` deletes a JSON member, array item, or entire file-level conflict.
+/// `None` deletes a JSON object member or an entire file-level conflict.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProposalResolution {
     pub path: String,
@@ -777,47 +777,18 @@ fn set_json_pointer(root: &mut Value, pointer: &str, value: Option<Value>) -> Re
         .ok_or("提案冲突位置不是有效 JSON Pointer")?;
     let mut parent = root;
     for token in parents {
-        parent = match parent {
-            Value::Object(object) => object
-                .get_mut(token)
-                .ok_or("提案冲突的父字段已不存在")?,
-            Value::Array(array) => {
-                let index = token
-                    .parse::<usize>()
-                    .map_err(|_| "提案冲突的数组索引无效")?;
-                array
-                    .get_mut(index)
-                    .ok_or("提案冲突的父数组项已不存在")?
-            }
-            _ => return Err("提案冲突的父值不是对象或数组".into()),
-        };
+        parent = parent
+            .as_object_mut()
+            .and_then(|object| object.get_mut(token))
+            .ok_or("提案冲突的父字段不存在或路径经过数组")?;
     }
-    match parent {
-        Value::Object(object) => {
-            if let Some(value) = value {
-                object.insert(last.clone(), value);
-            } else {
-                object.remove(last);
-            }
-        }
-        Value::Array(array) => {
-            let index = last
-                .parse::<usize>()
-                .map_err(|_| "提案冲突的数组索引无效")?;
-            match value {
-                Some(value) if index == array.len() => array.push(value),
-                Some(value) => {
-                    *array
-                        .get_mut(index)
-                        .ok_or("提案冲突的数组项已不存在")? = value;
-                }
-                None if index < array.len() => {
-                    array.remove(index);
-                }
-                None => return Err("提案冲突的数组项已不存在".into()),
-            }
-        }
-        _ => return Err("提案冲突的父值不是对象或数组".into()),
+    let object = parent
+        .as_object_mut()
+        .ok_or("数组冲突必须作为完整 JSON 值解决")?;
+    if let Some(value) = value {
+        object.insert(last.clone(), value);
+    } else {
+        object.remove(last);
     }
     Ok(())
 }
@@ -1789,7 +1760,6 @@ fn resolve_change_conflicts(
     }
     Ok(merged.text)
 }
-
 
 /// Applies a proposal only when its fresh preview has no unresolved conflicts.
 pub fn apply_proposal(
