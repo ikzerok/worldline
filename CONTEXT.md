@@ -28,8 +28,8 @@ _Avoid_: 文件指纹、工程哈希
 没有可运行 event 的合法工程；仅试玩入口检查可运行性，保存/打包不得拒绝。
 _Avoid_: 设定集（口语化）
 
-## 当前开发切片
+## 当前交付状态
 
-WP-10 的 `graph_views` 支撑接口已加入共享布局读取、带基线事务、删除与显式引用保护。
-契约见 `spec/presentation.md` 和 `spec/diagnostics.md`，14 项行为回归见 `core/tests/graph_views.rs`。
-这不代表 worldedit 的网络 UI 或后续 WP-11 已完成；配对进度见同级 worldedit 的 `docs/wp10-progress.md`。
+M0–M4 / WP-00–WP-16 的核心契约与实现已进入本仓；WP-17 最终验收状态见同级 worldedit 的 `docs/wp17-acceptance.md`。当前 core 提供地图/展示文档生命周期、1.10 entity/独立语义关系、跨视图重构、可选内容模板、作者范围与显式源码集、展示预设、批注与带基线提案；所有分析与引用保护仍由 core 单源生成。
+
+最终发布必须以 worldedit `compatibility.json` 的完整 SHA 配对，并通过 `scripts/check-pair.ps1`；本地生成日志与发行 ZIP 不提交到源码仓库。
