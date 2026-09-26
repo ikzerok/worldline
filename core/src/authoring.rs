@@ -591,6 +591,12 @@ impl Project {
                     .iter()
                     .map(|reference| format!("{} / {}", reference.view_id, reference.field)),
             );
+            locations.extend(impact.manuscripts.iter().map(|reference| {
+                format!(
+                    "{} / {} ({:?})",
+                    reference.manuscript_id, reference.chapter_id, reference.role
+                )
+            }));
             let locations = locations.join("、");
             return Err(format!(
                 "事件 `{id}` 仍有引用，请先明确解除或重新绑定这些引用：{locations}"
@@ -716,6 +722,12 @@ impl Project {
                     .chain(&impact.map_scopes)
                     .map(|placement| format!("{} / {}", placement.map_id, placement.placement_id)),
             );
+            locations.extend(impact.manuscripts.iter().map(|reference| {
+                format!(
+                    "{} / {} ({:?})",
+                    reference.manuscript_id, reference.chapter_id, reference.role
+                )
+            }));
             return Err(format!(
                 "实体 `{id}` 仍有引用，请先明确解除或重新绑定这些引用：{}",
                 locations

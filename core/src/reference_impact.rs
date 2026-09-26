@@ -23,6 +23,7 @@ pub struct DeletionImpact {
     pub map_rasters: Vec<MapRasterRef>,
     pub graph_views: Vec<crate::graph_views::GraphViewReference>,
     pub comments: Vec<crate::collaboration::CommentReference>,
+    pub manuscripts: Vec<crate::manuscript::ManuscriptReference>,
     /// 有错误的内容、地图或协作文档可能隐藏引用，不能将部分结果当作无引用。
     pub complete: bool,
     pub diagnostics: Vec<Diagnostic>,
@@ -38,6 +39,7 @@ impl DeletionImpact {
             && self.map_rasters.is_empty()
             && self.graph_views.is_empty()
             && self.comments.is_empty()
+            && self.manuscripts.is_empty()
     }
 }
 
@@ -99,6 +101,7 @@ pub fn deletion_impact(
         map_rasters,
         graph_views: Vec::new(),
         comments: Vec::new(),
+        manuscripts: Vec::new(),
         complete: diagnostics
             .iter()
             .all(|item| item.severity != Severity::Error),
@@ -176,6 +179,45 @@ impl Project {
         let maps = build_map_index(self, &content);
         let views = crate::graph_views::build_graph_view_index(self, &content);
         let comments = crate::collaboration::build_comment_index(self, &content, &maps);
-        deletion_impact_with_collaboration(&content, &maps, &views, &comments, target)
+        let mut impact =
+            deletion_impact_with_collaboration(&content, &maps, &views, &comments, target);
+        for diagnostic in self.authoring_diagnostics() {
+            if !impact.diagnostics.iter().any(|existing| {
+                existing.code == diagnostic.code
+                    && existing.file == diagnostic.file
+                    && existing.span == diagnostic.span
+                    && existing.severity == diagnostic.severity
+                    && existing.message == diagnostic.message
+                    && existing.note == diagnostic.note
+                    && existing.suggestion == diagnostic.suggestion
+                    && existing.related == diagnostic.related
+            }) {
+                impact.diagnostics.push(diagnostic.clone());
+            }
+        }
+        let manuscripts = self.manuscript_indices();
+        for index in manuscripts.values() {
+            impact.manuscripts.extend(index.references_to(target));
+            for diagnostic in &index.diagnostics {
+                if !impact.diagnostics.iter().any(|existing| {
+                    existing.code == diagnostic.code
+                        && existing.file == diagnostic.file
+                        && existing.span == diagnostic.span
+                        && existing.severity == diagnostic.severity
+                        && existing.message == diagnostic.message
+                        && existing.note == diagnostic.note
+                        && existing.suggestion == diagnostic.suggestion
+                        && existing.related == diagnostic.related
+                }) {
+                    impact.diagnostics.push(diagnostic.clone());
+                }
+            }
+        }
+        crate::diagnostic::sort_diagnostics(&mut impact.diagnostics);
+        impact.complete = impact
+            .diagnostics
+            .iter()
+            .all(|item| item.severity != Severity::Error);
+        impact
     }
 }

@@ -91,6 +91,20 @@ impl Project {
                 after: after.into_bytes(),
             });
         }
+        let manifest_path = crate::workspace_documents::manifest_path(&self.root);
+        let manuscript_paths: BTreeSet<PathBuf> = self
+            .authoring_document(&manifest_path)
+            .ok()
+            .map(|document| {
+                let registry =
+                    crate::workspace_documents::parse_registry(&self.root, document.bytes());
+                if registry.diagnostics.is_empty() {
+                    registry.manuscripts.into_values().collect()
+                } else {
+                    BTreeSet::new()
+                }
+            })
+            .unwrap_or_default();
         for (path, document) in &self.authoring_documents {
             if document.is_deleted() {
                 continue;
@@ -106,7 +120,11 @@ impl Project {
                 crate::workspace_documents::parse_unique_json(&before).map_err(|error| {
                     format!("展示文档 JSON 无法安全读取：{}：{error}", path.display())
                 })?;
-            let count = rewrite_json(&mut value, target, new_id);
+            let count = if manuscript_paths.contains(path) {
+                rewrite_manuscript_json(&mut value, target, new_id)
+            } else {
+                rewrite_json(&mut value, target, new_id)
+            };
             if count == 0 {
                 continue;
             }
@@ -246,6 +264,18 @@ fn validate_candidate(
     {
         return Err(format!("{} {}", error.code, error.message));
     }
+    for manuscript in project.manuscript_indices().values() {
+        if let Some(error) = manuscript
+            .diagnostics
+            .iter()
+            .find(|item| item.severity == Severity::Error)
+        {
+            return Err(format!("{} {}", error.code, error.message));
+        }
+        if !manuscript.references_to(old_target).is_empty() {
+            return Err("重命名候选仍含有旧 ID 的书稿引用".into());
+        }
+    }
     if before.analysis.fingerprint != compiled.analysis.fingerprint {
         return Err("entity / relation ID 重命名不应改变运行指纹".into());
     }
@@ -371,4 +401,27 @@ fn rewrite_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
         }
         _ => 0,
     }
+}
+
+fn rewrite_manuscript_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
+    let Some(entries) = value
+        .as_object_mut()
+        .and_then(|object| object.get_mut("entries"))
+        .and_then(Value::as_array_mut)
+    else {
+        return 0;
+    };
+    let mut count = 0;
+    for entry in entries.iter_mut().filter_map(Value::as_object_mut) {
+        let Some(reference) = entry.get_mut("target_ref").and_then(Value::as_object_mut) else {
+            continue;
+        };
+        if reference.get("kind").and_then(Value::as_str) == Some(target.kind.as_str())
+            && reference.get("id").and_then(Value::as_str) == Some(target.id.as_str())
+        {
+            reference.insert("id".into(), Value::String(new_id.into()));
+            count += 1;
+        }
+    }
+    count
 }

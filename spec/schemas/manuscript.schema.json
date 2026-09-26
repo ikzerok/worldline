@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worldline.dev/schemas/manuscript-v1.json",
+  "title": "Worldline manuscript v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "id", "title", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "title": { "type": "string", "minLength": 1 },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["event", "scene", "entity"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["id", "kind", "title"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" },
+            "kind": { "const": "section" },
+            "parent_id": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+            "title": { "type": "string", "minLength": 1 },
+            "summary": { "type": ["string", "null"] },
+            "target_ref": { "type": "null" },
+            "status": { "type": ["string", "null"] },
+            "goal": { "type": ["string", "null"] }
+          },
+          "not": { "required": ["pov"] }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["id", "kind", "title", "target_ref"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" },
+            "kind": { "const": "chapter" },
+            "parent_id": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+            "title": { "type": "string", "minLength": 1 },
+            "target_ref": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["kind", "id"],
+              "properties": {
+                "kind": { "enum": ["event", "scene", "entity"] },
+                "id": { "type": "string", "minLength": 1 }
+              }
+            },
+            "summary": { "type": ["string", "null"] },
+            "pov": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["kind", "id"],
+                  "properties": {
+                    "kind": { "const": "character" },
+                    "id": { "type": "string", "minLength": 1 }
+                  }
+                },
+                { "type": "null" }
+              ]
+            },
+            "status": { "type": ["string", "null"] },
+            "goal": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    }
+  }
+}

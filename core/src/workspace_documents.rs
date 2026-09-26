@@ -61,8 +61,10 @@ impl AuthoringDocument {
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
     pub(crate) documents: BTreeMap<PathBuf, bool>,
+    pub(crate) required_features: BTreeSet<String>,
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) graph_views: BTreeMap<String, PathBuf>,
+    pub(crate) manuscripts: BTreeMap<String, PathBuf>,
     pub(crate) presets: BTreeMap<String, PathBuf>,
     pub(crate) comments: BTreeMap<String, PathBuf>,
     pub(crate) proposals: BTreeMap<String, PathBuf>,
@@ -145,6 +147,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         match features.as_array() {
             Some(features) => {
                 for feature in features {
+                    if let Some(feature) = feature.as_str() {
+                        registry.required_features.insert(feature.to_string());
+                    }
                     if !feature.as_str().is_some_and(supported_feature) {
                         registry.report(
                             root,
@@ -162,6 +167,19 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         }
     }
 
+    if object
+        .get("manuscripts")
+        .and_then(Value::as_object)
+        .is_some_and(|manuscripts| !manuscripts.is_empty())
+        && !required_feature(object, "presentation.manuscripts.v1")
+    {
+        registry.report(
+            root,
+            "WS003",
+            "清单注册书稿时必须声明 required_features presentation.manuscripts.v1",
+        );
+    }
+
     if let Some(config) = object.get("source_config") {
         match parse_source_selection(root, object, config) {
             Ok(selection) => registry.source_selection = Some(selection),
@@ -175,8 +193,17 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         );
     }
 
-    let mut paths = BTreeSet::new();
-    for key in ["maps", "graph_views", "presets", "comments", "proposals"] {
+    let manifest_path = manifest_path(root);
+    let mut paths = BTreeMap::new();
+    paths.insert(registry_path_key(&manifest_path), manifest_path.clone());
+    for key in [
+        "maps",
+        "graph_views",
+        "manuscripts",
+        "presets",
+        "comments",
+        "proposals",
+    ] {
         let Some(value) = object.get(key) else {
             continue;
         };
@@ -202,7 +229,20 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                 continue;
             };
             if let Ok(path) = registered_path(root, relative) {
-                paths.insert(path.clone());
+                let path_key = registry_path_key(&path);
+                if paths.contains_key(&path_key)
+                    || paths
+                        .values()
+                        .any(|registered| same_existing_file(registered, &path))
+                {
+                    registry.report(
+                        root,
+                        "WS004",
+                        format!("清单 {key}.{id} 与其他注册项共用展示文档路径:{relative}"),
+                    );
+                    continue;
+                }
+                paths.insert(path_key, path.clone());
                 match key {
                     "maps" => {
                         // registry.maps 只保存已经通过路径边界检查的注册项；重复
@@ -211,6 +251,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "graph_views" => {
                         registry.graph_views.insert(id.clone(), path);
+                    }
+                    "manuscripts" => {
+                        registry.manuscripts.insert(id.clone(), path);
                     }
                     "presets" => {
                         registry.presets.insert(id.clone(), path);
@@ -232,10 +275,27 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             }
         }
     }
-    for path in paths {
+    for path in paths.into_values() {
         registry.documents.insert(path, manifest_read_only);
     }
     registry
+}
+
+fn registry_path_key(path: &Path) -> String {
+    // 工作区须可跨大小写敏感/不敏感文件系统迁移；统一拒绝大小写别名。
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+fn same_existing_file(left: &Path, right: &Path) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (left, right);
+        false
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        same_file::is_same_file(left, right).unwrap_or(false)
+    }
 }
 
 fn required_feature(object: &Map<String, Value>, feature: &str) -> bool {
@@ -384,6 +444,7 @@ fn supported_feature(feature: &str) -> bool {
             | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
+            | "presentation.manuscripts.v1"
             | "presentation.presets.v1"
             | "collaboration.comments.v1"
             | "collaboration.proposals.v1"

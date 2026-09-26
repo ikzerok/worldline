@@ -978,6 +978,7 @@ impl crate::project::Project {
             || !impact.map_scopes.is_empty()
             || !impact.graph_views.is_empty()
             || !impact.comments.is_empty()
+            || !impact.manuscripts.is_empty()
         {
             return Err(format!(
                 "关系 `{id}` 仍被展示或批注文档引用，请先解除这些引用"

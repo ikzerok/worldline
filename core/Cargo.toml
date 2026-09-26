@@ -8,3 +8,6 @@ description = "worldline 语言核心:词法、语法、语义分析、诊断与
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+same-file = "1.0.6"

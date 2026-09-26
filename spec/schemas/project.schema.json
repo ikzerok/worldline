@@ -13,84 +13,47 @@
     "graph_views"
   ],
   "properties": {
-    "schema_version": {
-      "const": 1
-    },
+    "schema_version": { "const": 1 },
     "project_id": {
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
     },
-    "language_version": {
-      "enum": [
-        "1.9",
-        "1.10"
-      ]
-    },
-    "entry": {
-      "type": "string",
-      "minLength": 1
-    },
+    "language_version": { "enum": ["1.9", "1.10"] },
+    "entry": { "type": "string", "minLength": 1 },
     "required_features": {
       "type": "array",
-      "items": {
-        "type": "string"
-      },
+      "items": { "type": "string" },
       "uniqueItems": true
     },
     "maps": {
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1
-      }
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "graph_views": {
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1
-      }
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "manuscripts": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "presets": {
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1
-      }
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "comments": {
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1
-      }
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "proposals": {
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1
-      }
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     },
     "source_config": {
       "type": "object",
@@ -111,8 +74,23 @@
         }
       }
     },
-    "extensions": {
-      "type": "object"
+    "extensions": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "manuscripts": { "type": "object", "minProperties": 1 }
+        },
+        "required": ["manuscripts"]
+      },
+      "then": {
+        "properties": {
+          "required_features": {
+            "contains": { "const": "presentation.manuscripts.v1" }
+          }
+        }
+      }
     }
-  }
+  ]
 }

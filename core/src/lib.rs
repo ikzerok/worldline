@@ -21,6 +21,7 @@ mod fingerprint;
 pub mod graph;
 pub mod graph_views;
 pub mod lexer;
+pub mod manuscript;
 pub mod map_creation;
 pub mod migration;
 pub mod navigation;
@@ -53,6 +54,13 @@ pub use compiler::{
 pub use diagnostic::{sort_diagnostics, Diagnostic, Severity, Span};
 pub use fingerprint::fingerprint_program;
 pub use graph::{AnchorDecl, EdgeKind, GraphEdge, GraphNode, RelationGraph};
+pub use manuscript::{
+    build_manuscript_index, ManuscriptChapterProjection, ManuscriptCommand, ManuscriptDraft,
+    ManuscriptEntry, ManuscriptEntryDraft, ManuscriptEntryKind, ManuscriptIndex, ManuscriptPage,
+    ManuscriptReference, ManuscriptReferenceRole, ManuscriptReferenceStatus, ManuscriptResult,
+    ManuscriptSource, ManuscriptSourceLocation, ManuscriptTextStats, MANUSCRIPT_REQUIRED_FEATURE,
+    MANUSCRIPT_SCHEMA_VERSION, MAX_MANUSCRIPT_PAGE_SIZE,
+};
 pub use presentation::{
     MapCanvas, MapDocument, MapGeometry, MapIndex, MapLayer, MapNavigation, MapPlacement,
     MapPlacementRef, MapRasterLayer,
