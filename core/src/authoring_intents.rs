@@ -41,6 +41,8 @@ pub struct PlacementRequest {
 #[derive(Clone, Debug)]
 pub struct IntentResult {
     pub target: TargetRef,
+    /// 候选工程中此目标的全部引用与来源；complete 标识分析是否完整。
+    pub reference_impact: crate::reference_impact::DeletionImpact,
     pub changed_files: Vec<PathBuf>,
     pub new_baseline: String,
 }
@@ -189,6 +191,7 @@ impl Project {
         changed_files.sort();
         changed_files.dedup();
         let result = IntentResult {
+            reference_impact: candidate.deletion_impact(&target),
             target,
             changed_files,
             new_baseline: candidate.content_baseline(),

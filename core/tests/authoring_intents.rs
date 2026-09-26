@@ -46,6 +46,8 @@ fn create_and_link_is_one_previewable_and_reversible_intent() {
     assert_eq!(project.content_baseline(), baseline);
     assert!(!project.is_dirty());
     assert_eq!(preview.changed_files, vec![project.entry.clone()]);
+    assert_eq!(preview.reference_impact.content_references.len(), 1);
+    assert!(preview.reference_impact.complete);
     project.apply_authoring_intent(&command).unwrap();
     let after = project.clone();
     let compiled = project.compile();
@@ -85,7 +87,6 @@ fn map_creation_and_entity_are_atomic_and_preserve_unknown_fields() {
     )
     .unwrap();
     let mut command = intent(&project);
-    command.selection = None;
     command.placement = Some(PlacementRequest {
         map_id: "atlas".into(),
         placement_id: "tower_marker".into(),
@@ -102,8 +103,37 @@ fn map_creation_and_entity_are_atomic_and_preserve_unknown_fields() {
     assert!(project.apply_authoring_intent(&command).is_err());
     assert_eq!(project.content_baseline(), baseline);
     command.placement.as_mut().unwrap().layer_id = "places".into();
+    command.placement.as_mut().unwrap().geometry = worldline_core::MapGeometry::Point {
+        position: [f64::NAN, 0.3],
+    };
+    assert!(project.apply_authoring_intent(&command).is_err());
+    assert_eq!(project.content_baseline(), baseline);
+    command.placement.as_mut().unwrap().geometry = worldline_core::MapGeometry::Point {
+        position: [0.2, 0.3],
+    };
+    let map_path = project.root.join(".world/maps/atlas.json");
+    let mut map: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&map_path).unwrap().bytes()).unwrap();
+    map["layers"]["places"]["locked"] = true.into();
+    map["extension"] = serde_json::json!({"retained": "作者数据"});
+    project
+        .set_authoring_document(&map_path, serde_json::to_vec(&map).unwrap())
+        .unwrap();
+    command.expected_baseline = project.content_baseline();
+    assert!(project.apply_authoring_intent(&command).is_err());
+    assert_eq!(project.content_baseline(), command.expected_baseline);
+    map["layers"]["places"]["locked"] = false.into();
+    project
+        .set_authoring_document(&map_path, serde_json::to_vec(&map).unwrap())
+        .unwrap();
+    command.expected_baseline = project.content_baseline();
     let result = project.apply_authoring_intent(&command).unwrap();
     assert_eq!(result.changed_files.len(), 2);
+    assert_eq!(result.reference_impact.map_placements.len(), 1);
+    assert_eq!(result.reference_impact.content_references.len(), 1);
+    let written: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&map_path).unwrap().bytes()).unwrap();
+    assert_eq!(written["extension"], map["extension"]);
     assert_eq!(
         project.map_index().maps["atlas"].placements["tower_marker"]
             .target_ref
@@ -225,4 +255,32 @@ fn legacy_and_unknown_required_capabilities_stay_protected() {
         assert!(project.apply_authoring_intent(&command).is_err());
         assert_eq!(project.content_baseline(), baseline);
     }
+}
+
+#[test]
+fn cross_file_creation_can_be_undone_after_save_without_losing_dirty_state() {
+    let mut project = project("saved");
+    let entities = project
+        .add_file(std::path::Path::new("entities.wl"))
+        .unwrap();
+    project.save().unwrap();
+    let before = project.clone();
+    let mut command = intent(&project);
+    if let IntentTarget::CreateEntity { path, .. } = &mut command.target {
+        *path = entities.clone();
+    }
+    let result = project.apply_authoring_intent(&command).unwrap();
+    assert_eq!(result.changed_files.len(), 2);
+    let after = project.clone();
+    project.save().unwrap();
+    assert!(!project.is_dirty());
+    assert!(project.restore(before));
+    assert!(project.is_dirty());
+    assert!(project.compile().analysis.catalog.entities.is_empty());
+    assert!(project.restore(after));
+    assert!(!project.is_dirty());
+    assert!(project
+        .document(&entities)
+        .unwrap()
+        .contains("entity tower"));
 }
