@@ -45,6 +45,24 @@ fn delete_checkpoint_record(root: &Path, session_id: &str, id: &str) -> Result<(
     })
 }
 
+fn export_checkpoint_snapshot(
+    scope: &CheckpointScopeKey,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    WEB_CHECKPOINTS.with(|storage| storage.borrow().export_snapshot(scope, max_bytes))
+}
+
+fn restore_checkpoint_snapshot(
+    scope: &CheckpointScopeKey,
+    bytes: &[u8],
+) -> Result<(), String> {
+    WEB_CHECKPOINTS.with(|storage| {
+        storage
+            .borrow_mut()
+            .import_snapshot(scope.clone(), bytes)
+    })
+}
+
 fn persist_restored_files(
     root: &Path,
     target: &Files,

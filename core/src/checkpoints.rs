@@ -19,8 +19,13 @@ const MAX_CHECKPOINT_TEXT_FILES: usize = 32;
 const MAX_CHECKPOINT_TEXT_BYTES: usize = 16 * 1024;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_CHECKPOINT_RECORDS_ON_DISK: usize = 128;
-#[cfg(not(target_arch = "wasm32"))]
 const MAX_CHECKPOINT_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
+#[cfg(any(target_arch = "wasm32", test))]
+const MAX_CHECKPOINT_SNAPSHOT_BYTES: usize = DEFAULT_MAX_CHECKPOINT_HISTORY_BYTES
+    + DEFAULT_MAX_CHECKPOINTS * MAX_CHECKPOINT_MANIFEST_BYTES as usize
+    + 1024 * 1024;
+#[cfg(any(target_arch = "wasm32", test))]
+const CHECKPOINT_SNAPSHOT_MAGIC: &[u8; 8] = b"WLCPST01";
 const CHECKPOINT_FORMAT_VERSION: u32 = 2;
 const LEGACY_CHECKPOINT_FORMAT_VERSION: u32 = 1;
 
@@ -307,6 +312,443 @@ impl InMemoryCheckpointStore {
         }
         Ok(())
     }
+
+    fn export_snapshot(
+        &self,
+        scope: &CheckpointScopeKey,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, String> {
+        if max_bytes == 0 || max_bytes > MAX_CHECKPOINT_SNAPSHOT_BYTES {
+            return Err("检查点快照上限无效".into());
+        }
+        let records = self.records.get(scope);
+        let count = records.map_or(0, BTreeMap::len);
+        if count > DEFAULT_MAX_CHECKPOINTS {
+            return Err("检查点快照记录数超过格式上限".into());
+        }
+        let mut writer = CheckpointSnapshotWriter::new(max_bytes);
+        writer.write(CHECKPOINT_SNAPSHOT_MAGIC)?;
+        writer.write_u32(count)?;
+        if let Some(records) = records {
+            for bundle in records.values() {
+                validate_transferred_bundle(bundle)?;
+                let manifest = serde_json::to_vec(&bundle.manifest)
+                    .map_err(|error| format!("无法编码检查点清单：{error}"))?;
+                if manifest.len() as u64 > MAX_CHECKPOINT_MANIFEST_BYTES {
+                    return Err("检查点清单超过格式上限".into());
+                }
+                writer.write_bytes(&manifest)?;
+                writer.write_u32(bundle.files.len())?;
+                for (path, bytes) in &bundle.files {
+                    writer.write_string(&portable_path(path)?)?;
+                    writer.write_bytes(bytes)?;
+                }
+                match &bundle.text_base {
+                    None => writer.write_u8(0)?,
+                    Some(text_base) => {
+                        writer.write_u8(1)?;
+                        writer.write_u32(text_base.len())?;
+                        for (path, bytes) in text_base {
+                            writer.write_string(&portable_path(path)?)?;
+                            let entry = bundle
+                                .manifest
+                                .text_base
+                                .as_deref()
+                                .unwrap_or_default()
+                                .iter()
+                                .find(|entry| Path::new(&entry.path) == path)
+                                .ok_or("检查点快照清单缺少文本基线")?;
+                            match (&entry.source, bytes) {
+                                (CheckpointTextBaseSource::Absent, None) => writer.write_u8(0)?,
+                                (CheckpointTextBaseSource::Snapshot, Some(_)) => {
+                                    writer.write_u8(1)?
+                                }
+                                (CheckpointTextBaseSource::Stored { .. }, Some(bytes)) => {
+                                    writer.write_u8(2)?;
+                                    writer.write_bytes(bytes)?;
+                                }
+                                _ => return Err("检查点快照文本基线校验失败".into()),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(writer.finish())
+    }
+
+    fn import_snapshot(&mut self, scope: CheckpointScopeKey, bytes: &[u8]) -> Result<(), String> {
+        let incoming = decode_checkpoint_snapshot(bytes)?;
+        let existing = self.records.get(&scope);
+        let mut used_bytes = existing
+            .into_iter()
+            .flat_map(BTreeMap::values)
+            .try_fold(0u64, |total, bundle| {
+                total.checked_add(bundle.manifest.payload_bytes)
+            })
+            .ok_or("检查点历史字节数超出可表示范围")?;
+        let mut imported_ids = HashSet::new();
+        let mut new_bundles = Vec::new();
+
+        for bundle in incoming {
+            validate_transferred_bundle(&bundle)?;
+            if !imported_ids.insert(bundle.manifest.id.clone()) {
+                return Err("检查点快照包含重复记录 ID".into());
+            }
+            if let Some(previous) = existing.and_then(|records| records.get(&bundle.manifest.id)) {
+                if previous.manifest.snapshot_digest != bundle.manifest.snapshot_digest
+                    || previous.manifest.text_base_digest != bundle.manifest.text_base_digest
+                    || previous.files != bundle.files
+                    || previous.text_base != bundle.text_base
+                {
+                    return Err("检查点快照与已有记录 ID 冲突".into());
+                }
+                continue;
+            }
+            if existing.map_or(0, BTreeMap::len) + new_bundles.len() >= DEFAULT_MAX_CHECKPOINTS {
+                return Err("检查点数量配额已满，未导入快照".into());
+            }
+            used_bytes = used_bytes
+                .checked_add(bundle.manifest.payload_bytes)
+                .ok_or("检查点历史字节数超出可表示范围")?;
+            if used_bytes > DEFAULT_MAX_CHECKPOINT_HISTORY_BYTES as u64 {
+                return Err("检查点历史字节配额已满，未导入快照".into());
+            }
+            new_bundles.push(bundle);
+        }
+
+        if !new_bundles.is_empty() {
+            self.records.entry(scope).or_default().extend(
+                new_bundles
+                    .into_iter()
+                    .map(|bundle| (bundle.manifest.id.clone(), bundle)),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+struct CheckpointSnapshotWriter {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl CheckpointSnapshotWriter {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.bytes.len()) {
+            return Err("检查点快照超过浏览器存储上限".into());
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn write_u8(&mut self, value: u8) -> Result<(), String> {
+        self.write(&[value])
+    }
+
+    fn write_u32(&mut self, value: usize) -> Result<(), String> {
+        let value = u32::try_from(value).map_err(|_| "检查点快照字段超出格式上限")?;
+        self.write(&value.to_le_bytes())
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let len = u32::try_from(bytes.len()).map_err(|_| "检查点快照字段超出格式上限")?;
+        self.write(&len.to_le_bytes())?;
+        self.write(bytes)
+    }
+
+    fn write_string(&mut self, value: &str) -> Result<(), String> {
+        self.write_bytes(value.as_bytes())
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+struct CheckpointSnapshotReader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl<'a> CheckpointSnapshotReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn read(&mut self, len: usize) -> Result<&'a [u8], String> {
+        let end = self.offset.checked_add(len).ok_or("检查点快照长度无效")?;
+        let value = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or("检查点快照内容不完整")?;
+        self.offset = end;
+        Ok(value)
+    }
+
+    fn read_u8(&mut self) -> Result<u8, String> {
+        Ok(self.read(1)?[0])
+    }
+
+    fn read_u32(&mut self) -> Result<usize, String> {
+        let value = u32::from_le_bytes(self.read(4)?.try_into().unwrap());
+        Ok(value as usize)
+    }
+
+    fn read_bytes(&mut self, max_len: u64) -> Result<Vec<u8>, String> {
+        let len = self.read_u32()? as u64;
+        if len > max_len {
+            return Err("检查点快照字段超过格式上限".into());
+        }
+        Ok(self.read(len as usize)?.to_vec())
+    }
+
+    fn read_string(&mut self, max_len: u64) -> Result<String, String> {
+        String::from_utf8(self.read_bytes(max_len)?)
+            .map_err(|_| "检查点快照路径不是有效 UTF-8".into())
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn decode_checkpoint_snapshot(bytes: &[u8]) -> Result<Vec<CheckpointBundle>, String> {
+    if bytes.len() > MAX_CHECKPOINT_SNAPSHOT_BYTES {
+        return Err("检查点快照超过格式上限".into());
+    }
+    let mut reader = CheckpointSnapshotReader::new(bytes);
+    if reader.read(CHECKPOINT_SNAPSHOT_MAGIC.len())? != CHECKPOINT_SNAPSHOT_MAGIC {
+        return Err("检查点快照格式或版本无效".into());
+    }
+    let count = reader.read_u32()?;
+    if count > DEFAULT_MAX_CHECKPOINTS {
+        return Err("检查点快照记录数超过格式上限".into());
+    }
+    let mut records = Vec::with_capacity(count);
+    let mut ids = HashSet::new();
+    let mut total_payload_bytes = 0u64;
+    for _ in 0..count {
+        let manifest_bytes = reader.read_bytes(MAX_CHECKPOINT_MANIFEST_BYTES)?;
+        let manifest: CheckpointManifest = serde_json::from_slice(&manifest_bytes)
+            .map_err(|error| format!("检查点快照清单无效：{error}"))?;
+        let file_count = reader.read_u32()?;
+        if file_count > MAX_CHECKPOINT_FILES {
+            return Err("检查点快照文件数超过格式上限".into());
+        }
+        let mut files = Files::new();
+        for _ in 0..file_count {
+            let path = PathBuf::from(reader.read_string(32 * 1024)?);
+            let bytes = reader.read_bytes(DEFAULT_MAX_CHECKPOINT_BYTES as u64)?;
+            if files.insert(path, bytes).is_some() {
+                return Err("检查点快照包含重复文件路径".into());
+            }
+        }
+        let text_base = match reader.read_u8()? {
+            0 => None,
+            1 => {
+                let base_count = reader.read_u32()?;
+                if base_count > MAX_CHECKPOINT_FILES {
+                    return Err("检查点快照文本基线数超过格式上限".into());
+                }
+                let mut text_base = BTreeMap::new();
+                for _ in 0..base_count {
+                    let path = PathBuf::from(reader.read_string(32 * 1024)?);
+                    let entry = manifest
+                        .text_base
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .find(|entry| Path::new(&entry.path) == path)
+                        .ok_or("检查点快照清单缺少文本基线")?;
+                    let value = match (&entry.source, reader.read_u8()?) {
+                        (CheckpointTextBaseSource::Absent, 0) => None,
+                        (CheckpointTextBaseSource::Snapshot, 1) => Some(
+                            files
+                                .get(&path)
+                                .cloned()
+                                .ok_or("检查点快照文本基线引用了缺失文件")?,
+                        ),
+                        (CheckpointTextBaseSource::Stored { .. }, 2) => {
+                            Some(reader.read_bytes(DEFAULT_MAX_CHECKPOINT_BYTES as u64)?)
+                        }
+                        _ => return Err("检查点快照文本基线状态无效".into()),
+                    };
+                    if text_base.insert(path, value).is_some() {
+                        return Err("检查点快照包含重复文本基线".into());
+                    }
+                }
+                Some(text_base)
+            }
+            _ => return Err("检查点快照文本基线状态无效".into()),
+        };
+        let bundle = CheckpointBundle {
+            manifest,
+            files,
+            text_base,
+        };
+        validate_transferred_bundle(&bundle)?;
+        if !ids.insert(bundle.manifest.id.clone()) {
+            return Err("检查点快照包含重复记录 ID".into());
+        }
+        total_payload_bytes = total_payload_bytes
+            .checked_add(bundle.manifest.payload_bytes)
+            .ok_or("检查点历史字节数超出可表示范围")?;
+        if total_payload_bytes > DEFAULT_MAX_CHECKPOINT_HISTORY_BYTES as u64 {
+            return Err("检查点快照历史字节数超过格式上限".into());
+        }
+        records.push(bundle);
+    }
+    if reader.offset != bytes.len() {
+        return Err("检查点快照包含尾随数据".into());
+    }
+    Ok(records)
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn validate_transferred_bundle(bundle: &CheckpointBundle) -> Result<(), String> {
+    let manifest = &bundle.manifest;
+    validate_checkpoint_id(&manifest.id)?;
+    if manifest
+        .label
+        .as_ref()
+        .is_some_and(|label| label.chars().count() > 120)
+        || manifest.files.len() > MAX_CHECKPOINT_FILES
+    {
+        return Err("检查点快照清单字段超过格式上限".into());
+    }
+    match manifest.version {
+        LEGACY_CHECKPOINT_FORMAT_VERSION
+            if manifest.text_base.is_none()
+                && manifest.text_base_digest.is_none()
+                && bundle.text_base.is_none() => {}
+        CHECKPOINT_FORMAT_VERSION
+            if manifest.text_base.is_some()
+                && manifest.text_base_digest.is_some()
+                && manifest
+                    .text_base
+                    .as_ref()
+                    .is_some_and(|entries| entries.len() <= MAX_CHECKPOINT_FILES)
+                && bundle.text_base.is_some() => {}
+        _ => return Err("检查点快照记录版本或基线字段无效".into()),
+    }
+    validate_snapshot_files(&bundle.files)?;
+    if bundle.files.len() != manifest.files.len() {
+        return Err("检查点快照文件清单与负载数量不一致".into());
+    }
+    let mut payloads = HashSet::new();
+    let mut file_paths = HashSet::new();
+    for entry in &manifest.files {
+        let path = parse_transferred_path(&entry.path)?;
+        if !file_paths.insert(path.clone()) {
+            return Err("检查点快照清单包含重复文件路径".into());
+        }
+        validate_checkpoint_payload_name(&entry.payload)?;
+        if !payloads.insert(entry.payload.as_str()) {
+            return Err("检查点快照包含重复负载".into());
+        }
+        let bytes = bundle.files.get(&path).ok_or("检查点快照缺少清单文件")?;
+        if bytes.len() as u64 != entry.bytes || file_checksum(bytes) != entry.checksum {
+            return Err("检查点快照文件校验失败".into());
+        }
+    }
+    if file_paths.len() != bundle.files.len() {
+        return Err("检查点快照包含清单外文件".into());
+    }
+    if let (Some(entries), Some(text_base)) = (&manifest.text_base, &bundle.text_base) {
+        if entries.len() > MAX_CHECKPOINT_FILES || entries.len() != text_base.len() {
+            return Err("检查点快照文本基线数量无效".into());
+        }
+        let mut base_paths = HashSet::new();
+        for entry in entries {
+            let path = parse_transferred_path(&entry.path)?;
+            if !path.extension().is_some_and(|extension| extension == "wl") {
+                return Err("检查点快照文本基线只能引用 .wl 文件".into());
+            }
+            if !base_paths.insert(path.clone()) {
+                return Err("检查点快照包含重复文本基线路径".into());
+            }
+            let stored = text_base.get(&path).ok_or("检查点快照缺少文本基线")?;
+            match (&entry.source, stored) {
+                (CheckpointTextBaseSource::Absent, None) => {}
+                (CheckpointTextBaseSource::Snapshot, Some(bytes))
+                    if bundle.files.get(&path) == Some(bytes) => {}
+                (
+                    CheckpointTextBaseSource::Stored {
+                        payload,
+                        bytes: expected_bytes,
+                        checksum,
+                    },
+                    Some(bytes),
+                ) if bytes.len() as u64 == *expected_bytes && file_checksum(bytes) == *checksum => {
+                    validate_checkpoint_payload_name(payload)?;
+                    if !payloads.insert(payload.as_str()) {
+                        return Err("检查点快照包含重复负载".into());
+                    }
+                }
+                _ => return Err("检查点快照文本基线校验失败".into()),
+            }
+        }
+        if base_paths.len() != text_base.len() {
+            return Err("检查点快照包含清单外文本基线".into());
+        }
+    }
+    let empty_text_base = BTreeMap::new();
+    let payload_bytes = checkpoint_payload_bytes(
+        &bundle.files,
+        bundle.text_base.as_ref().unwrap_or(&empty_text_base),
+    )?;
+    if payload_bytes != manifest.payload_bytes
+        || payload_bytes > DEFAULT_MAX_CHECKPOINT_BYTES as u64
+        || files_digest(&bundle.files) != manifest.snapshot_digest
+        || text_base_digest(bundle.text_base.as_ref()).as_deref()
+            != manifest.text_base_digest.as_deref()
+    {
+        return Err("检查点快照摘要或字节数校验失败".into());
+    }
+    Ok(())
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn parse_transferred_path(path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(path);
+    validate_relative_file(&path)?;
+    Ok(path)
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn portable_path(path: &Path) -> Result<String, String> {
+    let path = path
+        .to_str()
+        .ok_or_else(|| format!("检查点路径不是有效 UTF-8：{}", path.display()))?
+        .replace('\\', "/");
+    parse_transferred_path(&path)?;
+    Ok(path)
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn validate_checkpoint_payload_name(payload: &str) -> Result<(), String> {
+    let Some(name) = payload.strip_prefix("files/") else {
+        return Err("检查点负载路径无效".into());
+    };
+    let number = name.strip_prefix("base-").unwrap_or(name);
+    let bytes = number.as_bytes();
+    if name.contains('/')
+        || bytes.len() != 12
+        || !bytes[..8].iter().all(u8::is_ascii_digit)
+        || &bytes[8..] != b".bin"
+    {
+        return Err(format!("检查点负载路径无效：{payload}"));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -448,6 +890,18 @@ impl Project {
         validate_checkpoint_session_id(&id)?;
         self.checkpoint_session_id = id;
         Ok(())
+    }
+
+    /// 将当前浏览器会话的检查点内容编码为受限、可持久化快照。
+    pub fn export_checkpoint_snapshot(&self, max_bytes: usize) -> Result<Vec<u8>, String> {
+        let scope = CheckpointScopeKey::new(&self.root, &self.checkpoint_session_id);
+        export_checkpoint_snapshot(&scope, max_bytes)
+    }
+
+    /// 在当前工程会话中恢复经校验的检查点快照；同 ID 冲突或超限时零写入。
+    pub fn restore_checkpoint_snapshot(&self, bytes: &[u8]) -> Result<(), String> {
+        let scope = CheckpointScopeKey::new(&self.root, &self.checkpoint_session_id);
+        restore_checkpoint_snapshot(&scope, bytes)
     }
 }
 
@@ -1335,6 +1789,122 @@ mod browser_checkpoint_scope_tests {
         assert_eq!(store.list(&session_a).len(), 1);
         store.delete(&session_a, &checkpoint_id).unwrap();
         assert!(store.list(&session_a).is_empty());
+    }
+
+    #[test]
+    fn browser_checkpoint_snapshot_roundtrips_content_and_rejects_corruption() {
+        let files = Files::from([
+            (PathBuf::from("world.wl"), b"event start\n".to_vec()),
+            (PathBuf::from("notes.bin"), vec![0, 255, 7]),
+        ]);
+        let text_base =
+            BTreeMap::from([(PathBuf::from("world.wl"), Some(b"event old\n".to_vec()))]);
+        let payload_bytes = super::checkpoint_payload_bytes(&files, &text_base).unwrap();
+        let manifest = make_manifest(
+            Some("refresh recovery".into()),
+            &files,
+            &text_base,
+            payload_bytes,
+        )
+        .unwrap();
+        let checkpoint_id = manifest.id.clone();
+        let scope = CheckpointScopeKey::new(Path::new("/world"), "browser-session-a");
+        let mut source = InMemoryCheckpointStore::default();
+        source
+            .publish(
+                scope.clone(),
+                manifest,
+                &files,
+                &text_base,
+                &CheckpointLimits::default(),
+            )
+            .unwrap();
+
+        let encoded = source
+            .export_snapshot(&scope, super::MAX_CHECKPOINT_SNAPSHOT_BYTES)
+            .unwrap();
+        let mut reopened = InMemoryCheckpointStore::default();
+        reopened.import_snapshot(scope.clone(), &encoded).unwrap();
+        let restored = reopened.load(&scope, &checkpoint_id).unwrap();
+        assert_eq!(restored.files, files);
+        assert_eq!(restored.text_base, Some(text_base));
+        assert_eq!(reopened.list(&scope).len(), 1);
+
+        let other_scope = CheckpointScopeKey::new(Path::new("/world"), "browser-session-b");
+        assert!(reopened.list(&other_scope).is_empty());
+
+        let mut corrupt = encoded;
+        let last = corrupt.len() - 1;
+        corrupt[last] ^= 1;
+        assert!(reopened
+            .import_snapshot(other_scope.clone(), &corrupt)
+            .is_err());
+        assert!(reopened.list(&other_scope).is_empty());
+    }
+
+    #[test]
+    fn browser_checkpoint_snapshot_preserves_legacy_records_and_imports_atomically() {
+        let files = Files::from([(PathBuf::from("world.wl"), b"event start\n".to_vec())]);
+        let empty_text_base = BTreeMap::new();
+        let payload_bytes = super::checkpoint_payload_bytes(&files, &empty_text_base).unwrap();
+        let mut legacy_manifest =
+            make_manifest(None, &files, &empty_text_base, payload_bytes).unwrap();
+        legacy_manifest.version = super::LEGACY_CHECKPOINT_FORMAT_VERSION;
+        legacy_manifest.text_base = None;
+        legacy_manifest.text_base_digest = None;
+        let legacy_id = legacy_manifest.id.clone();
+        let scope = CheckpointScopeKey::new(Path::new("/world"), "browser-session-legacy");
+        let mut source = InMemoryCheckpointStore::default();
+        source.records.entry(scope.clone()).or_default().insert(
+            legacy_id.clone(),
+            super::CheckpointBundle {
+                manifest: legacy_manifest,
+                files: files.clone(),
+                text_base: None,
+            },
+        );
+        let modern_manifest = make_manifest(None, &files, &empty_text_base, payload_bytes).unwrap();
+        source
+            .publish(
+                scope.clone(),
+                modern_manifest,
+                &files,
+                &empty_text_base,
+                &CheckpointLimits::default(),
+            )
+            .unwrap();
+
+        let encoded = source
+            .export_snapshot(&scope, super::MAX_CHECKPOINT_SNAPSHOT_BYTES)
+            .unwrap();
+        assert!(source.export_snapshot(&scope, 1).is_err());
+
+        let mut reopened = InMemoryCheckpointStore::default();
+        reopened.import_snapshot(scope.clone(), &encoded).unwrap();
+        let legacy = reopened.load(&scope, &legacy_id).unwrap();
+        assert_eq!(
+            legacy.manifest.version,
+            super::LEGACY_CHECKPOINT_FORMAT_VERSION
+        );
+        assert_eq!(legacy.files, files);
+        assert_eq!(legacy.text_base, None);
+        assert_eq!(reopened.list(&scope).len(), 2);
+
+        // Corrupt the final record after a valid first one. Import validates the
+        // complete snapshot before publishing any of its records.
+        let mut corrupt = encoded;
+        let last = corrupt.len() - 1;
+        corrupt[last] ^= 1;
+        let another_scope = CheckpointScopeKey::new(Path::new("/world"), "browser-session-atomic");
+        assert!(reopened
+            .import_snapshot(another_scope.clone(), &corrupt)
+            .is_err());
+        assert!(reopened.list(&another_scope).is_empty());
+    }
+
+    #[test]
+    fn malformed_checkpoint_payload_names_never_panic_on_utf8_boundaries() {
+        assert!(super::validate_checkpoint_payload_name("files/1234567ébin").is_err());
     }
 }
 
