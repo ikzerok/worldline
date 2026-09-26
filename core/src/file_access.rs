@@ -19,20 +19,17 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
                         format!("工作区不支持链接或目录外文件：{}", path.display()),
                     ));
                 }
-                let transactions = root.join(".world").join(".transactions");
-                if path == transactions {
-                    if !metadata.is_dir() {
+                let relative = path.strip_prefix(root).unwrap_or(&path);
+                if is_workspace_state_path(relative, ".transactions")
+                    || is_workspace_state_path(relative, ".checkpoints")
+                {
+                    if relative.components().count() == 2 && !metadata.is_dir() {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("保存事务目录不是目录：{}", path.display()),
+                            format!("工程本地存储路径不是目录：{}", path.display()),
                         ));
                     }
-                    // 保存事务是受控暂存区，不属于作者普通文件清单；其
-                    // 链接形态仍在上面的边界检查中拒绝。
-                    continue;
-                }
-                if path.starts_with(&transactions) {
-                    // 保存事务是受控暂存区，不属于作者普通文件清单；其
+                    // 保存事务与本地检查点是受控存储，不属于作者文件或导出；
                     // 链接形态仍在上面的边界检查中拒绝。
                     continue;
                 }
@@ -52,11 +49,37 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
             files
                 .borrow()
                 .keys()
-                .filter(|p| p.starts_with(root))
+                .filter(|p| {
+                    p.strip_prefix(root).is_ok_and(|relative| {
+                        !is_workspace_state_path(relative, ".transactions")
+                            && !is_workspace_state_path(relative, ".checkpoints")
+                    })
+                })
                 .cloned()
                 .collect()
         }))
     }
+}
+
+fn is_workspace_state_path(path: &Path, store: &str) -> bool {
+    let mut components = path.components();
+    let (Some(std::path::Component::Normal(world)), Some(std::path::Component::Normal(directory))) =
+        (components.next(), components.next())
+    else {
+        return false;
+    };
+    fn matches(name: &std::ffi::OsStr, expected: &str) -> bool {
+        #[cfg(windows)]
+        {
+            name.to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case(expected))
+        }
+        #[cfg(not(windows))]
+        {
+            name == std::ffi::OsStr::new(expected)
+        }
+    }
+    matches(world, ".world") && matches(directory, store)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,6 +130,37 @@ thread_local! {
 #[cfg(target_arch = "wasm32")]
 pub fn mount(files: std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>) {
     FILES.with(|current| *current.borrow_mut() = files);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn replace_workspace_files(
+    root: &Path,
+    files: &std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+) -> Result<(), String> {
+    let root = crate::compiler::source_path(root);
+    for relative in files.keys() {
+        if relative.as_os_str().is_empty()
+            || relative.is_absolute()
+            || relative
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+            || relative.starts_with(Path::new(".world/.checkpoints"))
+            || relative.starts_with(Path::new(".world/.transactions"))
+        {
+            return Err(format!("恢复工作区文件路径无效：{}", relative.display()));
+        }
+    }
+    FILES.with(|current| {
+        let mut current = current.borrow_mut();
+        current.retain(|path, _| !path.starts_with(&root));
+        for (relative, bytes) in files {
+            current.insert(
+                crate::compiler::source_path(&root.join(relative)),
+                bytes.clone(),
+            );
+        }
+        Ok(())
+    })
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -9,6 +9,7 @@ pub mod authoring_intents;
 pub mod catalog;
 pub mod catalog_edit;
 mod catalog_syntax;
+pub mod checkpoints;
 pub mod collaboration;
 mod compiler;
 mod content_baseline;

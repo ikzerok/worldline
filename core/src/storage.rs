@@ -711,8 +711,8 @@ mod disk {
         {
             return Err(format!("保存事务目标路径无效:{}", path.display()));
         }
-        if is_transaction_relative(relative) {
-            return Err(format!("保存事务目标不能位于事务暂存区:{}", path.display()));
+        if is_transaction_relative(relative) || is_checkpoint_relative(relative) {
+            return Err(format!("保存事务目标不能位于受控存储区:{}", path.display()));
         }
 
         let mut current = root.clone();
@@ -750,8 +750,26 @@ mod disk {
 
     fn is_transaction_relative(path: &Path) -> bool {
         let mut components = path.components();
-        matches!(components.next(), Some(Component::Normal(world)) if world == ".world")
-            && matches!(components.next(), Some(Component::Normal(transactions)) if transactions == ".transactions")
+        matches!(components.next(), Some(Component::Normal(world)) if storage_component_matches(world, ".world"))
+            && matches!(components.next(), Some(Component::Normal(transactions)) if storage_component_matches(transactions, ".transactions"))
+    }
+
+    fn is_checkpoint_relative(path: &Path) -> bool {
+        let mut components = path.components();
+        matches!(components.next(), Some(Component::Normal(world)) if storage_component_matches(world, ".world"))
+            && matches!(components.next(), Some(Component::Normal(checkpoints)) if storage_component_matches(checkpoints, ".checkpoints"))
+    }
+
+    fn storage_component_matches(name: &std::ffi::OsStr, expected: &str) -> bool {
+        #[cfg(windows)]
+        {
+            name.to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case(expected))
+        }
+        #[cfg(not(windows))]
+        {
+            name == std::ffi::OsStr::new(expected)
+        }
     }
 
     fn hash_optional(bytes: Option<&[u8]>) -> Option<String> {
