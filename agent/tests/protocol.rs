@@ -54,6 +54,27 @@ fn temp_entity_project(name: &str, source: &str) -> std::path::PathBuf {
     )
 }
 
+fn temp_authoring_intent_project(name: &str, source: &str) -> std::path::PathBuf {
+    let root = temp_workspace(
+        &format!("authoring-intent-{name}"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["presentation.maps.v1"]}"#,
+        source,
+    );
+    let manifest_path = root.join(".world/project.json");
+    let mut manifest: Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["maps"] = json!({"overview":".world/maps/overview.json"});
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let map_path = root.join(".world/maps/overview.json");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &map_path,
+        r#"{"schema_version":1,"id":"overview","title":"总览","canvas":{"width":100,"height":100,"unit":"normalized"},"layer_order":["places"],"layers":{"places":{"title":"地点","visible_default":true,"locked":false}},"placements":{},"extension":{"preserve":true}}"#.as_bytes(),
+    )
+    .unwrap();
+    root
+}
+
 fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
     temp_workspace(
         &format!("relation-{name}"),
@@ -174,6 +195,117 @@ fn catalog_query_rpc_keeps_read_only_and_error_boundaries() {
     assert_eq!(
         responses[3]["result"]["error"]["code"],
         "CANDIDATE_BUDGET_EXCEEDED"
+    );
+}
+
+#[test]
+fn authoring_intent_rpc_preview_and_apply_are_atomic() {
+    let source =
+        "entity lighthouse kind place as \"灯塔😀\"\nevent start\n  你看见灯塔😀。\n  -> END\n";
+    let root = temp_authoring_intent_project("rpc", source);
+    let root_path = root.to_string_lossy().to_string();
+    let source_path = root.join("world.wl");
+    let map_path = root.join(".world/maps/overview.json");
+    let project = worldline_core::project::Project::open(&root).unwrap();
+    let baseline = project.content_baseline();
+    let expected_text = "灯塔😀";
+    let start = source.rfind(expected_text).unwrap();
+    let intent = json!({
+        "expected_baseline": baseline,
+        "target": {
+            "kind": "create_entity",
+            "value": {
+                "path": source_path,
+                "draft": {
+                    "id": "tower",
+                    "entity_type": "place",
+                    "display": expected_text,
+                    "description": "正文与地图共同引用",
+                    "properties": []
+                }
+            }
+        },
+        "selection": {
+            "path": source_path,
+            "start": start,
+            "end": start + expected_text.len(),
+            "expected_text": expected_text
+        },
+        "placement": {
+            "map_id": "overview",
+            "placement_id": "tower_marker",
+            "layer_id": "places",
+            "geometry": {"kind": "point", "position": [0.4, 0.5]},
+            "annotation": "新建入口",
+            "role": "reference",
+            "label_override": null
+        }
+    });
+    let original_map = std::fs::read(&map_path).unwrap();
+    let mut stale_intent = intent.clone();
+    stale_intent["expected_baseline"] = json!("stale-baseline");
+    let (_, preview_responses) = exchange(&[
+        req(1, "project.open", json!({"path":root_path.clone()})),
+        req(
+            2,
+            "authoring.intent.preview",
+            json!({"project_id":"p1", "intent":stale_intent}),
+        ),
+        req(
+            3,
+            "authoring.intent.preview",
+            json!({"project_id":"p1", "intent":intent.clone()}),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    let stale = &preview_responses[1]["result"];
+    assert_eq!(stale["ok"], false);
+    assert_eq!(stale["error"]["code"], "STALE_BASELINE");
+    let preview = &preview_responses[2]["result"];
+    assert_eq!(preview["ok"], true, "{preview:?}");
+    assert_eq!(preview["operation"], "preview");
+    assert_eq!(preview["target"], json!({"kind":"entity","id":"tower"}));
+    assert_eq!(
+        preview["reference_impact"]["map_placements"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
+    assert_eq!(std::fs::read(&map_path).unwrap(), original_map);
+
+    let mut invalid_intent = intent.clone();
+    invalid_intent["placement"]["layer_id"] = json!("missing");
+    let (_, apply_responses) = exchange(&[
+        req(1, "project.open", json!({"path":root_path})),
+        req(
+            2,
+            "authoring.intent.apply",
+            json!({"project_id":"p1", "intent":invalid_intent}),
+        ),
+        req(
+            3,
+            "authoring.intent.apply",
+            json!({"project_id":"p1", "intent":intent}),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    let failed = &apply_responses[1]["result"];
+    assert_eq!(failed["ok"], false, "{failed:?}");
+    assert_eq!(failed["error"]["code"], "INTENT_REJECTED");
+    let applied = &apply_responses[2]["result"];
+    assert_eq!(applied["ok"], true, "{applied:?}");
+    assert_eq!(applied["operation"], "apply");
+    assert_eq!(applied["changed_files"].as_array().unwrap().len(), 2);
+    assert!(std::fs::read_to_string(&source_path)
+        .unwrap()
+        .contains("[[entity:tower|灯塔😀]]"));
+    let saved_map: Value = serde_json::from_slice(&std::fs::read(&map_path).unwrap()).unwrap();
+    assert_eq!(saved_map["extension"], json!({"preserve":true}));
+    assert_eq!(
+        saved_map["placements"]["tower_marker"]["target_ref"],
+        json!({"kind":"entity","id":"tower"})
     );
 }
 

@@ -5,13 +5,14 @@ use crate::presentation_commands::{self, Command, CommandEnvelope, Revision};
 use crate::project::Project;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum IntentTarget {
     Existing(TargetRef),
     CreateEntity { path: PathBuf, draft: EntityDraft },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TextSelection {
     pub path: PathBuf,
     pub start: usize,
@@ -19,7 +20,7 @@ pub struct TextSelection {
     pub expected_text: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct AuthoringIntent {
     pub expected_baseline: String,
     pub target: IntentTarget,
@@ -27,7 +28,7 @@ pub struct AuthoringIntent {
     pub placement: Option<PlacementRequest>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PlacementRequest {
     pub map_id: String,
     pub placement_id: String,
@@ -38,7 +39,7 @@ pub struct PlacementRequest {
     pub label_override: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct IntentResult {
     pub target: TargetRef,
     /// 候选工程中此目标的全部引用与来源；complete 标识分析是否完整。

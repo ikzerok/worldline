@@ -19,7 +19,7 @@ use std::path::Path;
 pub const MAP_SCHEMA_VERSION: u64 = 1;
 
 /// 地图展示文档解析结果中的稳定几何类型。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind")]
 pub enum MapGeometry {
     #[serde(rename = "point")]

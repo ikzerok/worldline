@@ -2,8 +2,8 @@
 
 **协议版本:** 1（语言 v1.10 entity 字段扩展）
 
-CAP-01A 的[就地建档组合意图](authoring-intents.md)首期仅提供进程内 Project API。
-CLI/RPC 尚无跨正文、实体及地图的组合写入入口；既有单对象写入不代表此事务能力。
+CAP-01A 的[就地建档组合意图](authoring-intents.md)由 core Project API、CLI 与 agent RPC
+共同提供；既有单对象写入命令仍不代表组合事务能力。
 
 时段包含扩展：`timeline.periods[]` 新增 `parent: string | null`，保存直接上级 ID。父子层级由 core 验证，未知上级及循环包含为 A219 编译诊断。CLI 与 RPC 同时返回该字段，不影响会话状态和运行指纹。
 
@@ -74,6 +74,15 @@ CLI 调用不会因出现 `entity` 文本而隐式升级。
 查询错误以 `{ok:false,error:{code,message},query:null}` 返回；游标绑定查询和当前
 Project 快照，变更后返回 `STALE_CURSOR`，调用方应从第一页重查。只读工作区仍可成功查询。
 此命令与既有 `wl catalog` 并存，后者的标签目录输出保持原契约。
+
+`wl authoring-intent preview|apply <目录或入口> --intent-json '<JSON DTO>' --json`
+调用 core `Project::preview_authoring_intent` / `apply_authoring_intent`。DTO 必须带
+`expected_baseline` 和 `target`，可带 `selection`、`placement`；JSON 形状见
+[authoring-intents.md](authoring-intents.md)。`preview` 返回候选目标、引用影响、变更文件和
+候选基线但不写入作者内容；`apply` 完整验证后通过 Project 的可恢复保存协议写入。
+成功结果含 `{ok, operation, target, reference_impact, changed_files, baseline,
+new_baseline, diagnostics, workspace_diagnostics, read_only}`；合法 DTO 的组合
+失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，组合或保存失败为 1。
 
 ### 2.6 `wl entity` 作者资料编辑
 
@@ -304,6 +313,8 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `project.analyze` | `{project_id}` | `{ok, language_version, baseline, catalog, maps, references, diagnostics, workspace_diagnostics, read_only, conflicts?}` |
 | `workspace.check` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, stats, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}`；工程可读但有只读诊断时仍返回 `ok:true` |
 | `maps.list` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, maps, references, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}` |
+| `authoring.intent.preview` | `{path, intent}` 或 `{project_id, intent}` | `{ok, operation:"preview", target, reference_impact, changed_files, baseline, new_baseline, diagnostics, workspace_diagnostics, read_only}`；`intent` 是带显式 `expected_baseline` 的 core `AuthoringIntent` DTO |
+| `authoring.intent.apply` | 同 `authoring.intent.preview` | 同上，`operation:"apply"`；成功后通过可恢复保存协议持久化全部变更文件，RPC `project_id` 缓冲同步更新 |
 | `catalog.query` | `{path, query, offset?, page_size?, max_candidates?}` 或 `{project_id, query, ...}`；续页使用 `{path|project_id, query, cursor}`，cursor 与分页选项互斥 | `{ok, schema_version, language_version, workspace_revision, query:{summary, snapshot, offset, total, items, next, diagnostics}, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`query` 为 core `CatalogQuery` DTO，`items` 每项含 `TargetRef`、source 与 reasons；参数类型错误用 `-32602`，语义查询错误在 result 中以 `ok:false` 和稳定 `error.code` 返回 |
 | `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?, scope_refs?, include_unscoped?, include_period_children?}` 或同字段的 `project_id` 请求 | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`scope_refs` 为 TargetRef 数组，同维度 OR、跨维度 AND；未标范围仅在 `include_unscoped=true` 时包含；时期子树仅在 `include_period_children=true` 时显式展开；`offset` 为非负整数续查偏移，continuation 保留全部筛选；未知目标/范围/类型或深度参数使用 error `-32602` |
 | `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
@@ -340,6 +351,10 @@ v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目
 `entity.*` 必须返回故事层 `READ_ONLY` 结果而不写盘。已有 `project_id` 的查询和编辑
 请求都先刷新工作区，再计算这些分域诊断，因此外部新增未知能力或展示文档变化也会
 立即反映在 `project.analyze`、`workspace.check`、`maps.list`、`catalog.query`、关系查询与后续编辑结果中。
+`authoring.intent.preview/apply` 接受 `{path|project_id,intent}`，`intent.expected_baseline`
+必须与刷新后的当前基线一致；过期基线、刷新冲突、编译失败或只读诊断均拒绝写入。
+preview 只在 core 候选 Project 中验证并返回候选变更，不保存；apply 通过 Project 的可恢复
+保存协议写入，若保存失败恢复原 Project 缓冲并返回 `ok:false`。候选任一步失败不会留下部分源码或地图更新。
 `catalog.query` 只读当前 Project 缓冲；`cursor` 绑定 core 生成的查询指纹与内容基线，查询 DTO
 或快照变化时返回 result `ok:false`、`error.code: "STALE_CURSOR"`，不得按旧 offset 猜测续页。
 未知只读能力不会阻止查询，但故事编译错误、无效 DTO/选项和候选预算超限都返回

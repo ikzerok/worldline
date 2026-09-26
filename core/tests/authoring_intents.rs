@@ -36,6 +36,51 @@ fn intent(project: &Project) -> AuthoringIntent {
 }
 
 #[test]
+fn authoring_intent_dto_roundtrips_tagged_target_selection_and_map_geometry() {
+    use worldline_core::authoring_intents::PlacementRequest;
+
+    let project = project("dto");
+    let mut command = intent(&project);
+    command.placement = Some(PlacementRequest {
+        map_id: "atlas".into(),
+        placement_id: "tower_marker".into(),
+        layer_id: "places".into(),
+        geometry: worldline_core::MapGeometry::Point {
+            position: [0.25, 0.75],
+        },
+        annotation: "灯塔入口".into(),
+        role: "reference".into(),
+        label_override: None,
+    });
+    let value = serde_json::to_value(&command).unwrap();
+    assert_eq!(value["target"]["kind"], "create_entity");
+    assert_eq!(
+        value["target"]["value"]["draft"]["properties"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        value["selection"]["start"],
+        command.selection.as_ref().unwrap().start
+    );
+    assert_eq!(value["placement"]["geometry"]["kind"], "point");
+    let decoded: AuthoringIntent = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), value);
+
+    let mut existing_target = intent(&project);
+    existing_target.target =
+        IntentTarget::Existing(worldline_core::catalog::TargetRef::new("character", "lin"));
+    existing_target.placement = None;
+    let value = serde_json::to_value(&existing_target).unwrap();
+    assert_eq!(value["target"]["kind"], "existing");
+    assert_eq!(
+        value["target"]["value"],
+        serde_json::json!({"kind":"character","id":"lin"})
+    );
+    let decoded: AuthoringIntent = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), value);
+}
+
+#[test]
 fn create_and_link_is_one_previewable_and_reversible_intent() {
     let mut project = project("create");
     let before = project.clone();

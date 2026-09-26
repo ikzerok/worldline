@@ -46,7 +46,8 @@ pub struct WorldDraft {
     pub properties: Vec<(String, PropertyValue)>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct EntityDraft {
     pub id: String,
     pub entity_type: String,

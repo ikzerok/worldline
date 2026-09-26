@@ -193,7 +193,7 @@ pub struct EntityDecl {
     pub loc: Loc,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum PropertyValue {
     Str(String),
