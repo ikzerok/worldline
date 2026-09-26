@@ -665,28 +665,25 @@ fn parse_template_document(
         );
         return entry;
     }
-    let entity_type = applies_to
-        .get("entity_type")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let entity_type = match applies_to.get("entity_type") {
+        None => None,
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(_) => {
+            entry.error(
+                "TPL004",
+                file,
+                line_for(bytes, "entity_type"),
+                "applies_to.entity_type 必须是非空字符串",
+            );
+            return entry;
+        }
+    };
     if kind != "entity" && entity_type.is_some() {
         entry.error(
             "TPL004",
             file,
             line_for(bytes, "entity_type"),
             "只有 entity 模板可以声明 entity_type",
-        );
-        return entry;
-    }
-    if entity_type
-        .as_ref()
-        .is_some_and(|value| value.trim().is_empty())
-    {
-        entry.error(
-            "TPL004",
-            file,
-            line_for(bytes, "entity_type"),
-            "entity_type 不能为空",
         );
         return entry;
     }
@@ -1000,14 +997,15 @@ fn valid_default(
             .as_str()
             .is_some_and(|value| choices.iter().any(|choice| choice == value)),
         "object_ref" => default.as_object().is_some_and(|value| {
-            value
-                .get("kind")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| target.is_some_and(|target| kind == target.kind))
+            value.len() == 2
+                && value
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| target.is_some_and(|target| kind == target.kind))
                 && value
                     .get("id")
                     .and_then(Value::as_str)
-                    .is_some_and(|id| !id.is_empty())
+                    .is_some_and(|id| !id.trim().is_empty())
         }),
         _ => false,
     }

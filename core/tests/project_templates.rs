@@ -582,6 +582,37 @@ fn schema_examples_are_json_and_template_contract_accepts_only_the_valid_example
 }
 
 #[test]
+fn template_validation_rejects_schema_shape_errors_before_import() {
+    let mut project = project("schema-shape-errors");
+    let manifest_path = project.root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["required_features"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!("content.object_refs.v1"));
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    project.refresh().unwrap();
+
+    let revision = Revision::default();
+    for (id, document) in [
+        (
+            "project:bad_type",
+            r#"{"schema_version":1,"id":"project:bad_type","title":"bad","applies_to":{"kind":"entity","entity_type":7},"fields":[]}"#,
+        ),
+        (
+            "project:bad_default",
+            r#"{"schema_version":1,"id":"project:bad_default","title":"bad","applies_to":{"kind":"entity"},"fields":[{"id":"home","key":"home","label":"Home","type":"object_ref","required":false,"target":{"kind":"entity"},"default":{"kind":"entity","id":"harbor","extra":true}}]}"#,
+        ),
+    ] {
+        let request = command(&project, revision, import(id, document.as_bytes().to_vec()));
+        assert!(project
+            .preview_template_mutation(revision, &request)
+            .is_err());
+    }
+}
+
+#[test]
 fn explicit_object_refs_are_tracked_rewritten_and_do_not_promote_plain_strings() {
     let source = concat!(
         "entity harbor kind place as \"港口\"\n",
@@ -662,6 +693,62 @@ fn renaming_an_entity_rewrites_its_self_reference_without_blocking_deletion_anal
         .document(&project.root.join("world.wl"))
         .unwrap()
         .contains("ref(\"entity\", \"beacon\")"));
+}
+
+#[test]
+fn renaming_rewrites_template_object_ref_defaults_but_preserves_unknown_objects() {
+    let source = concat!(
+        "entity harbor kind place as \"港口\"\n",
+        "  description \"雾港\"\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut project = project_with_object_refs("object-ref-template-rename", "1.10", true, source);
+    let manifest_path = project.root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["required_features"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!("content.templates.v1"));
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    project.refresh().unwrap();
+
+    let document = r#"{
+  "schema_version":1,
+  "id":"project:links",
+  "title":"链接",
+  "applies_to":{"kind":"entity","entity_type":"place"},
+  "fields":[
+    {"id":"home_field","key":"home","label":"居所","type":"object_ref","required":false,"target":{"kind":"entity","entity_type":"place"},"default":{"kind":"entity","id":"harbor"},"x-vendor":{"kind":"entity","id":"harbor"}}
+  ],
+  "x-vendor":{"example":{"kind":"entity","id":"harbor"}}
+}"#
+    .as_bytes()
+    .to_vec();
+    let revision = Revision::default();
+    let request = command(&project, revision, import("project:links", document));
+    let preview = project
+        .preview_template_mutation(revision, &request)
+        .unwrap();
+    let mut revision = revision;
+    project
+        .apply_template_mutation(&mut revision, preview)
+        .unwrap();
+
+    let target = worldline_core::TargetRef::new("entity", "harbor");
+    let plan = project.plan_rename_target(&target, "beacon").unwrap();
+    project.apply_rename_plan(&plan).unwrap();
+    let document: serde_json::Value = serde_json::from_slice(
+        project
+            .authoring_document(&project.root.join(".world/templates/links.json"))
+            .unwrap()
+            .bytes(),
+    )
+    .unwrap();
+    assert_eq!(document["fields"][0]["default"]["id"], "beacon");
+    assert_eq!(document["fields"][0]["x-vendor"]["id"], "harbor");
+    assert_eq!(document["x-vendor"]["example"]["id"], "harbor");
 }
 
 #[test]

@@ -108,16 +108,19 @@ impl Project {
             });
         }
         let manifest_path = crate::workspace_documents::manifest_path(&self.root);
-        let manuscript_paths: BTreeSet<PathBuf> = self
+        let (manuscript_paths, template_paths): (BTreeSet<PathBuf>, BTreeSet<PathBuf>) = self
             .authoring_document(&manifest_path)
             .ok()
             .map(|document| {
                 let registry =
                     crate::workspace_documents::parse_registry(&self.root, document.bytes());
                 if registry.diagnostics.is_empty() {
-                    registry.manuscripts.into_values().collect()
+                    (
+                        registry.manuscripts.into_values().collect(),
+                        registry.templates.into_values().collect(),
+                    )
                 } else {
-                    BTreeSet::new()
+                    (BTreeSet::new(), BTreeSet::new())
                 }
             })
             .unwrap_or_default();
@@ -138,6 +141,8 @@ impl Project {
                 })?;
             let count = if manuscript_paths.contains(path) {
                 rewrite_manuscript_json(&mut value, target, new_id)
+            } else if template_paths.contains(path) {
+                rewrite_template_json(&mut value, target, new_id)
             } else {
                 rewrite_json(&mut value, target, new_id)
             };
@@ -549,6 +554,44 @@ fn rewrite_manuscript_json(value: &mut Value, target: &TargetRef, new_id: &str) 
             reference.insert("id".into(), Value::String(new_id.into()));
             count += 1;
         }
+    }
+    count
+}
+
+fn rewrite_template_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
+    let Some(fields) = value
+        .as_object_mut()
+        .and_then(|object| object.get_mut("fields"))
+        .and_then(Value::as_array_mut)
+    else {
+        return 0;
+    };
+    fields
+        .iter_mut()
+        .map(|field| rewrite_template_field(field, target, new_id))
+        .sum()
+}
+
+fn rewrite_template_field(field: &mut Value, target: &TargetRef, new_id: &str) -> usize {
+    let Some(object) = field.as_object_mut() else {
+        return 0;
+    };
+    let mut count = 0;
+    if object.get("type").and_then(Value::as_str) == Some("object_ref") {
+        if let Some(default) = object.get_mut("default").and_then(Value::as_object_mut) {
+            if default.get("kind").and_then(Value::as_str) == Some(target.kind.as_str())
+                && default.get("id").and_then(Value::as_str) == Some(target.id.as_str())
+            {
+                default.insert("id".into(), Value::String(new_id.into()));
+                count += 1;
+            }
+        }
+    }
+    if let Some(children) = object.get_mut("fields").and_then(Value::as_array_mut) {
+        count += children
+            .iter_mut()
+            .map(|child| rewrite_template_field(child, target, new_id))
+            .sum::<usize>();
     }
     count
 }
