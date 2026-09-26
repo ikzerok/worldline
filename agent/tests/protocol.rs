@@ -83,6 +83,20 @@ fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
     )
 }
 
+fn temp_markdown_import_source(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir()
+        .join("worldline_agent_markdown_import_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("harbor.md"),
+        "---\nid: harbor\ntitle: 雾港\nkind: place\n---\n# 雾港\n**潮汐**\n",
+    )
+    .unwrap();
+    root
+}
+
 #[test]
 fn catalog_query_rpc_uses_core_cursor_and_returns_stale_cursor_errors() {
     let root = temp_entity_project(
@@ -307,6 +321,84 @@ fn authoring_intent_rpc_preview_and_apply_are_atomic() {
         saved_map["placements"]["tower_marker"]["target_ref"],
         json!({"kind":"entity","id":"tower"})
     );
+}
+
+#[test]
+fn markdown_import_rpc_reviews_then_applies_with_explicit_confirmation_to_project_session() {
+    let project_root = temp_entity_project("markdown-import-rpc", "event start\n  -> END\n");
+    let source = temp_markdown_import_source("review-apply");
+    let baseline = worldline_core::project::Project::open(&project_root)
+        .unwrap()
+        .content_baseline();
+    let request = worldline_core::markdown_import::MarkdownImportRequest {
+        source_root: source.clone(),
+        expected_baseline: baseline.clone(),
+        id_overrides: Default::default(),
+        namespace: None,
+        accept_losses: false,
+        allow_language_upgrade: false,
+    };
+    let digest = worldline_core::project::Project::open(&project_root)
+        .unwrap()
+        .preview_markdown_import(&request)
+        .unwrap()
+        .plan_digest;
+    let path = project_root.to_string_lossy().to_string();
+    let source_path = source.to_string_lossy().to_string();
+
+    let (_, responses) = exchange(&[
+        req(1, "project.open", json!({"path":path})),
+        req(
+            2,
+            "markdown.import.preview",
+            json!({"project_id":"p1", "source":source_path, "baseline":baseline}),
+        ),
+        req(
+            3,
+            "markdown.import.apply",
+            json!({
+                "project_id":"p1",
+                "source":source.to_string_lossy(),
+                "baseline":baseline,
+                "plan_digest":digest,
+                "accept_losses":false,
+                "allow_language_upgrade":false
+            }),
+        ),
+        req(
+            4,
+            "markdown.import.apply",
+            json!({
+                "project_id":"p1",
+                "source":source.to_string_lossy(),
+                "baseline":baseline,
+                "plan_digest":digest,
+                "accept_losses":true,
+                "allow_language_upgrade":false
+            }),
+        ),
+        req(5, "project.analyze", json!({"project_id":"p1"})),
+        req(6, "shutdown", json!({})),
+    ]);
+
+    let opened = &responses[0]["result"];
+    assert_eq!(opened["project_id"], "p1");
+    assert_eq!(responses[1]["result"]["plan"]["plan_digest"], digest);
+    assert_eq!(responses[1]["result"]["plan"]["can_apply"], false);
+    assert_eq!(responses[2]["result"]["ok"], false);
+    assert_eq!(
+        responses[2]["result"]["error"]["code"],
+        "CONFIRMATION_REQUIRED"
+    );
+    assert_eq!(responses[3]["result"]["ok"], true, "{:?}", responses[3]);
+    assert_eq!(responses[3]["result"]["operation"], "apply");
+    assert_eq!(responses[3]["result"]["plan"]["can_apply"], true);
+    assert_eq!(responses[3]["result"]["baseline"], baseline);
+    assert_ne!(responses[3]["result"]["new_baseline"], baseline);
+    assert!(responses[4]["result"]["catalog"]["entities"]["harbor"].is_object());
+    assert!(project_root.join(".world/markdown-imports").exists());
+    let _ = std::fs::remove_dir_all(&project_root);
+    let _ = std::fs::remove_dir_all(&source);
 }
 
 fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {

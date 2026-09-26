@@ -444,3 +444,48 @@ fn markdown_apply_acceptance_is_separate_from_the_reviewed_candidate_digest() {
     assert_eq!(result.plan.plan_digest, plan.plan_digest);
     assert_eq!(result.new_baseline, project.content_baseline());
 }
+
+#[test]
+fn markdown_import_requires_explicit_language_upgrade_confirmation() {
+    let fixture = Fixture::new();
+    let manifest = fixture.root.join("project/.world/project.json");
+    fs::write(
+        &manifest,
+        r#"{"schema_version":1,"language_version":"1.9","required_features":[]}"#,
+    )
+    .unwrap();
+    let mut project = fixture.project();
+    let mut request = fixture.request(&project);
+    request.accept_losses = true;
+    let plan = project.preview_markdown_import(&request).unwrap();
+    assert!(plan.requires_language_upgrade);
+    assert!(!plan.can_apply);
+
+    let error = project
+        .apply_markdown_import(&request, &plan.plan_digest)
+        .unwrap_err();
+    assert!(error.contains("缺少语言升级确认"));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&manifest).unwrap()).unwrap()
+            ["language_version"],
+        "1.9"
+    );
+    assert!(!fixture
+        .root
+        .join(format!(
+            "project/.world/markdown-imports/{}",
+            plan.namespace
+        ))
+        .exists());
+
+    request.allow_language_upgrade = true;
+    let result = project
+        .apply_markdown_import(&request, &plan.plan_digest)
+        .unwrap();
+    assert!(result.plan.requires_language_upgrade);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&manifest).unwrap()).unwrap()
+            ["language_version"],
+        "1.10"
+    );
+}

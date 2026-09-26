@@ -75,6 +75,35 @@ fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
     root
 }
 
+fn temp_markdown_import_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = std::env::temp_dir()
+        .join("wl_cli_markdown_import_tests")
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("project");
+    let source = root.join("source");
+    std::fs::create_dir_all(project.join(".world")).unwrap();
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        project.join(".world/project.json"),
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(project.join("world.wl"), "event start\n  -> END\n").unwrap();
+    std::fs::write(
+        source.join("harbor.md"),
+        "---\nid: harbor\ntitle: 雾港\nkind: place\n---\n# 雾港\n**潮汐**\n",
+    )
+    .unwrap();
+    (project, source)
+}
+
+fn run_dynamic(args: Vec<String>) -> (i32, Value) {
+    let mut out = Vec::new();
+    let code = wl::run(&args, &mut out, &mut std::io::Cursor::new(Vec::new())).unwrap();
+    (code, serde_json::from_slice(&out).unwrap())
+}
+
 fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
     let manifest_path = root.join(".world/project.json");
     let mut manifest: serde_json::Value =
@@ -1565,4 +1594,97 @@ fn entity_only_play_is_story_failure_in_json_mode() {
     assert_eq!(code, 1);
     let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(value["type"], "run_error");
+}
+
+#[test]
+fn markdown_import_cli_requires_review_digest_and_explicit_loss_confirmation() {
+    let (project, source) = temp_markdown_import_fixture("review-apply");
+    let baseline = worldline_core::project::Project::open(&project)
+        .unwrap()
+        .content_baseline();
+    let preview_args = vec![
+        "markdown".into(),
+        "import".into(),
+        "preview".into(),
+        project.to_string_lossy().into_owned(),
+        "--source".into(),
+        source.to_string_lossy().into_owned(),
+        "--baseline".into(),
+        baseline.clone(),
+        "--json".into(),
+    ];
+    let (code, preview) = run_dynamic(preview_args);
+    assert_eq!(code, 0, "{preview}");
+    assert_eq!(preview["operation"], "preview");
+    assert_eq!(preview["plan"]["can_apply"], false);
+    assert!(!project.join(".world/markdown-imports").exists());
+
+    let digest = preview["plan"]["plan_digest"].as_str().unwrap();
+    let mut apply_args = vec![
+        "markdown".into(),
+        "import".into(),
+        "apply".into(),
+        project.to_string_lossy().into_owned(),
+        "--source".into(),
+        source.to_string_lossy().into_owned(),
+        "--baseline".into(),
+        baseline.clone(),
+        "--plan-digest".into(),
+        digest.to_string(),
+        "--json".into(),
+    ];
+    let (code, rejected) = run_dynamic(apply_args.clone());
+    assert_eq!(code, 1, "{rejected}");
+    assert_eq!(rejected["ok"], false);
+    assert_eq!(rejected["error"]["code"], "CONFIRMATION_REQUIRED");
+    assert!(!project.join(".world/markdown-imports").exists());
+
+    apply_args.push("--accept-losses".into());
+    let (code, applied) = run_dynamic(apply_args);
+    assert_eq!(code, 0, "{applied}");
+    assert_eq!(applied["operation"], "apply");
+    assert_eq!(applied["plan"]["can_apply"], true);
+    assert!(!applied["changed_files"].as_array().unwrap().is_empty());
+    assert!(project.join(".world/markdown-imports").exists());
+    let _ = std::fs::remove_dir_all(project.parent().unwrap());
+}
+
+#[test]
+fn markdown_import_cli_rejects_a_stale_source_without_writing() {
+    let (project, source) = temp_markdown_import_fixture("stale-source");
+    let baseline = worldline_core::project::Project::open(&project)
+        .unwrap()
+        .content_baseline();
+    let (code, preview) = run_dynamic(vec![
+        "markdown".into(),
+        "import".into(),
+        "preview".into(),
+        project.to_string_lossy().into_owned(),
+        "--source".into(),
+        source.to_string_lossy().into_owned(),
+        "--baseline".into(),
+        baseline.clone(),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 0, "{preview}");
+    std::fs::write(source.join("harbor.md"), "# Changed\nchanged **text**\n").unwrap();
+
+    let (code, rejected) = run_dynamic(vec![
+        "markdown".into(),
+        "import".into(),
+        "apply".into(),
+        project.to_string_lossy().into_owned(),
+        "--source".into(),
+        source.to_string_lossy().into_owned(),
+        "--baseline".into(),
+        baseline,
+        "--plan-digest".into(),
+        preview["plan"]["plan_digest"].as_str().unwrap().into(),
+        "--accept-losses".into(),
+        "--json".into(),
+    ]);
+    assert_eq!(code, 1, "{rejected}");
+    assert_eq!(rejected["error"]["code"], "STALE_PLAN");
+    assert!(!project.join(".world/markdown-imports").exists());
+    let _ = std::fs::remove_dir_all(project.parent().unwrap());
 }

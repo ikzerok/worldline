@@ -27,6 +27,7 @@ fn main() -> ExitCode {
             );
             eprintln!("      wl catalog-query <目录或入口> --query '<JSON DTO>' [--offset N] [--page-size N] [--max-candidates N] [--cursor '<JSON 游标>'] [--json]");
             eprintln!("      wl authoring-intent preview|apply <目录或入口> --intent-json '<JSON DTO>' [--json]");
+            eprintln!("      wl markdown import preview|apply <工程目录> --source <Markdown目录> --baseline <基线> [--id-map-json '<JSON 对象>'] [--namespace ID] [apply: --plan-digest 摘要 --accept-losses --allow-language-upgrade] [--json]");
             eprintln!("      wl workspace check <目录> [--json]");
             eprintln!("      wl maps list <目录> [--json]");
             eprintln!(

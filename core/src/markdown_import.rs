@@ -220,8 +220,14 @@ impl Project {
         if prepared.plan.plan_digest != plan_digest {
             return Err("Markdown 迁移预览已过期；来源、映射或工程基线已变化".into());
         }
-        if !prepared.plan.can_apply {
-            return Err("Markdown 迁移仍有未解决的冲突，或缺少损失/语言升级确认".into());
+        if !prepared.plan.conflicts.is_empty() {
+            return Err("Markdown 迁移仍有未解决的冲突".into());
+        }
+        if !prepared.plan.losses.is_empty() && !request.accept_losses {
+            return Err("Markdown 迁移缺少损失确认".into());
+        }
+        if prepared.plan.requires_language_upgrade && !request.allow_language_upgrade {
+            return Err("Markdown 迁移缺少语言升级确认".into());
         }
         let changed_files = prepared
             .plan

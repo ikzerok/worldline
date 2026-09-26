@@ -84,6 +84,14 @@ Project 快照，变更后返回 `STALE_CURSOR`，调用方应从第一页重查
 new_baseline, diagnostics, workspace_diagnostics, read_only}`；合法 DTO 的组合
 失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，组合或保存失败为 1。
 
+`wl markdown import preview|apply <工程目录> --source <Markdown目录> --baseline <基线> [--json]`
+调用 `Project::preview_markdown_import` / `apply_markdown_import`。应用另外要求 `--plan-digest`
+以及显式损失确认 `--accept-losses`；从 1.9 工程导入还要求 `--allow-language-upgrade`。
+确认只在 apply 阶段提供；未确认的 preview 仍返回完整损失和候选计划，`can_apply` 为 false。
+`--id-map-json` 提供 source-relative-path 到稳定 ID 的显式映射，`--namespace` 选择输出命名空间。
+preview 返回可审阅映射、冲突、损失和全部待写路径，不写文件；apply 重扫输入并校验预览摘要、内容基线与目标路径。
+成功结果为 `{ok, operation, plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；preview 的 `changed_files` 为空且 `new_baseline` 为 null。成功写入通过 Project 可恢复保存协议；失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，预览/应用失败为 1。输入契约见 [markdown-import.md](markdown-import.md)。
+
 ### 2.6 `wl entity` 作者资料编辑
 
 `wl entity create <目录或入口> --id ID --kind 类型 --display 名称`
@@ -323,6 +331,8 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `maps.list` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, maps, references, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}` |
 | `authoring.intent.preview` | `{path, intent}` 或 `{project_id, intent}` | `{ok, operation:"preview", target, reference_impact, changed_files, baseline, new_baseline, diagnostics, workspace_diagnostics, read_only}`；`intent` 是带显式 `expected_baseline` 的 core `AuthoringIntent` DTO |
 | `authoring.intent.apply` | 同 `authoring.intent.preview` | 同上，`operation:"apply"`；成功后通过可恢复保存协议持久化全部变更文件，RPC `project_id` 缓冲同步更新 |
+| `markdown.import.preview` | `{path, source, baseline, id_overrides?, namespace?}` 或以 `project_id` 替代 `path` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；`plan` 含稳定映射、冲突、损失、待写路径与 `plan_digest`，不写文件；只允许且必须提供 `path` 或 `project_id` 之一 |
+| `markdown.import.apply` | 同 preview，并含 `plan_digest`, `accept_losses:boolean`, `allow_language_upgrade:boolean` | `{ok, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；重新验证来源/目标基线，成功后经可恢复保存协议持久化；Project 会话仅在保存成功后更新 |
 | `catalog.query` | `{path, query, offset?, page_size?, max_candidates?}` 或 `{project_id, query, ...}`；续页使用 `{path|project_id, query, cursor}`，cursor 与分页选项互斥 | `{ok, schema_version, language_version, workspace_revision, query:{summary, snapshot, offset, total, items, next, diagnostics}, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`query` 为 core `CatalogQuery` DTO，`items` 每项含 `TargetRef`、source 与 reasons；参数类型错误用 `-32602`，语义查询错误在 result 中以 `ok:false` 和稳定 `error.code` 返回 |
 | `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?, scope_refs?, include_unscoped?, include_period_children?}` 或同字段的 `project_id` 请求 | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`scope_refs` 为 TargetRef 数组，同维度 OR、跨维度 AND；未标范围仅在 `include_unscoped=true` 时包含；时期子树仅在 `include_period_children=true` 时显式展开；`offset` 为非负整数续查偏移，continuation 保留全部筛选；未知目标/范围/类型或深度参数使用 error `-32602` |
 | `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
