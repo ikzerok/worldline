@@ -24,6 +24,7 @@ pub mod graph_views;
 pub mod lexer;
 pub mod manuscript;
 pub mod map_creation;
+pub mod markdown_import;
 pub mod migration;
 pub mod navigation;
 pub mod parser;

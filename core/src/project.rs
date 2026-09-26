@@ -1080,6 +1080,15 @@ impl Project {
         self.save_buffers(false)
     }
 
+    /// 将普通附件与当前 Project 文档放在同一可恢复保存事务中。
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn save_with_additional_files(
+        &mut self,
+        files: &[(PathBuf, Vec<u8>)],
+    ) -> Result<(), String> {
+        self.save_buffers_with_additional_files(false, files)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn ensure_storage_ready(&self) -> Result<(), String> {
         if !self.recovery_conflicts.is_empty()
@@ -1093,12 +1102,22 @@ impl Project {
     // 只有另存到新的独立目录，才允许复制未知格式的原始字节。
     #[cfg(not(target_arch = "wasm32"))]
     fn save_buffers(&mut self, copying_to_new_directory: bool) -> Result<(), String> {
+        self.save_buffers_with_additional_files(copying_to_new_directory, &[])
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn save_buffers_with_additional_files(
+        &mut self,
+        copying_to_new_directory: bool,
+        additional_files: &[(PathBuf, Vec<u8>)],
+    ) -> Result<(), String> {
         self.ensure_storage_ready()?;
         if self.documents.values().any(Document::is_dirty)
             || self
                 .authoring_documents
                 .values()
                 .any(AuthoringDocument::is_dirty)
+            || !additional_files.is_empty()
         {
             self.preflight_save(copying_to_new_directory)?;
         }
@@ -1128,6 +1147,34 @@ impl Project {
                 relative,
                 before: document.saved.clone(),
                 after: (!document.deleted).then(|| document.bytes.clone()),
+            });
+        }
+        let mut additional_paths = std::collections::BTreeSet::new();
+        for (relative, bytes) in additional_files {
+            if relative.as_os_str().is_empty()
+                || relative.is_absolute()
+                || relative
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
+            {
+                return Err(format!("普通附件目标路径无效：{}", relative.display()));
+            }
+            if !additional_paths.insert(relative.clone())
+                || pending.iter().any(|file| file.relative == *relative)
+            {
+                return Err(format!(
+                    "保存事务中存在重复目标路径：{}",
+                    relative.display()
+                ));
+            }
+            let target = crate::file_access::within(&self.root, &self.root.join(relative))?;
+            if read_disk(&target)?.is_some() {
+                return Err(format!("普通附件目标已存在：{}", target.display()));
+            }
+            pending.push(crate::storage::PendingFile {
+                relative: relative.clone(),
+                before: None,
+                after: Some(bytes.clone()),
             });
         }
         if pending.is_empty() {
