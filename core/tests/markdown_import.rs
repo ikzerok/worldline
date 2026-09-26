@@ -776,3 +776,35 @@ fn markdown_front_matter_closing_separator_is_not_a_horizontal_rule_loss() {
     assert!(plan.losses.is_empty(), "{:?}", plan.losses);
     assert!(plan.can_apply);
 }
+
+#[test]
+fn markdown_preview_reports_existing_namespace_file_conflict() {
+    let fixture = Fixture::new();
+    let namespace = "existing_import";
+    let target = fixture
+        .root
+        .join("project/.world/markdown-imports")
+        .join(namespace)
+        .join("import.wl");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let existing = b"entity retained kind lore as \"Retained\"\n";
+    fs::write(&target, existing).unwrap();
+    let source_before = fs::read(fixture.source.join("harbor.md")).unwrap();
+    let project = fixture.project();
+    let mut request = fixture.request(&project);
+    request.namespace = Some(namespace.into());
+
+    let plan = project.preview_markdown_import(&request).unwrap();
+
+    assert!(plan
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.code == "OUTPUT_PATH_EXISTS"));
+    assert!(!plan.can_apply);
+    assert!(!project.is_dirty());
+    assert_eq!(fs::read(target).unwrap(), existing);
+    assert_eq!(
+        fs::read(fixture.source.join("harbor.md")).unwrap(),
+        source_before
+    );
+}

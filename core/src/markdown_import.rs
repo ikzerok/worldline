@@ -1113,7 +1113,9 @@ fn build_candidate(
         );
     }
 
-    candidate.add_file(&relative_source)?;
+    if !candidate.documents.contains_key(&absolute_source) {
+        candidate.add_file(&relative_source)?;
+    }
     candidate.set_text(&absolute_source, generated.clone())?;
     let manifest_relative = PathBuf::from(".world/project.json");
     let manifest_was_present = candidate
