@@ -199,6 +199,8 @@ pub enum PropertyValue {
     Str(String),
     Num(f64),
     Bool(bool),
+    /// 显式 1.10 作者资料引用；不会被运行时执行或纳入语义指纹。
+    Ref(crate::catalog::TargetRef),
 }
 
 #[derive(Debug, Clone)]

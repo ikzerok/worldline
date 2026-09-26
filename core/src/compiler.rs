@@ -36,19 +36,26 @@ impl LanguageVersion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompileOptions {
     pub language_version: LanguageVersion,
+    /// 显式启用清单能力 `content.object_refs.v1`。独立源码编译默认关闭。
+    #[serde(default)]
+    pub object_refs: bool,
 }
 
 impl Default for CompileOptions {
     fn default() -> Self {
         Self {
             language_version: LanguageVersion::V1_9,
+            object_refs: false,
         }
     }
 }
 
 impl CompileOptions {
     pub const fn new(language_version: LanguageVersion) -> Self {
-        Self { language_version }
+        Self {
+            language_version,
+            object_refs: false,
+        }
     }
 
     pub const fn v1_9() -> Self {
@@ -57,6 +64,11 @@ impl CompileOptions {
 
     pub const fn v1_10() -> Self {
         Self::new(LanguageVersion::V1_10)
+    }
+
+    pub const fn with_object_refs(mut self, enabled: bool) -> Self {
+        self.object_refs = enabled;
+        self
     }
 }
 

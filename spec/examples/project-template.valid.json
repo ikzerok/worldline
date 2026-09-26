@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "project:guide",
+  "title": "创作指引",
+  "applies_to": {
+    "kind": "entity",
+    "entity_type": "place"
+  },
+  "fields": [
+    {
+      "id": "history_group",
+      "label": "沿革",
+      "type": "group",
+      "fields": [
+        {
+          "id": "origin_field",
+          "key": "origin",
+          "label": "起源",
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        {
+          "id": "status_field",
+          "key": "status",
+          "label": "状态",
+          "type": "enum",
+          "required": false,
+          "choices": ["active", "abandoned"],
+          "default": "active"
+        }
+      ]
+    }
+  ],
+  "extensions": {
+    "vendor": "preserved"
+  }
+}

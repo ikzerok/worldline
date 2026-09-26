@@ -610,10 +610,97 @@ pub(crate) fn analyze(
             });
         }
     }
+    if let Some(world) = program.worlds.first() {
+        collect_property_references(
+            &world.properties,
+            &TargetRef::new("world", &world.name),
+            &world.file,
+            &mut catalog,
+            diags,
+        );
+    }
+    for character in &program.characters {
+        collect_property_references(
+            &character.properties,
+            &TargetRef::new("character", &character.name),
+            &character.file,
+            &mut catalog,
+            diags,
+        );
+    }
+    for entity in &program.entities {
+        collect_property_references(
+            &entity.properties,
+            &TargetRef::new("entity", &entity.name),
+            &entity.file,
+            &mut catalog,
+            diags,
+        );
+    }
+    for declaration in &program.catalog {
+        match declaration {
+            CatalogDecl::Tag(tag) => collect_property_references(
+                &tag.properties,
+                &TargetRef::new("tag", &tag.name),
+                &tag.file,
+                &mut catalog,
+                diags,
+            ),
+            CatalogDecl::Anchor(anchor) => collect_property_references(
+                &anchor.properties,
+                &TargetRef::new("anchor", &anchor.name),
+                &anchor.file,
+                &mut catalog,
+                diags,
+            ),
+            _ => {}
+        }
+    }
+    for relation in &program.relations {
+        collect_property_references(
+            &relation.properties,
+            &TargetRef::new("relation", &relation.id),
+            &relation.file,
+            &mut catalog,
+            diags,
+        );
+    }
     crate::states::collect_changes(program, &mut catalog, diags);
     crate::navigation::collect(program, &mut catalog, diags);
     catalog.objects.sort_by(|a, b| a.target.cmp(&b.target));
     catalog
+}
+
+fn collect_property_references(
+    properties: &[crate::ast::Property],
+    source: &TargetRef,
+    file: &str,
+    catalog: &mut Catalog,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for property in properties {
+        let PropertyValue::Ref(target) = &property.value else {
+            continue;
+        };
+        if catalog.object(target).is_none() {
+            diags.push(Diagnostic::error(
+                "A214",
+                file,
+                Span::new(property.loc.line, property.loc.column, 8),
+                format!(
+                    "属性 `{}` 引用的对象 {} `{}` 不存在",
+                    property.name, target.kind, target.id
+                ),
+            ));
+        }
+        catalog.references.push(ReferenceInfo {
+            source: source.clone(),
+            target: target.clone(),
+            kind: "对象属性引用".into(),
+            file: file.into(),
+            line: property.loc.line,
+        });
+    }
 }
 
 fn collect_inline(body: &[Stmt], file: &str, owner: &TargetRef, catalog: &mut Catalog) {

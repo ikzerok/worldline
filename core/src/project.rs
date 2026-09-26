@@ -503,7 +503,17 @@ impl Project {
     }
 
     pub fn compile_options(&self) -> CompileOptions {
-        CompileOptions::new(self.language_version)
+        let manifest = crate::workspace_documents::manifest_path(&self.root);
+        let object_refs = self
+            .authoring_documents
+            .get(&manifest)
+            .filter(|document| !document.is_deleted())
+            .is_some_and(|document| {
+                crate::workspace_documents::parse_registry(&self.root, document.bytes())
+                    .required_features
+                    .contains(crate::project_templates::OBJECT_REFS_REQUIRED_FEATURE)
+            });
+        CompileOptions::new(self.language_version).with_object_refs(object_refs)
     }
 
     pub(crate) fn compile_current(&self) -> CompileResult {

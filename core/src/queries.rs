@@ -1134,6 +1134,7 @@ fn property_equals(actual: &PropertyValue, expected: &PropertyScalar) -> bool {
         (PropertyValue::Str(actual), PropertyScalar::String(expected)) => actual == expected,
         (PropertyValue::Num(actual), PropertyScalar::Number(expected)) => actual == expected,
         (PropertyValue::Bool(actual), PropertyScalar::Boolean(expected)) => actual == expected,
+        (PropertyValue::Ref(_), _) => false,
         _ => false,
     }
 }

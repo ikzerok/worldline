@@ -43,7 +43,8 @@ attach      := 'attach' targetKind (qualifiedName | STRING) 'with' IDENT (',' ID
 targetKind  := 'anchor' | 'state' | 'event' | 'scene' | 'character' | 'entity' | 'relation' | 'world' | 'storyline' | 'period' | 'variable' | 'tag' | 'asset' | 'file'
 aliasDecl   := 'alias' targetKind TARGET 'as' STRING
 description := 'description' STRING
-property    := 'property' IDENT '=' (STRING | NUMBER | BOOL)
+property    := 'property' IDENT '=' (STRING | NUMBER | BOOL | objectRef)
+objectRef   := 'ref' '(' STRING ',' STRING ')'
 relation    := 'relation' IDENT 'as' STRING
 eventDecl   := 'event' qualifiedName eventClauses? block
 eventClauses:= ('as' STRING)? ('with' IDENT (',' IDENT)*)? ('at' UINT)? ('during' IDENT)? ('follows' qualifiedName (',' qualifiedName)*)? ('perm' IDENT)? ('after' expr)?
@@ -74,14 +75,22 @@ entity lighthouse kind place as "雾港灯塔"
 
 `entity` 的第一个标识符是稳定 ID，`kind` 后的标识符是可修改的
 `entity_type`（例如 `place`、`organization` 或 `culture`），显示名与 ID
-分离。实体的 `description` 最多出现一次，`property` 值只能是字符串、有限
-数值或布尔字面量；属性名在一个实体中不能重复。实体是作者资料，不是事件、
+分离。实体的 `description` 最多出现一次，`property` 值是字符串、有限数值、布尔
+字面量或显式对象引用；属性名在一个实体中不能重复。实体是作者资料，不是事件、
 选择、效果或运行状态，也不进入运行指纹。实体 ID 与 `character`、`tag` 等
 不同类型的 ID 可以相同；同名资料不会自动合并。
 
 实体可作为 `TargetRef { kind: "entity", id }` 出现在正文链接、目录查询、展示
 标记和语言 1.10 的独立锚点关联中。修改显示名或 `entity_type` 保留 ID 和所有展示
 坐标；删除前必须通过引用影响查询处理正文、别名、分类、锚点及地图引用。
+
+语言 1.10 属性可使用 `ref("kind", "id")` 声明显式对象引用，例如
+`property home = ref("entity", "harbor")`。两项参数必须是非空字符串字面量，不求值；
+kind 必须是当前语言版本允许的完整 `TargetRef` 类型。项目清单必须声明
+`content.object_refs.v1`，以使不支持该能力的旧客户端按只读处理。缺失目标报告 A214；
+只有此显式值建立强引用，普通字符串、模板字段同名或显示文字不自动转成引用。
+该属性供作者资料、目录和引用影响使用，不参与事件执行或运行指纹。重命名会更新
+显式引用，删除前会报告引用；语言 1.9 不支持此值。
 
 ## 2. 块与缩进
 
@@ -402,8 +411,9 @@ character lin as "林舟"
   relation mei as "同伴"
 ```
 
-属性名为 ASCII 标识符,值仅允许字符串、有限数值(含负数)、布尔字面量。
-同一对象内属性名不得重复(A212),不作为运行时变量。
+属性名为 ASCII 标识符。旧 1.9 属性值为字符串、有限数值(含负数)或布尔字面量；
+1.10 可额外使用上文定义的显式 `ref("kind", "id")`，并要求清单能力
+`content.object_refs.v1`。同一对象内属性名不得重复(A212),不作为运行时变量。
 关系目标必须为已声明角色(A208),标签必填;相同目标与标签不得重复(A212)。
 反向事件索引由 analysis 统一产生,包含 `with`、`meet`、`part` 和效果块内的角色引用,
 按事件声明序去重;表示源码关联,不表示运行时必然在场。

@@ -117,7 +117,7 @@ rank 是同一时段先后约束的拓扑层级(零起),无约束为 0;同级事
 
 `relation_type` 与 `relation_def` 是作者内容资料，和本文件前述的旧控制流
 `RelationGraph` 分开。关系实例保存稳定 ID、类型、完整 `from_ref`/`to_ref`、
-说明、来源、scope 与字面量 property；它不会生成事件、场景、选择或运行状态，
+说明、来源、scope 与非执行 property（包括显式 `ref` 对象引用）；它不会生成事件、场景、选择或运行状态，
 也不进入运行指纹。旧 `CharacterRelation` 继续按 1.9 规则参与指纹，只在
 `Catalog::legacy_relation_handles` 产生临时兼容投影。
 

@@ -152,7 +152,7 @@ relation_def rel_keepers_lighthouse type maintains from entity keepers to entity
   source_note "共同设定记录第3项"
 ```
 
-实体首版复用字符串、数值、布尔属性和多行description，不马上引入通用可执行属性系统。模板字段引用其他对象时，优先生成明确关系或使用后续单独评审的引用值；不能把一个恰好同名的字符串当成强引用。
+实体和其他作者资料继续复用字符串、数值、布尔属性和多行 description，不引入通用可执行属性系统。语言 1.10 增加显式 `ref("kind", "id")` 属性值以支持模板对象引用；它作为稳定 `TargetRef` 参与目录、重命名及删除保护，不求值且不进入运行指纹。普通字符串不因模板字段或内容同名而变成强引用；详见 [syntax.md](syntax.md) 与 [templates.md](templates.md)。
 
 relation_def至少具有稳定ID、关系类型、from/to和可选说明。关系类型定义方向、显示名、反向显示名及可选端点约束。不要求所有创作关系具有数值强度。关系实例可附作者明确的范围、来源、相关事件和任意非执行资料。`from` 与 `to` 端点使用完整 `TargetRef`，关系 ID 本身可作为 `TargetRef(kind="relation")` 被展示文档引用。
 

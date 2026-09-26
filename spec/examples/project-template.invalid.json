@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "project:invalid",
+  "title": "错误的对象类型",
+  "applies_to": {
+    "kind": "asset"
+  },
+  "fields": [
+    {
+      "id": "group",
+      "label": "错误分组",
+      "type": "group",
+      "key": "must_not_exist",
+      "fields": []
+    }
+  ]
+}

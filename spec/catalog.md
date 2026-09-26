@@ -29,8 +29,9 @@ tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制�
 身份固定为 `TargetRef { kind: "entity", id }`。`entity_type` 是可变分类，修改
 它或显示名不修改 ID，也不改变地图标记的位置；同名的 character、tag 和 entity
 保持独立。实体只进入 `catalog.entities` 和统一 `catalog.objects`，不进入事件
-执行结构或运行指纹。description/property 的规则与 world 相同，属性值仍限于
-字符串、有限数值和布尔值。
+执行结构或运行指纹。description/property 的规则与 world 相同，属性值可为字符串、
+有限数值、布尔值或显式 `ref("kind", "id")` 对象引用；后者只在语言 1.10 支持并
+要求 `content.object_refs.v1`。字符串不因模板字段或内容猜测而升级为引用。
 
 实体的正文链接写作 `[[entity:ID|显示文字]]`，并遵守正文链接的转义和目标存在
 检查。旧 1.9 工程不自动启用该目标类型，也不把同名旧对象迁移为 entity。
@@ -158,7 +159,7 @@ Wiki 是已有完整对象的阅读索引。人物、世界、事件、场景、
 
 `CatalogQuery` 是只读查询 DTO，`schema_version` 必须为 `1`。查询对象是当前 Project 缓冲编译出的完整 `TargetRef`，不会读取或刷新磁盘。查询条件按维度组成：`kind`、`name`、`tag`、`property`、`relation`、`author_scope`、`missing`。同一维度的 `values` 是 OR，存在的不同维度是 AND；每个维度可用 `negate: true` 否定整个 OR 集合。空 OR 集合恒为假，否定后的空集合恒为真；没有维度的查询匹配全部对象。name 对显示名、ID 和别名作不区分 ASCII 大小写的子串匹配；tag 可明确请求递归解引用，循环去重。
 
-property 只匹配目录可取得的字面量属性（character、entity、relation、tag 与 world）；比较要求字符串、有限数值或布尔类型完全相同。缺失属性条件如 `{"kind":"property","key":"source"}` 表示对象没有该字面量属性；不判断自然语言真假、不生成属性或事实。未知属性键是合法查询但匹配为空；未知属性值类型、查询版本或维度会产生查询错误。relation 仅检查已声明的直接有向边；不作传递、对称或路径推断，方向与类型可筛选。因而关系环不会触发递归遍历。
+property 只匹配目录可取得的字面量属性（character、entity、relation、tag 与 world）；标量比较要求字符串、有限数值或布尔类型完全相同。显式对象引用按 `TargetRef` 暴露并参与引用影响，不作为标量值匹配；引用属性仍视为已存在。缺失属性条件如 `{"kind":"property","key":"source"}` 表示对象没有该属性；不判断自然语言真假、不生成属性或事实。未知属性键是合法查询但匹配为空；未知属性值类型、查询版本或维度会产生查询错误。relation 仅检查已声明的直接有向边；不作传递、对称或路径推断，方向与类型可筛选。因而关系环不会触发递归遍历。
 
 `author_scope` 是调用方传入的 `.wl` 工作区相对路径集合，匹配对象主要声明所在源码文件；它不是个人作者身份，也不读取个人资料。路径必须在工作区内，禁止绝对路径和 `..`。缺少的“来源”应表达为 `missing` 的 `property` 条件（例如 `source`），只表示资料字段未填写。
 

@@ -23,6 +23,7 @@ pub fn content_deletion_references(
         .iter()
         .filter(|reference| {
             affected_by_deletion(&reference.target, target)
+                && !(reference.kind == "对象属性引用" && reference.source == *target)
                 && !belongs_to_deleted_event(&reference.source, target)
                 && !is_internal_catalog_reference(catalog, reference, target)
         })

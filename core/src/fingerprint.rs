@@ -1,6 +1,6 @@
 //! 与源码位置无关的程序内容指纹。
 
-use crate::ast::{DivertTarget, Expr, Program, Stmt, TextPart, UnOp};
+use crate::ast::{DivertTarget, Expr, Program, PropertyValue, Stmt, TextPart, UnOp};
 
 /// FNV-1a 内容哈希,用于存档兼容性校验。不含行号,因此增删注释不破坏存档。
 pub fn fingerprint_program(program: &Program) -> u64 {
@@ -24,10 +24,12 @@ pub fn fingerprint_program(program: &Program) -> u64 {
             mix(&mut hash, &format!("Pd{display}"));
         }
         for property in &character.properties {
-            mix(
-                &mut hash,
-                &format!("Pa{}{:?}", property.name, property.value),
-            );
+            if !matches!(property.value, PropertyValue::Ref(_)) {
+                mix(
+                    &mut hash,
+                    &format!("Pa{}{:?}", property.name, property.value),
+                );
+            }
         }
         for relation in &character.relations {
             mix(
@@ -42,10 +44,12 @@ pub fn fingerprint_program(program: &Program) -> u64 {
         mix(&mut hash, world.display.as_deref().unwrap_or(""));
         mix(&mut hash, &world.description);
         for property in &world.properties {
-            mix(
-                &mut hash,
-                &format!("Wa{}{:?}", property.name, property.value),
-            );
+            if !matches!(property.value, PropertyValue::Ref(_)) {
+                mix(
+                    &mut hash,
+                    &format!("Wa{}{:?}", property.name, property.value),
+                );
+            }
         }
     }
     for decl in &program.catalog {

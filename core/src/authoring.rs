@@ -72,6 +72,9 @@ pub fn property_source(value: &PropertyValue) -> String {
         PropertyValue::Str(s) => quote(s),
         PropertyValue::Num(n) => n.to_string(),
         PropertyValue::Bool(b) => b.to_string(),
+        PropertyValue::Ref(target) => {
+            format!("ref({}, {})", quote(&target.kind), quote(&target.id))
+        }
     }
 }
 

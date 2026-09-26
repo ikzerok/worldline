@@ -312,7 +312,11 @@ fn rewrite_source(
 
 fn rewrite_source_line(line: &str, target: &TargetRef, new_id: &str) -> (String, usize) {
     let mut text = line.to_string();
-    let mut count = 0usize;
+    let (rewritten, mut count) = rewrite_explicit_refs(&text, target, new_id);
+    text = rewritten;
+    if line.trim_start().starts_with("property ") {
+        return (text, count);
+    }
     let link_old = format!("[[{}:{}|", target.kind, target.id);
     let link_new = format!("[[{}:{}|", target.kind, new_id);
     let hits = text.matches(&link_old).count();
@@ -335,6 +339,113 @@ fn rewrite_source_line(line: &str, target: &TargetRef, new_id: &str) -> (String,
         count += hits;
     }
     (text, count)
+}
+
+/// Rewrite only the explicit property-value grammar. Plain strings containing the same
+/// `kind:id` text are intentionally untouched.
+fn rewrite_explicit_refs(line: &str, target: &TargetRef, new_id: &str) -> (String, usize) {
+    let mut text = line.to_owned();
+    let mut cursor = 0usize;
+    let mut count = 0usize;
+    while let Some(relative) = text[cursor..].find("ref") {
+        let start = cursor + relative;
+        let after_name = start + 3;
+        let before_ok = start == 0 || !text[..start].chars().next_back().is_some_and(is_ident_char);
+        let after_ok = text[after_name..]
+            .chars()
+            .next()
+            .is_none_or(|character| !is_ident_char(character));
+        if !before_ok || !after_ok {
+            cursor = after_name;
+            continue;
+        }
+        let Some(open) =
+            skip_ascii_space(&text, after_name).filter(|index| text[*index..].starts_with('('))
+        else {
+            cursor = after_name;
+            continue;
+        };
+        let Some(kind_start) = skip_ascii_space(&text, open + 1) else {
+            break;
+        };
+        let Some((kind, kind_end, _)) = parse_quoted_literal(&text, kind_start) else {
+            cursor = open + 1;
+            continue;
+        };
+        let Some(comma) =
+            skip_ascii_space(&text, kind_end).filter(|index| text[*index..].starts_with(','))
+        else {
+            cursor = kind_end;
+            continue;
+        };
+        let Some(id_start) = skip_ascii_space(&text, comma + 1) else {
+            break;
+        };
+        let Some((id, id_end, id_range)) = parse_quoted_literal(&text, id_start) else {
+            cursor = comma + 1;
+            continue;
+        };
+        let Some(close) =
+            skip_ascii_space(&text, id_end).filter(|index| text[*index..].starts_with(')'))
+        else {
+            cursor = id_end;
+            continue;
+        };
+        if kind == target.kind && id == target.id {
+            let quoted = crate::authoring::quote(new_id);
+            let inner = &quoted[1..quoted.len() - 1];
+            let delta = inner.len() as isize - id_range.len() as isize;
+            text.replace_range(id_range, inner);
+            count += 1;
+            cursor = (close as isize + delta).max(0) as usize + 1;
+        } else {
+            cursor = close + 1;
+        }
+    }
+    (text, count)
+}
+
+fn skip_ascii_space(text: &str, mut index: usize) -> Option<usize> {
+    while let Some(character) = text.get(index..)?.chars().next() {
+        if !character.is_ascii_whitespace() {
+            break;
+        }
+        index += character.len_utf8();
+    }
+    Some(index)
+}
+
+/// Returns the decoded string, byte after the literal, and the inner range to replace.
+fn parse_quoted_literal(
+    text: &str,
+    start: usize,
+) -> Option<(String, usize, std::ops::Range<usize>)> {
+    if !text.get(start..)?.starts_with('"') {
+        return None;
+    }
+    let mut index = start + 1;
+    let mut decoded = String::new();
+    while let Some(character) = text.get(index..)?.chars().next() {
+        match character {
+            '"' => return Some((decoded, index + 1, start + 1..index)),
+            '\\' => {
+                index += 1;
+                let escaped = text.get(index..)?.chars().next()?;
+                decoded.push(match escaped {
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    other => other,
+                });
+                index += escaped.len_utf8();
+            }
+            other => {
+                decoded.push(other);
+                index += other.len_utf8();
+            }
+        }
+    }
+    None
 }
 
 fn replace_structural_pair(text: &str, old: &str, new: &str) -> (String, usize) {

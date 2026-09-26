@@ -90,6 +90,8 @@ new_baseline, diagnostics, workspace_diagnostics, read_only}`；合法 DTO 的�
 创建实体;`update` 使用相同参数修改显示名、分类、description 或 property;
 `delete` 使用 `--id ID` 删除实体。`--description` 设置描述,
 `--property name=value` 可重复,值为字符串、有限数值或 `true`/`false`。
+此 CLI 参数暂只接受标量；core 的源码编辑 API 可用语言 1.10 的显式
+`ref("kind", "id")` 设置对象引用，Catalog JSON 将其序列化为 `{"kind":"…","id":"…"}`。
 编辑命令要求工程清单明确选择 1.10,并使用 `Project::edit` 与保存基线检查;
 若同时提供 `--baseline` 且工作区内容基线不同,输出故事层失败而不写盘。
 JSON 成功结果为 `{ok, operation, entity, catalog, language_version, baseline,

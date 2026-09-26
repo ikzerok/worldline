@@ -65,6 +65,7 @@ pub(crate) struct Registry {
     pub(crate) maps: BTreeMap<String, PathBuf>,
     pub(crate) graph_views: BTreeMap<String, PathBuf>,
     pub(crate) manuscripts: BTreeMap<String, PathBuf>,
+    pub(crate) templates: BTreeMap<String, PathBuf>,
     pub(crate) presets: BTreeMap<String, PathBuf>,
     pub(crate) comments: BTreeMap<String, PathBuf>,
     pub(crate) proposals: BTreeMap<String, PathBuf>,
@@ -100,6 +101,7 @@ pub(crate) fn manifest_path(root: &Path) -> PathBuf {
 pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let mut registry = Registry::default();
     let mut manifest_read_only = manifest_capability_is_read_only(manifest);
+    let mut templates_feature_missing = false;
     registry
         .documents
         .insert(manifest_path(root), manifest_read_only);
@@ -182,6 +184,20 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     }
 
     if object
+        .get("templates")
+        .and_then(Value::as_object)
+        .is_some_and(|templates| !templates.is_empty())
+        && !required_feature(object, "content.templates.v1")
+    {
+        templates_feature_missing = true;
+        registry.report(
+            root,
+            "WS003",
+            "清单注册工程模板时必须声明 required_features content.templates.v1",
+        );
+    }
+
+    if object
         .get("saved_queries")
         .and_then(Value::as_object)
         .is_some_and(|queries| !queries.is_empty())
@@ -209,11 +225,13 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
 
     let manifest_path = manifest_path(root);
     let mut paths = BTreeMap::new();
+    let mut read_only_paths = BTreeSet::new();
     paths.insert(registry_path_key(&manifest_path), manifest_path.clone());
     for key in [
         "maps",
         "graph_views",
         "manuscripts",
+        "templates",
         "presets",
         "comments",
         "proposals",
@@ -231,7 +249,11 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             continue;
         };
         for (id, value) in entries {
-            if !valid_id(id) {
+            if !(if key == "templates" {
+                valid_template_id(id)
+            } else {
+                valid_id(id)
+            }) {
                 registry.report(root, "WS004", format!("清单 {key}.{id} 的 ID 无效，已跳过"));
                 continue;
             }
@@ -258,6 +280,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     continue;
                 }
                 paths.insert(path_key, path.clone());
+                if key == "templates" && templates_feature_missing {
+                    read_only_paths.insert(path.clone());
+                }
                 match key {
                     "maps" => {
                         // registry.maps 只保存已经通过路径边界检查的注册项；重复
@@ -269,6 +294,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "manuscripts" => {
                         registry.manuscripts.insert(id.clone(), path);
+                    }
+                    "templates" => {
+                        registry.templates.insert(id.clone(), path);
                     }
                     "presets" => {
                         registry.presets.insert(id.clone(), path);
@@ -294,7 +322,8 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         }
     }
     for path in paths.into_values() {
-        registry.documents.insert(path, manifest_read_only);
+        let read_only = manifest_read_only || read_only_paths.contains(&path);
+        registry.documents.insert(path, read_only);
     }
     registry
 }
@@ -463,6 +492,8 @@ fn supported_feature(feature: &str) -> bool {
             | "presentation.geometry.line_area.v1"
             | "presentation.graph_views.v1"
             | "presentation.manuscripts.v1"
+            | "content.templates.v1"
+            | "content.object_refs.v1"
             | "presentation.presets.v1"
             | "collaboration.comments.v1"
             | "collaboration.proposals.v1"
@@ -477,6 +508,10 @@ pub(crate) fn valid_id(id: &str) -> bool {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+pub(crate) fn valid_template_id(id: &str) -> bool {
+    id.strip_prefix("project:").is_some_and(valid_id)
 }
 
 /// serde_json 默认对重复键采用后者覆盖前者的语义。
