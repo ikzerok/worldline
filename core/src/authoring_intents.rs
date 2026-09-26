@@ -278,8 +278,7 @@ mod tests {
         );
         let original_entry = project.entry.clone();
         let document = project.documents.remove(&original_entry).unwrap();
-        let root = PathBuf::from(r"\world")
-            .join(format!("web-path-{}", std::process::id()));
+        let root = PathBuf::from(r"\world").join(format!("web-path-{}", std::process::id()));
         let entry = root.join("world.wl");
         project.root = root.clone();
         project.entry = entry.clone();
@@ -294,9 +293,7 @@ mod tests {
             lexical_absolute_path(&entry)
         );
         assert!(require_active_source(&project, &root.join("..").join("outside.wl")).is_err());
-        assert!(
-            require_active_source(&project, &PathBuf::from(r"\elsewhere\world.wl")).is_err()
-        );
+        assert!(require_active_source(&project, &PathBuf::from(r"\elsewhere\world.wl")).is_err());
         assert!(require_active_source(&project, Path::new("world.wl")).is_err());
     }
 }
