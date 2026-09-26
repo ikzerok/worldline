@@ -100,9 +100,20 @@ impl Project {
             IntentTarget::Existing(target) => target.clone(),
             IntentTarget::CreateEntity { draft, .. } => TargetRef::new("entity", &draft.id),
         };
+        let selection = match &intent.selection {
+            Some(selection) => {
+                let mut selection = selection.clone();
+                selection.path = require_active_source(self, &selection.path)?;
+                Some(selection)
+            }
+            None => None,
+        };
+        let create_entity_path = match &intent.target {
+            IntentTarget::CreateEntity { path, .. } => Some(require_active_source(self, path)?),
+            IntentTarget::Existing(_) => None,
+        };
         let mut candidate = self.clone();
-        if let Some(selection) = &intent.selection {
-            require_active_source(self, &selection.path)?;
+        if let Some(selection) = &selection {
             let original = self.document(&selection.path)?;
             if selection.expected_text.is_empty()
                 || original.get(selection.start..selection.end)
@@ -120,8 +131,9 @@ impl Project {
             // 先替换正文，避免在同一文件创建实体后使原始字节位置偏移。
             candidate.set_text(&selection.path, replacement)?;
         }
-        if let IntentTarget::CreateEntity { path, draft } = &intent.target {
-            require_active_source(self, path)?;
+        if let (IntentTarget::CreateEntity { draft, .. }, Some(path)) =
+            (&intent.target, &create_entity_path)
+        {
             candidate.write_entity(path, None, draft)?;
         }
         let compiled = candidate.compile();
@@ -135,7 +147,7 @@ impl Project {
         if compiled.analysis.catalog.object(&target).is_none() {
             return Err("引用目标不存在".into());
         }
-        if let Some(selection) = &intent.selection {
+        if let Some(selection) = &selection {
             let count = |result: &crate::CompileResult| {
                 result
                     .analysis
@@ -201,12 +213,90 @@ impl Project {
     }
 }
 
-fn require_active_source(project: &Project, path: &Path) -> Result<(), String> {
-    if !path.is_absolute()
-        || !path.starts_with(&project.root)
-        || !project.sources().contains_key(path)
+fn require_active_source(project: &Project, path: &Path) -> Result<PathBuf, String> {
+    // Web's `/world` mount is workspace-absolute even when Path::is_absolute returns false.
+    let web_rooted = matches!(
+        path.components().next(),
+        Some(std::path::Component::RootDir)
+    ) && matches!(
+        project.root.components().next(),
+        Some(std::path::Component::RootDir)
+    );
+    let absolute = path.is_absolute() || web_rooted;
+    let root_absolute = project.root.is_absolute() || web_rooted;
+    let traverses_root = web_rooted
+        && path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir);
+    let root = lexical_absolute_path(&project.root);
+    let path = lexical_absolute_path(path);
+    if !absolute
+        || !root_absolute
+        || traverses_root
+        || !path.starts_with(&root)
+        || !project.sources().contains_key(&path)
     {
         return Err("源文件必须是工作区内已载入的活动源码".into());
     }
-    Ok(())
+    Ok(path)
+}
+
+fn lexical_absolute_path(path: &Path) -> PathBuf {
+    // Normalize VFS paths lexically; browser-mounted paths have no host filesystem entry.
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let rooted = matches!(
+        absolute.components().next(),
+        Some(std::path::Component::Prefix(_) | std::path::Component::RootDir)
+    );
+    let mut normalized = PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if normalized.file_name().is_some() {
+                    normalized.pop();
+                } else if !rooted {
+                    normalized.push(part.as_os_str());
+                }
+            }
+            _ => normalized.push(part.as_os_str()),
+        }
+    }
+    normalized
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{lexical_absolute_path, require_active_source};
+    use crate::project::Project;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn web_rooted_source_requires_loaded_identity_and_stays_within_root() {
+        let mut project = Project::new(
+            &std::env::temp_dir().join(format!("worldline-web-path-{}", std::process::id())),
+        );
+        let original_entry = project.entry.clone();
+        let document = project.documents.remove(&original_entry).unwrap();
+        let root = PathBuf::from(r"\world")
+            .join(format!("web-path-{}", std::process::id()));
+        let entry = root.join("world.wl");
+        project.root = root.clone();
+        project.entry = entry.clone();
+        project.documents.clear();
+        project
+            .documents
+            .insert(lexical_absolute_path(&entry), document);
+
+        assert!(!entry.is_absolute());
+        assert_eq!(
+            require_active_source(&project, &entry).unwrap(),
+            lexical_absolute_path(&entry)
+        );
+        assert!(require_active_source(&project, &root.join("..").join("outside.wl")).is_err());
+        assert!(
+            require_active_source(&project, &PathBuf::from(r"\elsewhere\world.wl")).is_err()
+        );
+        assert!(require_active_source(&project, Path::new("world.wl")).is_err());
+    }
 }
