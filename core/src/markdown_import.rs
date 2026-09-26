@@ -1704,7 +1704,7 @@ fn parse_page(relative: &str, bytes: &[u8], text: &str) -> Result<SourcePage, St
     };
 
     let body_start = if text.starts_with("---\n") || text.starts_with("---\r\n") {
-        let mut offset = 0usize;
+        let mut offset = text.find('\n').map_or(0, |newline| newline + 1);
         let mut boundary = None;
         for line in text.split_inclusive('\n').skip(1) {
             offset += line.len();

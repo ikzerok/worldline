@@ -758,3 +758,26 @@ fn files_snapshot_apply_rechecks_source_and_keeps_language_upgrade_confirmation_
         "1.9"
     );
 }
+
+#[test]
+fn markdown_front_matter_closing_separator_is_not_a_horizontal_rule_loss() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.source.join("harbor.md"),
+        "---\nid: harbor\ntitle: 雾港\nkind: place\n---\n# 雾港\n正文。\n",
+    )
+    .unwrap();
+    let project = fixture.project();
+    let request = fixture.request(&project);
+
+    let plan = project.preview_markdown_import(&request).unwrap();
+
+    assert!(
+        !plan
+            .losses
+            .iter()
+            .any(|loss| loss.source == "harbor.md" && loss.code == "UNSUPPORTED_HORIZONTAL_RULE"),
+        "{:?}",
+        plan.losses
+    );
+}
