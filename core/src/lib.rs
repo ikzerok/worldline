@@ -30,6 +30,7 @@ pub mod presentation;
 pub mod presentation_commands;
 pub mod presentation_presets;
 pub mod project;
+pub mod queries;
 pub mod recovery;
 pub mod refactor;
 pub mod reference_impact;

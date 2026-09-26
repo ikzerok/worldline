@@ -24,6 +24,7 @@ fn main() -> ExitCode {
             eprintln!(
                 "      wl catalog <目录或入口.wl> [--tag ID] [--recursive] [--kind 类型] [--json]"
             );
+            eprintln!("      wl catalog-query <目录或入口> --query '<JSON DTO>' [--offset N] [--page-size N] [--max-candidates N] [--cursor '<JSON 游标>'] [--json]");
             eprintln!("      wl workspace check <目录> [--json]");
             eprintln!("      wl maps list <目录> [--json]");
             eprintln!(

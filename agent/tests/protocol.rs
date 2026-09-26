@@ -62,6 +62,121 @@ fn temp_relation_project(name: &str, source: &str) -> std::path::PathBuf {
     )
 }
 
+#[test]
+fn catalog_query_rpc_uses_core_cursor_and_returns_stale_cursor_errors() {
+    let root = temp_entity_project(
+        "catalog-query-rpc",
+        "entity harbor kind place as \"港口\"\nentity lighthouse kind place as \"灯塔\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let query = json!({
+        "schema_version": 1,
+        "filters": [{"dimension": "kind", "values": ["entity"]}]
+    });
+    let (_, first_responses) = exchange(&[
+        req(1, "project.open", json!({"path": path.clone()})),
+        req(
+            2,
+            "catalog.query",
+            json!({"project_id":"p1", "query":query.clone(), "page_size":1}),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let first = &first_responses[1]["result"];
+    assert_eq!(first["ok"], true, "{first:?}");
+    assert_eq!(first["query"]["total"], 2);
+    assert_eq!(first["query"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(first["read_only"], false);
+    let cursor = first["query"]["next"].clone();
+    assert!(cursor.is_object());
+
+    let (_, second_responses) = exchange(&[
+        req(
+            1,
+            "catalog.query",
+            json!({"path":path.clone(), "query":query.clone(), "cursor":cursor.clone()}),
+        ),
+        req(2, "shutdown", json!({})),
+    ]);
+    let second = &second_responses[0]["result"];
+    assert_eq!(second["ok"], true, "{second:?}");
+    assert_eq!(second["query"]["offset"], 1);
+    assert_eq!(second["query"]["items"].as_array().unwrap().len(), 1);
+
+    std::fs::write(
+        root.join("world.wl"),
+        "entity harbor kind place as \"港口\"\nentity lighthouse kind place as \"灯塔\"\nentity island kind place as \"岛屿\"\nevent start\n  -> END\n",
+    )
+    .unwrap();
+    let (_, stale_responses) = exchange(&[
+        req(
+            1,
+            "catalog.query",
+            json!({"path":path, "query":query, "cursor":cursor}),
+        ),
+        req(2, "shutdown", json!({})),
+    ]);
+    let stale = &stale_responses[0]["result"];
+    assert_eq!(stale["ok"], false, "{stale:?}");
+    assert_eq!(stale["error"]["code"], "STALE_CURSOR");
+    assert!(stale["query"].is_null());
+}
+
+#[test]
+fn catalog_query_rpc_keeps_read_only_and_error_boundaries() {
+    let root = temp_workspace(
+        "catalog-query-read-only",
+        r#"{"schema_version":1,"language_version":"1.10","required_features":["future.catalog.v2"]}"#,
+        "entity harbor kind place as \"港口\"\nevent start\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "catalog.query",
+            json!({"path":path.clone(), "query":{"schema_version":1,"filters":[]}}),
+        ),
+        req(
+            2,
+            "catalog.query",
+            json!({"path":path.clone(), "query":{"filters":[]}}),
+        ),
+        req(
+            3,
+            "catalog.query",
+            json!({
+                "path":path,
+                "query":{"schema_version":1,"filters":[{"dimension":"kind","values":["future-kind"]}]}
+            }),
+        ),
+        req(
+            4,
+            "catalog.query",
+            json!({
+                "path":path,
+                "query":{"schema_version":1,"filters":[]},
+                "max_candidates":1
+            }),
+        ),
+        req(5, "shutdown", json!({})),
+    ]);
+    let readonly = &responses[0]["result"];
+    assert_eq!(readonly["ok"], true, "{readonly:?}");
+    assert_eq!(readonly["read_only"], true);
+    assert!(!readonly["workspace_diagnostics"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(responses[1]["error"]["code"], -32602);
+    assert_eq!(responses[2]["result"]["ok"], false);
+    assert_eq!(responses[2]["result"]["error"]["code"], "INVALID_QUERY");
+    assert_eq!(responses[3]["result"]["ok"], false);
+    assert_eq!(
+        responses[3]["result"]["error"]["code"],
+        "CANDIDATE_BUDGET_EXCEEDED"
+    );
+}
+
 fn register_entity_test_map(root: &std::path::Path) -> std::path::PathBuf {
     let manifest_path = root.join(".world/project.json");
     let mut manifest: serde_json::Value =

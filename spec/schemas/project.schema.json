@@ -55,6 +55,11 @@
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
       "additionalProperties": { "type": "string", "minLength": 1 }
     },
+    "saved_queries": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
     "source_config": {
       "type": "object",
       "additionalProperties": true,
@@ -88,6 +93,21 @@
         "properties": {
           "required_features": {
             "contains": { "const": "presentation.manuscripts.v1" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "saved_queries": { "type": "object", "minProperties": 1 }
+        },
+        "required": ["saved_queries"]
+      },
+      "then": {
+        "properties": {
+          "required_features": {
+            "contains": { "const": "catalog.saved_queries.v1" }
           }
         }
       }

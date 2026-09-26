@@ -65,6 +65,16 @@ catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
 由清单选择语言版本;没有清单的旧调用仍固定使用 1.9。直接 source API 和旧
 CLI 调用不会因出现 `entity` 文本而隐式升级。
 
+`wl catalog-query <目录或入口> --query '<JSON DTO>' [--offset N] [--page-size N]`
+按 core 的 `CatalogQuery` DTO 查询资料；可选 `--max-candidates N` 设置候选预算。
+续页通过 `--cursor '<JSON 游标>'` 传入上一页 `query.next`，使用游标时不能再传分页选项。
+`--json` 结果的公共工作区字段与 `workspace check` 相同，`query` 字段包含 core 的
+分页结果（`summary`、`snapshot`、`offset`、`total`、`items`、`next`、`diagnostics`）。
+顶层 `diagnostics` 仍只属于故事编译域，`workspace_diagnostics` 保留工作区诊断。
+查询错误以 `{ok:false,error:{code,message},query:null}` 返回；游标绑定查询和当前
+Project 快照，变更后返回 `STALE_CURSOR`，调用方应从第一页重查。只读工作区仍可成功查询。
+此命令与既有 `wl catalog` 并存，后者的标签目录输出保持原契约。
+
 ### 2.6 `wl entity` 作者资料编辑
 
 `wl entity create <目录或入口> --id ID --kind 类型 --display 名称`
@@ -294,6 +304,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `project.analyze` | `{project_id}` | `{ok, language_version, baseline, catalog, maps, references, diagnostics, workspace_diagnostics, read_only, conflicts?}` |
 | `workspace.check` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, stats, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}`；工程可读但有只读诊断时仍返回 `ok:true` |
 | `maps.list` | `{path}` 或 `{project_id}` | `{ok, schema_version, language_version, workspace_revision, maps, references, diagnostics, workspace_diagnostics, read_only, truncated, continuation, conflicts?}` |
+| `catalog.query` | `{path, query, offset?, page_size?, max_candidates?}` 或 `{project_id, query, ...}`；续页使用 `{path|project_id, query, cursor}`，cursor 与分页选项互斥 | `{ok, schema_version, language_version, workspace_revision, query:{summary, snapshot, offset, total, items, next, diagnostics}, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`query` 为 core `CatalogQuery` DTO，`items` 每项含 `TargetRef`、source 与 reasons；参数类型错误用 `-32602`，语义查询错误在 result 中以 `ok:false` 和稳定 `error.code` 返回 |
 | `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?, scope_refs?, include_unscoped?, include_period_children?}` 或同字段的 `project_id` 请求 | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`scope_refs` 为 TargetRef 数组，同维度 OR、跨维度 AND；未标范围仅在 `include_unscoped=true` 时包含；时期子树仅在 `include_period_children=true` 时显式展开；`offset` 为非负整数续查偏移，continuation 保留全部筛选；未知目标/范围/类型或深度参数使用 error `-32602` |
 | `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `relation.type.update` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | 同 `relation.type.create`;关系类型 ID 保持稳定 |
@@ -328,7 +339,12 @@ v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目
 `read_only: true`；工程仍可返回 `project_id`、`catalog` 和最新 `baseline`，但
 `entity.*` 必须返回故事层 `READ_ONLY` 结果而不写盘。已有 `project_id` 的查询和编辑
 请求都先刷新工作区，再计算这些分域诊断，因此外部新增未知能力或展示文档变化也会
-立即反映在 `project.analyze`、`workspace.check`、`maps.list`、关系查询与后续编辑结果中。
+立即反映在 `project.analyze`、`workspace.check`、`maps.list`、`catalog.query`、关系查询与后续编辑结果中。
+`catalog.query` 只读当前 Project 缓冲；`cursor` 绑定 core 生成的查询指纹与内容基线，查询 DTO
+或快照变化时返回 result `ok:false`、`error.code: "STALE_CURSOR"`，不得按旧 offset 猜测续页。
+未知只读能力不会阻止查询，但故事编译错误、无效 DTO/选项和候选预算超限都返回
+`ok:false` 的稳定错误码与中文 message；只有参数类型错误或未知 `project_id` 使用 JSON-RPC error。
+core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没有请求中断机制，因此不承诺传输层取消。
 关系查询的 `offset` 必须与同一 `target`、`depth`、方向和类型筛选及未变化的
 `workspace_revision` 一起使用；基线变化后应从 `offset: 0` 重新查询。`relation.*` 和
 `relation.promote.*` 与 `entity.*` 一样只接受语言 1.10 的可写工作区；关系写入

@@ -16,7 +16,7 @@
 
 ## 创作文档会话
 
-Project 将 `.wl` 源码与清单注册的展示 JSON 分别保存在源码文档与 `authoring_documents` 中。后者包括 `.world/project.json` 自身及其 `maps`、`graph_views`、`manuscripts` 等注册项，保留原始字节；无效 JSON 和无效 UTF-8 不得在读取或另存时被替换。未注册 JSON 仍作为普通文件完整保留。无清单的旧工程不自动创建清单。`manuscripts` 使用稳定书稿 ID 到工作区内 `.json` 相对路径的映射；非空注册要求 `presentation.manuscripts.v1`，且不能与清单自身或其他展示文档共用路径。路径越界、无效注册或缺少能力时产生 WS004/WS003 并阻止受影响的写入；书稿契约见 [manuscript.md](manuscript.md)。
+Project 将 `.wl` 源码与清单注册的展示 JSON 分别保存在源码文档与 `authoring_documents` 中。后者包括 `.world/project.json` 自身及其 `maps`、`graph_views`、`manuscripts`、`saved_queries` 等注册项，保留原始字节；无效 JSON 和无效 UTF-8 不得在读取或另存时被替换。未注册 JSON 仍作为普通文件完整保留。无清单的旧工程打开时不自动创建清单；首次保存查询定义可创建兼容当前语言版本的最小清单。`manuscripts` 使用稳定书稿 ID 到工作区内 `.json` 相对路径的映射；非空注册要求 `presentation.manuscripts.v1`，且不能与清单自身或其他展示文档共用路径。`saved_queries` 同样使用稳定 ID、工作区内 `.json` 相对路径，非空注册要求 `catalog.saved_queries.v1`；它保存共享查询定义，不保存个人收藏或待办状态。路径越界、无效注册或缺少能力时产生 WS004/WS003 并阻止受影响的写入；书稿契约见 [manuscript.md](manuscript.md)，查询见 [catalog.md](catalog.md) §7。
 
 两类文档共享修改、外部刷新、保存基线和撤销语义。删除先成为内存墓碑；编译、搜索和导出排除墓碑，include 指向待删除源码时产生 A105，不从磁盘重新载入该源码。保存成功才推进基线；撤销已保存的新建或删除仍产生相对于当前磁盘的未保存修改。外部清单的注册变更在一次刷新中生效，本地未保存修改遇到外部变化时保留缓冲并报告冲突。
 

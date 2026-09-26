@@ -2,7 +2,9 @@
 
 本目录是 worldline 共同展示与文件契约的唯一机器格式真源。Schema 描述设计目标，不代表当前 Rust 客户端已经实现全部能力；能力协商和跨文件引用约束见 [共同契约](../presentation.md)。
 
-JSON Schema 采用 2020-12 语法。已实现的清单、地图、独立关系、模板、共享网络视图、展示预设、书稿、批注与提案需同时满足本目录形状和核心语义验证；Schema 本身仍不能替代产品行为验收。`comment.schema.json` 与 `proposal.schema.json` 分别约束 M4 锚定讨论和带基线的三方修改提案；`manuscript.schema.json` 约束书稿结构，Project 注册能力见 [manuscript 契约](../manuscript.md)。地图已支持点、折线及简单多边形，遇未知必需能力只读。
+JSON Schema 采用 2020-12 语法。已实现的清单、地图、独立关系、模板、共享网络视图、展示预设、书稿、共享已保存查询、批注与提案需同时满足本目录形状和核心语义验证；Schema 本身仍不能替代产品行为验收。`comment.schema.json` 与 `proposal.schema.json` 分别约束 M4 锚定讨论和带基线的三方修改提案；`manuscript.schema.json` 约束书稿结构，Project 注册能力见 [manuscript 契约](../manuscript.md)。地图已支持点、折线及简单多边形，遇未知必需能力只读。
+
+`saved_query.schema.json` 描述清单注册的共享资料库查询定义。查询 AST 的 OR/AND、缺值、显式关系、分页与快照失效语义由 [Catalog 规范](../catalog.md) §7 和 core 行为验证补充；个人收藏与待办投影不写入该文档。
 
 relation.schema.json 对应语言 1.10 的 Catalog.relations 单项 SemanticRelationInfo：来源说明可为 null，properties 为非执行字面量；版本由查询外层携带，仍接受早期样例的逐项 schema_version。关系真源是 .wl 声明，不另存一份关系 JSON；地图/图布局 JSON 才是持久展示配置。
 

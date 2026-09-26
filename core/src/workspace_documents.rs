@@ -68,6 +68,7 @@ pub(crate) struct Registry {
     pub(crate) presets: BTreeMap<String, PathBuf>,
     pub(crate) comments: BTreeMap<String, PathBuf>,
     pub(crate) proposals: BTreeMap<String, PathBuf>,
+    pub(crate) saved_queries: BTreeMap<String, PathBuf>,
     pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
@@ -180,6 +181,19 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         );
     }
 
+    if object
+        .get("saved_queries")
+        .and_then(Value::as_object)
+        .is_some_and(|queries| !queries.is_empty())
+        && !required_feature(object, "catalog.saved_queries.v1")
+    {
+        registry.report(
+            root,
+            "WS003",
+            "清单注册 saved_queries 时必须声明 required_features catalog.saved_queries.v1",
+        );
+    }
+
     if let Some(config) = object.get("source_config") {
         match parse_source_selection(root, object, config) {
             Ok(selection) => registry.source_selection = Some(selection),
@@ -203,6 +217,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         "presets",
         "comments",
         "proposals",
+        "saved_queries",
     ] {
         let Some(value) = object.get(key) else {
             continue;
@@ -263,6 +278,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "proposals" => {
                         registry.proposals.insert(id.clone(), path);
+                    }
+                    "saved_queries" => {
+                        registry.saved_queries.insert(id.clone(), path);
                     }
                     _ => unreachable!(),
                 }
@@ -448,6 +466,7 @@ fn supported_feature(feature: &str) -> bool {
             | "presentation.presets.v1"
             | "collaboration.comments.v1"
             | "collaboration.proposals.v1"
+            | "catalog.saved_queries.v1"
             | "workspace.source_sets.v1"
     )
 }
