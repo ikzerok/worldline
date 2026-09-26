@@ -1,10 +1,21 @@
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 use worldline_core::authoring::EntityDraft;
 use worldline_core::authoring_intents::{AuthoringIntent, IntentTarget, TextSelection};
 use worldline_core::project::Project;
 
+static NEXT_PROJECT: AtomicU64 = AtomicU64::new(0);
+
 fn project(name: &str) -> Project {
-    let root = std::env::temp_dir().join(format!("worldline-intent-{name}-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "worldline-intent-{name}-{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT_PROJECT.fetch_add(1, Ordering::Relaxed)
+    ));
     fs::create_dir_all(root.join(".world")).unwrap();
     fs::write(root.join("world.wl"), "event start\n  你看见灯塔😀。\n").unwrap();
     fs::write(root.join(".world/project.json"), r#"{"schema_version":1,"language_version":"1.10","required_features":[],"extension":{"keep":true}}"#).unwrap();
