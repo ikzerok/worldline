@@ -158,6 +158,90 @@ fn catalog_query_rpc_uses_core_cursor_and_returns_stale_cursor_errors() {
 }
 
 #[test]
+fn reader_export_rpc_previews_exports_and_rejects_stale_plans() {
+    let root = temp_workspace(
+        "reader-export-rpc",
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":[]}"#,
+        "event intro as \"RPC Public Title\"\n  RPC public prose.\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let selection = json!({
+        "schema_version": 1,
+        "site_title": "RPC Reader",
+        "objects": [{"kind":"event", "id":"intro"}],
+        "manuscripts": [],
+        "attachments": []
+    });
+    let (_, preview_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "reader.export.preview",
+            json!({"project_id":"p1", "selection":selection.clone()}),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let preview = &preview_responses[1]["result"];
+    assert_eq!(preview["ok"], true, "{preview:?}");
+    assert_eq!(preview["operation"], "preview");
+    let digest = preview["plan"]["plan_digest"].as_str().unwrap().to_string();
+
+    let destination = std::env::temp_dir().join(format!(
+        "worldline-reader-export-rpc-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&destination);
+    let (_, apply_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "reader.export.apply",
+            json!({
+                "project_id":"p1",
+                "selection":selection.clone(),
+                "plan_digest":digest.clone(),
+                "output":destination.to_string_lossy().to_string(),
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let applied = &apply_responses[1]["result"];
+    assert_eq!(applied["ok"], true, "{applied:?}");
+    assert!(destination.join("index.html").is_file());
+
+    std::fs::write(
+        root.join("world.wl"),
+        "event intro as \"Changed Title\"\n  Changed prose.\n  -> END\n",
+    )
+    .unwrap();
+    let stale_destination = std::env::temp_dir().join(format!(
+        "worldline-reader-export-stale-rpc-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&stale_destination);
+    let (_, stale_responses) = exchange(&[
+        req(
+            1,
+            "reader.export.apply",
+            json!({
+                "path":path,
+                "selection":selection,
+                "plan_digest":digest,
+                "output":stale_destination.to_string_lossy().to_string(),
+            }),
+        ),
+        req(2, "shutdown", json!({})),
+    ]);
+    let stale = &stale_responses[0]["result"];
+    assert_eq!(stale["ok"], false, "{stale:?}");
+    assert_eq!(stale["error"]["code"], "STALE_PLAN");
+    assert!(!stale_destination.exists());
+    let _ = std::fs::remove_dir_all(destination);
+    let _ = std::fs::remove_dir_all(stale_destination);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn catalog_query_rpc_keeps_read_only_and_error_boundaries() {
     let root = temp_workspace(
         "catalog-query-read-only",

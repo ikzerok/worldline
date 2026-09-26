@@ -92,6 +92,8 @@ new_baseline, diagnostics, workspace_diagnostics, read_only}`；合法 DTO 的�
 preview 返回可审阅映射、冲突、损失和全部待写路径，不写文件；apply 重扫输入并校验预览摘要、内容基线与目标路径。
 成功结果为 `{ok, operation, plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；preview 的 `changed_files` 为空且 `new_baseline` 为 null。成功写入通过 Project 可恢复保存协议；失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，预览/应用失败为 1。输入契约见 [markdown-import.md](markdown-import.md)。
 
+`wl reader-export preview|apply <工程目录或入口> --selection-json '<JSON DTO>' [apply: --plan-digest 摘要 --out 新目录] [--json]` 调用 core `Project::preview_reader_export` / `export_reader_site`。preview 只读当前缓冲，返回 `plan`（作者可见的 `included` 与 `exclusions`、`content_baseline`、`plan_digest`），不写目标；apply 必须提供原选择、摘要和新目录。摘要绑定当前内容基线和被选附件字节；应用前重新验证，过期返回 `STALE_PLAN`，其他应用失败返回 `EXPORT_FAILED`。生成内容、显式允许范围、离线资源与完整备份差异见 [reader-export.md](reader-export.md)。
+
 ### 2.6 `wl entity` 作者资料编辑
 
 `wl entity create <目录或入口> --id ID --kind 类型 --display 名称`
@@ -334,6 +336,8 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `markdown.import.preview` | `{path, source, baseline, id_overrides?, namespace?}` 或以 `project_id` 替代 `path` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；`plan` 含稳定映射、冲突、损失、待写路径与 `plan_digest`，不写文件；只允许且必须提供 `path` 或 `project_id` 之一 |
 | `markdown.import.apply` | 同 preview，并含 `plan_digest`, `accept_losses:boolean`, `allow_language_upgrade:boolean` | `{ok, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；重新验证来源/目标基线，成功后经可恢复保存协议持久化；Project 会话仅在保存成功后更新 |
 | `catalog.query` | `{path, query, offset?, page_size?, max_candidates?}` 或 `{project_id, query, ...}`；续页使用 `{path|project_id, query, cursor}`，cursor 与分页选项互斥 | `{ok, schema_version, language_version, workspace_revision, query:{summary, snapshot, offset, total, items, next, diagnostics}, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`query` 为 core `CatalogQuery` DTO，`items` 每项含 `TargetRef`、source 与 reasons；参数类型错误用 `-32602`，语义查询错误在 result 中以 `ok:false` 和稳定 `error.code` 返回 |
+| `reader.export.preview` | `{path, selection}` 或 `{project_id, selection}`；`selection` 是 core `ReaderExportSelection` DTO | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；只读当前 Project 缓冲，`plan` 含作者专用排除报告与 `plan_digest` |
+| `reader.export.apply` | `{path, selection, plan_digest, output}` 或 `{project_id, selection, plan_digest, output}` | `{ok, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`；摘要过期或发布失败返回 `ok:false` 与 `STALE_PLAN` / `EXPORT_FAILED`，不覆盖已有目标；`reader.preview` 和 `reader.export` 是对应的短方法别名 |
 | `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?, scope_refs?, include_unscoped?, include_period_children?}` 或同字段的 `project_id` 请求 | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`scope_refs` 为 TargetRef 数组，同维度 OR、跨维度 AND；未标范围仅在 `include_unscoped=true` 时包含；时期子树仅在 `include_period_children=true` 时显式展开；`offset` 为非负整数续查偏移，continuation 保留全部筛选；未知目标/范围/类型或深度参数使用 error `-32602` |
 | `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `relation.type.update` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | 同 `relation.type.create`;关系类型 ID 保持稳定 |
@@ -378,6 +382,7 @@ preview 只在 core 候选 Project 中验证并返回候选变更，不保存；
 未知只读能力不会阻止查询，但故事编译错误、无效 DTO/选项和候选预算超限都返回
 `ok:false` 的稳定错误码与中文 message；只有参数类型错误或未知 `project_id` 使用 JSON-RPC error。
 core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没有请求中断机制，因此不承诺传输层取消。
+`reader.export.preview/apply` 同样复用传入 Project 当前缓冲，不先刷新或保存作者文件；apply 只写一个新的站点目录，不更新 `project_id` 的内容、保存基线或运行状态。站点包仅按 selection 白名单生成，作者预览中的排除项和工作区路径不进入包。
 关系查询的 `offset` 必须与同一 `target`、`depth`、方向和类型筛选及未变化的
 `workspace_revision` 一起使用；基线变化后应从 `offset: 0` 重新查询。`relation.*` 和
 `relation.promote.*` 与 `entity.*` 一样只接受语言 1.10 的可写工作区；关系写入
