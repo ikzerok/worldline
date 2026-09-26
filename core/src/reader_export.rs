@@ -308,14 +308,6 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
     }
 
     let mut selected_chapter_pairs = BTreeSet::new();
-    let chapter_count: usize = selection
-        .manuscripts
-        .iter()
-        .map(|book| book.chapters.len())
-        .sum();
-    if chapter_count > MAX_CHAPTERS {
-        return Err("公开章节数量超出 5000 限制".into());
-    }
     for (book_index, book_selection) in selection.manuscripts.iter().enumerate() {
         let index = indexes
             .get(&book_selection.id)
@@ -411,6 +403,13 @@ fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
         || selection.attachments.len() > MAX_ATTACHMENTS
     {
         return Err("阅读包选择超过数量限制".into());
+    }
+    let mut selected_chapters = 0usize;
+    for manuscript in &selection.manuscripts {
+        selected_chapters = selected_chapters.saturating_add(manuscript.chapters.len());
+        if selected_chapters > MAX_CHAPTERS {
+            return Err("公开章节数量超出 5000 限制".into());
+        }
     }
     if has_duplicates(selection.objects.iter())
         || has_duplicates(selection.manuscripts.iter().map(|book| &book.id))

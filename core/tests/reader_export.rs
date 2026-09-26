@@ -288,6 +288,49 @@ fn active_attachment_formats_and_unescaped_site_markup_are_rejected_or_escaped()
 }
 
 #[test]
+fn malformed_selected_manuscript_stays_out_of_the_reader_but_remains_in_backup() {
+    let root = project_root("malformed-manuscript");
+    let manuscript_path = root.join(".world/manuscripts/book.json");
+    let malformed = [b'{', 0xff, b'}'];
+    fs::write(&manuscript_path, malformed).unwrap();
+    let project = Project::open(&root.join("world.wl")).unwrap();
+    assert!(project.preview_reader_export(&selection()).is_err());
+
+    let target = root
+        .parent()
+        .unwrap()
+        .join(format!("reader-malformed-output-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&target);
+    assert!(project
+        .export_reader_site(&selection(), "unreviewed", &target)
+        .is_err());
+    assert!(!target.exists());
+
+    let backup = project.export_files().unwrap();
+    assert_eq!(backup[Path::new(".world/manuscripts/book.json")], malformed);
+    assert_eq!(
+        backup[Path::new(".agent/private.md")],
+        b"AGENT_PRIVATE_SENTINEL"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn reader_export_rejects_a_manuscript_selection_over_the_chapter_budget() {
+    let root = project_root("chapter-budget");
+    let project = Project::open(&root.join("world.wl")).unwrap();
+    let mut request = selection();
+    request.attachments = vec!["private_art".into()];
+    request.manuscripts[0].chapters = (0..=5_000)
+        .map(|index| format!("chapter_{index}"))
+        .collect();
+
+    let error = project.preview_reader_export(&request).unwrap_err();
+    assert!(error.contains("5000 限制"), "unexpected error: {error}");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn pure_content_projects_export_and_arbitrary_file_targets_are_rejected() {
     let root = root("pure-content");
     let _ = fs::remove_dir_all(&root);
