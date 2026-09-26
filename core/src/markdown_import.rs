@@ -197,8 +197,6 @@ struct PlanDigest<'a> {
     name_conflicts: &'a [MarkdownNameConflict],
     files: &'a [MarkdownImportFilePreview],
     requires_language_upgrade: bool,
-    accept_losses: bool,
-    allow_language_upgrade: bool,
 }
 
 impl Project {
@@ -777,8 +775,6 @@ fn prepare_preview(
         name_conflicts: &name_conflicts,
         files: &files,
         requires_language_upgrade,
-        accept_losses: request.accept_losses,
-        allow_language_upgrade: request.allow_language_upgrade,
     })?;
     let can_apply = conflicts.is_empty()
         && (losses.is_empty() || request.accept_losses)

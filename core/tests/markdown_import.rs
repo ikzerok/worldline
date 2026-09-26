@@ -425,3 +425,22 @@ fn markdown_unreferenced_files_are_reported_deterministically_and_not_copied() {
         .iter()
         .any(|file| file.source.as_deref() == Some("media/map.bin")));
 }
+
+#[test]
+fn markdown_apply_acceptance_is_separate_from_the_reviewed_candidate_digest() {
+    let fixture = Fixture::new();
+    let mut project = fixture.project();
+    let mut request = fixture.request(&project);
+    let plan = project.preview_markdown_import(&request).unwrap();
+    assert!(!plan.can_apply);
+
+    request.accept_losses = true;
+    request.allow_language_upgrade = true;
+    let result = project
+        .apply_markdown_import(&request, &plan.plan_digest)
+        .unwrap();
+
+    assert!(result.plan.can_apply);
+    assert_eq!(result.plan.plan_digest, plan.plan_digest);
+    assert_eq!(result.new_baseline, project.content_baseline());
+}
