@@ -636,6 +636,35 @@ fn explicit_object_refs_are_tracked_rewritten_and_do_not_promote_plain_strings()
 }
 
 #[test]
+fn renaming_an_entity_rewrites_its_self_reference_without_blocking_deletion_analysis() {
+    let source = concat!(
+        "entity harbor kind place as \"港口\"\n",
+        "  description \"雾港\"\n",
+        "  property origin = ref(\"entity\", \"harbor\")\n",
+        "event arrival\n",
+        "  -> END\n",
+    );
+    let mut project = project_with_object_refs("object-ref-self-rename", "1.10", true, source);
+    let target = worldline_core::TargetRef::new("entity", "harbor");
+    let before = project.compile();
+    assert!(!before.has_errors(), "{:?}", before.diagnostics);
+    let impact = project.deletion_impact(&target);
+    assert!(impact.complete, "{:?}", impact.diagnostics);
+    assert!(impact.can_delete(), "{:?}", impact.content_references);
+
+    let fingerprint = before.analysis.fingerprint;
+    let plan = project.plan_rename_target(&target, "beacon").unwrap();
+    project.apply_rename_plan(&plan).unwrap();
+    let after = project.compile();
+    assert!(!after.has_errors(), "{:?}", after.diagnostics);
+    assert_eq!(after.analysis.fingerprint, fingerprint);
+    assert!(project
+        .document(&project.root.join("world.wl"))
+        .unwrap()
+        .contains("ref(\"entity\", \"beacon\")"));
+}
+
+#[test]
 fn object_ref_syntax_requires_language_and_manifest_capability_and_reports_missing_targets() {
     let source = concat!(
         "character keeper as \"守灯人\"\n",

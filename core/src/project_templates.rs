@@ -13,7 +13,15 @@ use crate::{CompileResult, Diagnostic, Span};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+type PreparedTemplateMutation = (
+    Project,
+    Option<ProjectTemplate>,
+    Option<ProjectTemplate>,
+    Vec<PathBuf>,
+    Vec<Diagnostic>,
+);
 
 pub const PROJECT_TEMPLATE_REQUIRED_FEATURE: &str = "content.templates.v1";
 pub const OBJECT_REFS_REQUIRED_FEATURE: &str = "content.object_refs.v1";
@@ -274,16 +282,7 @@ fn prepare_template_mutation(
     project: &Project,
     mutation: &ProjectTemplateMutation,
     check_integrity: bool,
-) -> Result<
-    (
-        Project,
-        Option<ProjectTemplate>,
-        Option<ProjectTemplate>,
-        Vec<PathBuf>,
-        Vec<Diagnostic>,
-    ),
-    String,
-> {
+) -> Result<PreparedTemplateMutation, String> {
     let manifest = manifest_path(&project.root);
     let existing_manifest = project
         .authoring_documents
@@ -331,7 +330,7 @@ fn prepare_template_mutation(
             (id.clone(), Some(document.clone()), "import")
         }
         ProjectTemplateMutation::Replace { id, document } => {
-            if crate::workspace_documents::valid_template_id(id) == false {
+            if !crate::workspace_documents::valid_template_id(id) {
                 return Err("TPL003：工程模板 ID 必须使用 project: 命名空间".into());
             }
             if !registry.templates.contains_key(id) {
@@ -340,7 +339,7 @@ fn prepare_template_mutation(
             (id.clone(), Some(document.clone()), "replace")
         }
         ProjectTemplateMutation::Delete { id } => {
-            if crate::workspace_documents::valid_template_id(id) == false {
+            if !crate::workspace_documents::valid_template_id(id) {
                 return Err("TPL003：工程模板 ID 必须使用 project: 命名空间".into());
             }
             if !registry.templates.contains_key(id) {
@@ -1272,51 +1271,48 @@ fn property_matches_json(value: &PropertyValue, expected: &Value) -> bool {
 }
 
 fn preserve_unknown_fields(old: &Value, new: &mut Value, context: &str) {
-    match (old, new) {
-        (Value::Object(old), Value::Object(new)) => {
-            let known: &[&str] = match context {
-                "root" => &[
-                    "schema_version",
-                    "id",
-                    "title",
-                    "applies_to",
-                    "fields",
-                    "required_features",
-                ],
-                "applies_to" | "target" => &["kind", "entity_type"],
-                "field" => &[
-                    "id", "key", "label", "type", "required", "choices", "target", "fields",
-                    "default",
-                ],
-                _ => &[],
-            };
-            for (key, value) in old {
-                if !known.contains(&key.as_str()) && !new.contains_key(key) {
-                    new.insert(key.clone(), value.clone());
-                }
-            }
-            for key in ["applies_to", "target"] {
-                if let (Some(old), Some(new)) = (old.get(key), new.get_mut(key)) {
-                    preserve_unknown_fields(old, new, key);
-                }
-            }
-            if let (Some(Value::Array(old_fields)), Some(Value::Array(new_fields))) =
-                (old.get("fields"), new.get_mut("fields"))
-            {
-                let old_by_id = old_fields
-                    .iter()
-                    .filter_map(|field| Some((field.get("id")?.as_str()?, field)))
-                    .collect::<HashMap<_, _>>();
-                for field in new_fields {
-                    if let Some(id) = field.get("id").and_then(Value::as_str) {
-                        if let Some(old_field) = old_by_id.get(id) {
-                            preserve_unknown_fields(old_field, field, "field");
-                        }
-                    }
+    let (Value::Object(old), Value::Object(new)) = (old, new) else {
+        return;
+    };
+    let known: &[&str] = match context {
+        "root" => &[
+            "schema_version",
+            "id",
+            "title",
+            "applies_to",
+            "fields",
+            "required_features",
+        ],
+        "applies_to" | "target" => &["kind", "entity_type"],
+        "field" => &[
+            "id", "key", "label", "type", "required", "choices", "target", "fields", "default",
+        ],
+        _ => &[],
+    };
+    for (key, value) in old {
+        if !known.contains(&key.as_str()) && !new.contains_key(key) {
+            new.insert(key.clone(), value.clone());
+        }
+    }
+    for key in ["applies_to", "target"] {
+        if let (Some(old), Some(new)) = (old.get(key), new.get_mut(key)) {
+            preserve_unknown_fields(old, new, key);
+        }
+    }
+    if let (Some(Value::Array(old_fields)), Some(Value::Array(new_fields))) =
+        (old.get("fields"), new.get_mut("fields"))
+    {
+        let old_by_id = old_fields
+            .iter()
+            .filter_map(|field| Some((field.get("id")?.as_str()?, field)))
+            .collect::<HashMap<_, _>>();
+        for field in new_fields {
+            if let Some(id) = field.get("id").and_then(Value::as_str) {
+                if let Some(old_field) = old_by_id.get(id) {
+                    preserve_unknown_fields(old_field, field, "field");
                 }
             }
         }
-        _ => {}
     }
 }
 
@@ -1343,7 +1339,7 @@ fn ensure_disk_matches_saved_baselines(project: &Project) -> Result<(), String> 
     Ok(())
 }
 
-fn project_id(root: &PathBuf) -> String {
+fn project_id(root: &Path) -> String {
     let name = root
         .file_name()
         .and_then(|name| name.to_str())

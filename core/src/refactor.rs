@@ -63,6 +63,22 @@ impl Project {
             .entry(PathBuf::from(&object.file))
             .or_default()
             .insert(object.line);
+        for reference in content
+            .analysis
+            .catalog
+            .references
+            .iter()
+            .filter(|reference| {
+                reference.kind == "对象属性引用"
+                    && reference.source == *target
+                    && reference.target == *target
+            })
+        {
+            lines
+                .entry(PathBuf::from(&reference.file))
+                .or_default()
+                .insert(reference.line);
+        }
         for reference in &impact.content_references {
             lines
                 .entry(PathBuf::from(&reference.file))
