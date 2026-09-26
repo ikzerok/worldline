@@ -300,6 +300,8 @@ M4文件协作先实现按稳定ID的三方diff/merge。不同标记不同字段
 
 提案由清单 `proposals` 注册，必需能力为 `collaboration.proposals.v1`。`ProposalDocument v1` 记录稳定 ID、作者、理由、状态及逐文件 `{path, domain, base, proposed}`；`domain` 明确区分 `content` 与 `presentation`。提案保存不采纳修改，采纳前再次读取当前缓冲做三方预览：当前等于 base 时可应用 proposed；JSON 对象的不同稳定键可递归合并；同字段并发修改、删除/修改、数组并发修改及正文并发改写均产生冲突并整批零写入。成功采纳后才把提案标为 `accepted`，且内容/版式实际修改与状态更新在同一候选 Project 中提交。
 
+冲突方案通过 `apply_proposal_with_resolutions` 明确提交；每项按 core 预览返回的 `{path, location}` 唯一寻址，须覆盖全部冲突，重复、缺失或额外方案一律拒绝。非空 `location` 是 JSON Pointer，`value` 必须是完整 JSON 值文本，`None` 明确删除该对象成员或数组项；结构化 JSON 根冲突必须提供完整 JSON 文本。空位置的文件冲突接受完整 UTF-8 文件文本或 `None`（删除文件）。core 重新检查提案、修订、内容基线和当前冲突集合；JSON 无法解析、内容候选编译失败或仍有冲突时，整个候选零写入。方案应用不改写提案内的 base/proposed，也不改变当前稿原件；仅在所有冲突经 core 校验后，才在同一候选中提交解决结果并把提案标记为 `accepted`。
+
 审阅预览为只读 DTO，包含当前 Project 内容基线、逐文件三方原文与差异、冲突、引用影响及截断标记。展示 JSON 用 JSON Pointer 定位字段，正文以空行分隔的段落及 UTF-8 字节范围定位；无法无歧义对齐的正文段落须设置 `alignment_uncertain` 并回退到三方原文，不伪造段落对应或字节范围。JSON 字段未能无歧义映射到词法位置时，源范围保守指向整份原文，供审阅者回看，不伪造精确行号。无法结构化的展示文档回退为三方原文。内容文件的引用影响基于 core 对当前 Project 与应用整份提案后的候选各编译一次，列出受改动文件内对象在两套目录中的入站引用；编译失败或超过引用上限时标记 `reference_impact_complete = false`，不得把部分结果显示成“没有影响”。审阅差异、原文、受影响对象及每对象入站引用的上限见§11；超限显式标记截断/不完整，预览截断不改变合并或采纳规则。机器可序列化此 DTO。采纳命令必须同时携带预览的内容基线与修订，并重新校验实际当前内容；过期预览不能作为覆盖授权。
 
 `changed` 表示候选文件字节会变化，`semantic_changed` 表示结构化值变化；只调整 JSON 空白或键顺序不能列作作者语义差异。

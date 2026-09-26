@@ -227,6 +227,15 @@ pub struct ApplyProposalCommand {
     pub proposal_id: String,
 }
 
+/// A resolver's explicit value for one core-reported proposal conflict.
+/// `None` deletes a JSON member, array item, or entire file-level conflict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProposalResolution {
+    pub path: String,
+    pub location: String,
+    pub value: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct CollaborationResult {
     pub changed_files: Vec<PathBuf>,
@@ -750,6 +759,67 @@ fn pointer_child(pointer: &str, key: &str) -> String {
     } else {
         format!("{pointer}/{key}")
     }
+}
+
+fn set_json_pointer(root: &mut Value, pointer: &str, value: Option<Value>) -> Result<(), String> {
+    if pointer.is_empty() {
+        *root = value.ok_or("JSON 根冲突不能删除整个值")?;
+        return Ok(());
+    }
+    let tokens = pointer
+        .strip_prefix('/')
+        .ok_or("提案冲突位置不是 JSON Pointer")?
+        .split('/')
+        .map(|token| token.replace("~1", "/").replace("~0", "~"))
+        .collect::<Vec<_>>();
+    let (last, parents) = tokens
+        .split_last()
+        .ok_or("提案冲突位置不是有效 JSON Pointer")?;
+    let mut parent = root;
+    for token in parents {
+        parent = match parent {
+            Value::Object(object) => object
+                .get_mut(token)
+                .ok_or("提案冲突的父字段已不存在")?,
+            Value::Array(array) => {
+                let index = token
+                    .parse::<usize>()
+                    .map_err(|_| "提案冲突的数组索引无效")?;
+                array
+                    .get_mut(index)
+                    .ok_or("提案冲突的父数组项已不存在")?
+            }
+            _ => return Err("提案冲突的父值不是对象或数组".into()),
+        };
+    }
+    match parent {
+        Value::Object(object) => {
+            if let Some(value) = value {
+                object.insert(last.clone(), value);
+            } else {
+                object.remove(last);
+            }
+        }
+        Value::Array(array) => {
+            let index = last
+                .parse::<usize>()
+                .map_err(|_| "提案冲突的数组索引无效")?;
+            match value {
+                Some(value) if index == array.len() => array.push(value),
+                Some(value) => {
+                    *array
+                        .get_mut(index)
+                        .ok_or("提案冲突的数组项已不存在")? = value;
+                }
+                None if index < array.len() => {
+                    array.remove(index);
+                }
+                None => return Err("提案冲突的数组项已不存在".into()),
+            }
+        }
+        _ => return Err("提案冲突的父值不是对象或数组".into()),
+    }
+    Ok(())
 }
 
 const MAX_REVIEW_DIFFERENCES: usize = 256;
@@ -1507,23 +1577,40 @@ fn current_text(
     Ok((current, Some(state.authoring)))
 }
 
+struct ProposalMerge {
+    text: Option<String>,
+    conflicts: Vec<ProposalConflict>,
+    structured: bool,
+}
+
 fn merge_change(
-    project: &Project,
     change: &ProposalFileChange,
-) -> Result<(Option<String>, Vec<ProposalConflict>), String> {
-    let (current, _) = current_text(project, &change.path)?;
-    if current == change.base {
-        return Ok((change.proposed.clone(), Vec::new()));
+    current: Option<&str>,
+) -> Result<ProposalMerge, String> {
+    if current == change.base.as_deref() {
+        return Ok(ProposalMerge {
+            text: change.proposed.clone(),
+            conflicts: Vec::new(),
+            structured: false,
+        });
     }
-    if change.proposed == change.base || current == change.proposed {
-        return Ok((current, Vec::new()));
+    if change.proposed.as_deref() == change.base.as_deref()
+        || current == change.proposed.as_deref()
+    {
+        return Ok(ProposalMerge {
+            text: current.map(str::to_owned),
+            conflicts: Vec::new(),
+            structured: false,
+        });
     }
     if change.domain == "presentation" {
-        if let (Some(base), Some(current_text), Some(proposed)) =
-            (&change.base, &current, &change.proposed)
-        {
+        if let (Some(base), Some(current), Some(proposed)) = (
+            change.base.as_deref(),
+            current,
+            change.proposed.as_deref(),
+        ) {
             let base_json = parse_unique_json(base.as_bytes());
-            let current_json = parse_unique_json(current_text.as_bytes());
+            let current_json = parse_unique_json(current.as_bytes());
             let proposed_json = parse_unique_json(proposed.as_bytes());
             if let (Ok(base_json), Ok(current_json), Ok(proposed_json)) =
                 (base_json, current_json, proposed_json)
@@ -1535,13 +1622,14 @@ fn merge_change(
                     Some(&current_json),
                     Some(&proposed_json),
                 );
-                return Ok((
-                    merged
+                return Ok(ProposalMerge {
+                    text: merged
                         .map(|value| serde_json::to_string_pretty(&value))
                         .transpose()
                         .map_err(|error| error.to_string())?,
                     conflicts,
-                ));
+                    structured: true,
+                });
             }
         }
     }
@@ -1552,7 +1640,11 @@ fn merge_change(
     } else {
         "展示文档无法进行安全结构化三方合并"
     };
-    Ok((current, vec![conflict(&change.path, "", message)]))
+    Ok(ProposalMerge {
+        text: current.map(str::to_owned),
+        conflicts: vec![conflict(&change.path, "", message)],
+        structured: false,
+    })
 }
 
 pub fn preview_proposal(
@@ -1564,9 +1656,9 @@ pub fn preview_proposal(
     let mut all_conflicts = Vec::new();
     let reference_impacts_by_file = proposal_reference_impacts(project, proposal);
     for change in &proposal.changes {
-        let (merged, conflicts) = merge_change(project, change)?;
         let (current, tracked_kind) = current_text(project, &change.path)?;
-        let mut conflicts = conflicts;
+        let merge = merge_change(change, current.as_deref())?;
+        let mut conflicts = merge.conflicts;
         if tracked_kind.is_none()
             && current.is_none()
             && change.base.is_none()
@@ -1578,7 +1670,7 @@ pub fn preview_proposal(
                 "新文件尚未由当前工作区注册，不能自动接管",
             ));
         }
-        let changed = merged != current;
+        let changed = merge.text != current;
         let (differences, truncated, alignment_uncertain, raw) =
             review_differences(change, current.as_deref());
         let semantic_changed = !differences.is_empty();
@@ -1609,10 +1701,110 @@ pub fn preview_proposal(
     })
 }
 
+fn collect_proposal_resolutions(
+    conflicts: &[ProposalConflict],
+    resolutions: &[ProposalResolution],
+) -> Result<BTreeMap<(String, String), Option<String>>, String> {
+    let mut expected = BTreeSet::new();
+    for conflict in conflicts {
+        if !expected.insert((conflict.path.clone(), conflict.location.clone())) {
+            return Err("提案预览包含重复的冲突位置".into());
+        }
+    }
+    let mut values = BTreeMap::new();
+    for resolution in resolutions {
+        let key = (resolution.path.clone(), resolution.location.clone());
+        if !expected.contains(&key) {
+            return Err("解决方案不对应当前提案冲突".into());
+        }
+        if values.insert(key, resolution.value.clone()).is_some() {
+            return Err("同一提案冲突只能提交一项解决方案".into());
+        }
+    }
+    let unresolved = conflicts
+        .iter()
+        .filter(|conflict| {
+            !values.contains_key(&(conflict.path.clone(), conflict.location.clone()))
+        })
+        .map(|conflict| {
+            format!(
+                "{}{}：{}",
+                conflict.path, conflict.location, conflict.message
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("；");
+    if !unresolved.is_empty() {
+        return Err(format!("提案存在未解决的三方冲突：{unresolved}"));
+    }
+    Ok(values)
+}
+
+fn resolve_change_conflicts(
+    change: &ProposalFileChange,
+    mut merged: ProposalMerge,
+    conflicts: &[ProposalConflict],
+    resolutions: &mut BTreeMap<(String, String), Option<String>>,
+) -> Result<Option<String>, String> {
+    for conflict in conflicts {
+        let key = (conflict.path.clone(), conflict.location.clone());
+        let resolution = resolutions
+            .remove(&key)
+            .ok_or("提案存在未解决的三方冲突")?;
+        if !conflict.location.is_empty() {
+            if !merged.structured {
+                return Err("只有结构化展示冲突可以按 JSON Pointer 解决".into());
+            }
+            let text = merged
+                .text
+                .as_deref()
+                .ok_or("JSON 冲突所在文件已被删除")?;
+            let mut document = parse_unique_json(text.as_bytes())
+                .map_err(|error| format!("当前 JSON 合并结果无效：{error}"))?;
+            let value = resolution
+                .as_deref()
+                .map(|text| parse_unique_json(text.as_bytes()))
+                .transpose()
+                .map_err(|error| format!("冲突解决值不是有效 JSON：{error}"))?;
+            set_json_pointer(&mut document, &conflict.location, value)?;
+            merged.text = Some(
+                serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?,
+            );
+        } else if merged.structured {
+            let text = resolution.ok_or("JSON 根冲突必须提供完整 JSON 值")?;
+            let document = parse_unique_json(text.as_bytes())
+                .map_err(|error| format!("冲突解决值不是有效 JSON：{error}"))?;
+            merged.text = Some(
+                serde_json::to_string_pretty(&document).map_err(|error| error.to_string())?,
+            );
+        } else {
+            if change.domain == "presentation" {
+                if let Some(text) = &resolution {
+                    parse_unique_json(text.as_bytes())
+                        .map_err(|error| format!("冲突解决文档不是有效 JSON：{error}"))?;
+                }
+            }
+            merged.text = resolution;
+        }
+    }
+    Ok(merged.text)
+}
+
+
+/// Applies a proposal only when its fresh preview has no unresolved conflicts.
 pub fn apply_proposal(
     project: &mut Project,
     revision: &mut Revision,
     command: ApplyProposalCommand,
+) -> Result<CollaborationResult, String> {
+    apply_proposal_with_resolutions(project, revision, command, &[])
+}
+/// Rechecks and atomically applies a complete set of explicit conflict decisions.
+pub fn apply_proposal_with_resolutions(
+    project: &mut Project,
+    revision: &mut Revision,
+    command: ApplyProposalCommand,
+    resolutions: &[ProposalResolution],
 ) -> Result<CollaborationResult, String> {
     if command.expected_revision != *revision {
         return Err("StaleRevision：审阅开始后工程修订已变化，请重新预览".into());
@@ -1639,29 +1831,34 @@ pub fn apply_proposal(
         return Err("提案已经结束，不能重复采纳".into());
     }
     let preview = preview_proposal(project, &proposal.draft)?;
-    if !preview.can_apply() {
-        let summary = preview
-            .conflicts
-            .iter()
-            .map(|item| format!("{}{}：{}", item.path, item.location, item.message))
-            .collect::<Vec<_>>()
-            .join("；");
-        return Err(format!("提案存在未解决的三方冲突：{summary}"));
+    let mut resolution_values =
+        collect_proposal_resolutions(&preview.conflicts, resolutions)?;
+    if preview.files.len() != proposal.draft.changes.len() {
+        return Err("提案预览文件与原提案不一致，请重新比较".into());
     }
 
     let mut candidate = project.clone();
     let mut changed_files = Vec::new();
     let mut touched_content = false;
-    for change in &proposal.draft.changes {
-        let (merged, conflicts) = merge_change(project, change)?;
-        if !conflicts.is_empty() {
-            return Err("提案预览已过期，请重新预览".into());
+    for (change, file_preview) in proposal.draft.changes.iter().zip(&preview.files) {
+        if file_preview.path != change.path {
+            return Err("提案预览文件与原提案不一致，请重新比较".into());
         }
-        let path = absolute_path(project, &change.path)?;
-        let (_, tracked_kind) = current_text(project, &change.path)?;
+        let (current, tracked_kind) = current_text(project, &change.path)?;
         let Some(authoring) = tracked_kind else {
             return Err(format!("提案目标未被当前 Project 跟踪：{}", change.path));
         };
+        let merge = merge_change(change, current.as_deref())?;
+        if merge.conflicts != file_preview.conflicts {
+            return Err("提案预览已过期，请重新比较".into());
+        }
+        let merged = resolve_change_conflicts(
+            change,
+            merge,
+            &file_preview.conflicts,
+            &mut resolution_values,
+        )?;
+        let path = absolute_path(project, &change.path)?;
         match merged {
             Some(text) if authoring => {
                 candidate.set_authoring_document(&path, text.into_bytes())?;
@@ -1676,6 +1873,10 @@ pub fn apply_proposal(
             }
         }
         changed_files.push(path);
+    }
+
+    if !resolution_values.is_empty() {
+        return Err("存在未应用的提案解决方案".into());
     }
 
     if touched_content && candidate.compile().has_errors() {

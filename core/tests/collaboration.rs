@@ -2,7 +2,7 @@ use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use worldline_core::collaboration::{
     self, AnchorStatus, ApplyProposalCommand, CommentAnchor, CommentCommand, CommentDraft,
-    ProposalCommand, ProposalDraft, ProposalFileChange, ProposalStatus,
+    ProposalCommand, ProposalDraft, ProposalFileChange, ProposalResolution, ProposalStatus,
 };
 use worldline_core::presentation_commands::Revision;
 use worldline_core::project::Project;
@@ -395,6 +395,247 @@ fn proposal_conflicts_on_same_field_delete_modify_and_array_reorder() {
         .is_err());
         assert_eq!(project.content_baseline(), before_apply);
     }
+}
+
+#[test]
+fn proposal_resolutions_require_every_conflict_and_preserve_the_original_proposal() {
+    let mut project = project("resolve_values");
+    let path = project.root.join(".world/maps/city.json");
+    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
+        .unwrap();
+    let mut proposed_value: serde_json::Value =
+        serde_json::from_str(&map_json(10, 10, &["a", "b"], true)).unwrap();
+    proposed_value["extensions"]["owner/name~tag"] = "提议值".into();
+    let proposed = serde_json::to_string(&proposed_value).unwrap();
+    let draft = proposal("resolve_values", base, proposed.clone());
+    let mut revision = Revision::default();
+    let expected_revision = revision;
+    let baseline = project.content_baseline();
+    collaboration::write_proposal(
+        &mut project,
+        &mut revision,
+        ProposalCommand {
+            expected_revision,
+            expected_baseline: baseline,
+            draft,
+        },
+    )
+    .unwrap();
+
+    let mut current: serde_json::Value =
+        serde_json::from_str(&map_json(20, 20, &["a", "b"], true)).unwrap();
+    current["placements"]["p1"]["annotation"] = "当前注释".into();
+    current["extensions"]["owner/name~tag"] = "当前值".into();
+    let current_text = serde_json::to_string(&current).unwrap();
+    project
+        .set_authoring_document(&path, current_text.as_bytes().to_vec())
+        .unwrap();
+    let indexed = collaboration::build_proposal_index(&project);
+    let preview =
+        collaboration::preview_proposal(&project, &indexed.proposals["resolve_values"].draft)
+            .unwrap();
+    assert_eq!(preview.conflicts.len(), 3, "{:?}", preview.conflicts);
+    let current_bytes = project.authoring_document(&path).unwrap().bytes().to_vec();
+    let current_baseline = project.content_baseline();
+    let current_revision = revision;
+
+    let first = &preview.conflicts[0];
+    let incomplete = [ProposalResolution {
+        path: first.path.clone(),
+        location: first.location.clone(),
+        value: Some("30".into()),
+    }];
+    let expected_revision = revision;
+    let error = collaboration::apply_proposal_with_resolutions(
+        &mut project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline.clone(),
+            proposal_id: "resolve_values".into(),
+        },
+        &incomplete,
+    )
+    .unwrap_err();
+    assert!(error.contains("未解决"), "{error}");
+    assert_eq!(
+        project.authoring_document(&path).unwrap().bytes(),
+        current_bytes.as_slice()
+    );
+    assert_eq!(project.content_baseline(), current_baseline);
+    assert_eq!(revision, current_revision);
+
+    let invalid = preview
+        .conflicts
+        .iter()
+        .map(|conflict| ProposalResolution {
+            path: conflict.path.clone(),
+            location: conflict.location.clone(),
+            value: Some(if conflict.location.ends_with("/x") {
+                "不是 JSON"
+            } else {
+                "40"
+            }
+            .into()),
+        })
+        .collect::<Vec<_>>();
+    let expected_revision = revision;
+    let error = collaboration::apply_proposal_with_resolutions(
+        &mut project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline.clone(),
+            proposal_id: "resolve_values".into(),
+        },
+        &invalid,
+    )
+    .unwrap_err();
+    assert!(error.contains("JSON"), "{error}");
+    assert_eq!(
+        project.authoring_document(&path).unwrap().bytes(),
+        current_bytes.as_slice()
+    );
+    assert_eq!(project.content_baseline(), current_baseline);
+    assert_eq!(revision, current_revision);
+
+    let resolutions = preview
+        .conflicts
+        .iter()
+        .map(|conflict| ProposalResolution {
+            path: conflict.path.clone(),
+            location: conflict.location.clone(),
+            value: Some(
+                if conflict.location.ends_with("/x") {
+                    "30"
+                } else if conflict.location.ends_with("/y") {
+                    "40"
+                } else {
+                    "\"已解决\""
+                }
+                .into(),
+            ),
+        })
+        .collect::<Vec<_>>();
+    let expected_revision = revision;
+    collaboration::apply_proposal_with_resolutions(
+        &mut project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline,
+            proposal_id: "resolve_values".into(),
+        },
+        &resolutions,
+    )
+    .unwrap();
+
+    let merged: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&path).unwrap().bytes()).unwrap();
+    assert_eq!(merged["placements"]["p1"]["x"], 30);
+    assert_eq!(merged["placements"]["p2"]["y"], 40);
+    assert_eq!(merged["extensions"]["owner/name~tag"], "已解决");
+    let stored = &collaboration::build_proposal_index(&project).proposals["resolve_values"];
+    assert_eq!(stored.draft.status, ProposalStatus::Accepted);
+    assert_eq!(
+        stored.draft.changes[0].proposed.as_deref(),
+        Some(proposed.as_str())
+    );
+}
+
+#[test]
+fn proposal_resolution_can_choose_deletion_and_replace_a_text_conflict() {
+    let mut project = project("resolve_delete");
+    let path = project.root.join(".world/maps/city.json");
+    let base = String::from_utf8(project.authoring_document(&path).unwrap().bytes().to_vec())
+        .unwrap();
+    let proposed = map_json(0, 0, &["a", "b"], false);
+    let draft = proposal("resolve_delete", base, proposed);
+    let mut revision = Revision::default();
+    let baseline = project.content_baseline();
+    let expected_revision = revision;
+    collaboration::write_proposal(
+        &mut project,
+        &mut revision,
+        ProposalCommand {
+            expected_revision,
+            expected_baseline: baseline,
+            draft,
+        },
+    )
+    .unwrap();
+    project
+        .set_authoring_document(&path, map_json(20, 0, &["a", "b"], true).into_bytes())
+        .unwrap();
+    let indexed = collaboration::build_proposal_index(&project);
+    let preview =
+        collaboration::preview_proposal(&project, &indexed.proposals["resolve_delete"].draft)
+            .unwrap();
+    assert_eq!(preview.conflicts.len(), 1);
+    let conflict = &preview.conflicts[0];
+    let expected_revision = revision;
+    collaboration::apply_proposal_with_resolutions(
+        &mut project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline,
+            proposal_id: "resolve_delete".into(),
+        },
+        &[ProposalResolution {
+            path: conflict.path.clone(),
+            location: conflict.location.clone(),
+            value: None,
+        }],
+    )
+    .unwrap();
+    let merged: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&path).unwrap().bytes()).unwrap();
+    assert!(!merged["placements"].as_object().unwrap().contains_key("p1"));
+
+    let mut text_project = self::project("resolve_text");
+    let entry = text_project.entry.clone();
+    let base = text_project.document(&entry).unwrap().to_owned();
+    let proposed = base.replacen("\"甲\"", "\"提议\"", 1);
+    let mut revision = Revision::default();
+    let baseline = text_project.content_baseline();
+    let expected_revision = revision;
+    collaboration::write_proposal(
+        &mut text_project,
+        &mut revision,
+        ProposalCommand {
+            expected_revision,
+            expected_baseline: baseline,
+            draft: content_proposal("resolve_text", "world.wl", &base, &proposed),
+        },
+    )
+    .unwrap();
+    let current = base.replacen("\"甲\"", "\"当前\"", 1);
+    text_project.set_text(&entry, current).unwrap();
+    let indexed = collaboration::build_proposal_index(&text_project);
+    let preview =
+        collaboration::preview_proposal(&text_project, &indexed.proposals["resolve_text"].draft)
+            .unwrap();
+    let conflict = &preview.conflicts[0];
+    let resolved = base.replacen("\"甲\"", "\"已解决\"", 1);
+    let expected_revision = revision;
+    collaboration::apply_proposal_with_resolutions(
+        &mut text_project,
+        &mut revision,
+        ApplyProposalCommand {
+            expected_revision,
+            expected_baseline: preview.expected_baseline,
+            proposal_id: "resolve_text".into(),
+        },
+        &[ProposalResolution {
+            path: conflict.path.clone(),
+            location: conflict.location.clone(),
+            value: Some(resolved.clone()),
+        }],
+    )
+    .unwrap();
+    assert_eq!(text_project.document(&entry).unwrap(), resolved.as_str());
+    assert!(!text_project.compile().has_errors());
 }
 
 #[test]
