@@ -1,45 +1,33 @@
-# ADR-0006：CAP-08A 家族/组织与历史投影范围暂缓
+# ADR-0006：CAP-08A 家族/组织与人物/地点历史投影范围
 
-- 状态：范围决策待用户确认；本次仅决定暂不实现投影契约（2026-09-27）。
+- 状态：已决定（用户于 2026-09-27 选择查询时显式映射）。
 - 关联：CAP-08A / [worldline#22](https://github.com/ikzerok/worldline/issues/22)。
-- 范围：只读的家族/组织关系与人物/地点历史投影；不涉及引擎适配器、模拟或新内容真源。
+- 范围：只读查询投影；不涉及持久映射、模拟或引擎适配器。
 
 ## 背景
 
-CAP-08A 明确要求专题投影只使用作者显式关系，不猜测亲属关系、不生成剧情，并要求保留来源、范围、多条同端点关系与不完整时间。但该票仍标记为 `status:decision-gate`，正文称未批准前不开展超出既有边界的实现；目前没有已记录的范围选择。
-
-现有 core 已有可复用的只读能力：`relation_type` 有稳定 ID、方向、显示名/反向显示名和端点约束；`relation_def` 保留完整端点、来源、`scope_refs` 与 ID。`Catalog::query_relations` 以显式类型筛选查询，保留平行边和端点身份，按稳定顺序输出来源，并对循环去重、对结果截断；既有深度与节点/边限制为 1–2 层、250 节点/500 边（`spec/relations.md` §8、`spec/presentation.md` §11）。这些能力尚未定义“家族/组织角色”到作者关系类型的映射，也没有投影 API。
-
-人物事件关联目前由事件中的显式 `with` 产生；独立锚点通过 `anchor_link` 直接关联对象。地点与事件之间没有专用历史关联契约：通用关系、正文链接、锚点链接和地图标记代表不同来源，不能不经选择就混作地点经历。时间真源仍是 `period` 与 `follows` 的偏序；无日期事件合法，不存在绝对日期或全序。ADR-0002 已明确延期结构化历法，并允许将冲突日期主张作为带来源的独立作者关系保留，而不输入 Timeline。
+core 已有稳定 `relation_type` / `relation_def`、显式关系查询、人物 `with` 参与事件、独立锚点与 `period` / `follows` 偏序。缺口是把用户选定的关系类型映射到本次查询角色，并把明确的人物/地点历史来源与现有时间资料组合返回。共享持久化映射不是本票目标。
 
 ## 决定
 
-**暂缓 CAP-08A 的产品实现，直到作者映射与历史成员资格规则获明确选择。** 不增加语言/展示格式、能力字符串、core/Rust API、CLI/RPC 命令或投影测试；不从关系类型 ID/名称、端点 kind、`entity_type`、旧 `CharacterRelation` 标签、正文提及或地图位置推断语义。本 ADR 不是实现批准，也不关闭 #22。
+采用查询本地映射，不新建 `.wl` 声明、展示文档或映射注册表。公开 core seam 为 `Analysis::query_topic_projection(&TargetRef, TopicProjectionOptions)`；CLI 为 `wl relations project`，agent RPC 为 `relation.project`。所有分析仍从当前 core `Analysis` 得出，CLI/RPC 只解析参数和序列化结果。
 
-### 待选择的实现边界
+`role_mapping` 是 `relation_type` 稳定 ID 到调用方显示角色的映射。只包含本次显式提供的类型；空映射不返回语义关系边，不根据 ID、显示名、端点 kind 或 `entity_type` 猜测。未知类型 ID 或空白角色名报查询错误。多个映射项即使端点相同也保留每个原始关系 ID、类型、方向、来源和 scope，不合并边；关系反向读取沿用现有显示投影，不存储反向副本。
 
-| 方案 | 范围 | 代价与待决点 |
-|---|---|---|
-| A. 查询时显式映射（建议作为最小后续候选，尚未批准） | 调用方为投影角色显式列出一个或多个稳定 `relation_type` ID；结果仅投影这些作者关系，保留原始 ID、方向、显示和范围。人物事件仅使用约定的显式参与来源；地点历史仅使用约定的显式事件—地点来源。复用当前偏序与 250/500、深度 1–2 上限。 | 必须决定角色键/标签由谁定义、缺失/未知映射如何报错，以及哪些关联来源算人物参与或地点历史。若调用方映射不是持久真源，则共享视图如何保存该映射仍需定义。 |
-| B. 可保存的共享投影映射 | 在展示文档中保存可复用的关系类型映射与历史筛选。 | 需额外定稿 schema、能力协商、Project 生命周期、未知字段保护、写入/删除影响与 CLI/RPC 输入；明显超出只读查询。 |
-| C. 不新增组合投影 | 继续分别使用既有关系查询、人物事件列表、锚点和 Timeline。 | 没有统一专题结果；但不会制造尚未确认的领域语义或持久配置。 |
+人物历史只以事件 `with` 角色引用建立成员关系。地点历史只以映射中关系类型的显式 `event → entity(place)` 端点建立成员关系。正文链接、锚点、地图标记、旧人物关系和普通提及不会制造事件成员关系；显式锚点只作为可导航的引用返回。每条人物/地点历史关联保留事件身份与来源；地点的平行语义关系不合并。
 
-实现前必须确认：
+时间投影只返回现有 `Timeline` 信息：明确 period、现有 rank 与直接 `before → after` 约束。无 period 的事件标为 `unknown`，不赋日期或位置；同一直接 period/rank 的事件可列入 `parallel_groups`，这里只表示相同拓扑层级，**不表示同时发生**。不同 rank 不推出先后，结果不按 chronology 排序。冲突或模糊的作者关系不解析、裁定或折叠；查询仅保留被显式映射的原始边，原有 `follows` 诊断不改变。
 
-1. 映射按请求临时提供还是作为共享展示文档保存；是否由用户定义角色标签，或要规定最小固定角色集合（如生亲、养亲、成员、上下级）。
-2. 人物历史是否只包含 `with` 参与事件；地点历史是否只接受明确的事件→地点语义关系。正文链接、旧关系、锚点链接和地图标记是否只作为不同类别的旁注，不能隐式纳入历史。
-3. 投影是否沿用 ADR-0002 的时间边界：有明确 `period`/`follows` 才呈现既有偏序；无日期事件仍可列出但不排序；冲突日期主张以独立来源关系展示，不合并、不裁定。不得建立总 chronology。
-4. 循环仅作为保留的原始边展示，还是需另给循环提示；截断是否直接复用既有 `truncated`/continuation DTO。不得静默删边。
-5. 接口范围是仅 core 的 `Catalog` 查询，还是还需新增 CLI 与 agent RPC 入口；各入口必须只转发 core 结果。
+查询复用现有关系语义与边界：默认深度 1、最大深度 2；关系节点最多 250、关系边最多 500；`scope_refs`、`include_unscoped` 与显式时期子树扩展沿用 `Catalog::query_relations` 规则。`cycle_hint` 报告当前页 directed 环或忽略方向的端点拓扑环；相同端点的平行边不单独构成环，`false` 不证明全图无环。关系与历史关联分别给出 offset/truncated；预算截断但 offset 不前进时不提供 continuation/next_offset，要求调用方提高预算。
 
-## 可达测试与证据
+## 取舍
 
-当前可验证的是已有关系查询基础，不是 CAP-08A 投影：在隔离工作树 `b477a56` 上，以下三个既有公共 core 查询测试均通过：
+- 查询时映射不需要新格式、能力协商、迁移或写入生命周期，但调用方必须为每次查询提供映射；共享复用映射不在本票实现。
+- 返回原始关系、明确 `with`、既有偏序与 unknown/parallel 提示，保留多义与资料缺口；不提供“家谱真相”、历史裁定或总时间线。
+- 不新增 UI 布局写入。任何未来持久映射需独立决策展示文档 schema、未知字段、能力与删除影响。
 
-```text
-cargo test --manifest-path core/Cargo.toml --test relations explicit_110_relations_have_stable_catalog_identity_and_reverse_projection -- --exact
-cargo test --manifest-path core/Cargo.toml --test relations depth_two_query_is_bounded_and_does_not_infer_transitive_edge -- --exact
-cargo test --manifest-path core/Cargo.toml --test relations continuation_pages_parallel_edges_and_reaches_second_depth -- --exact
-```
+## 验收与实际证据
 
-这些结果证明当前已保留反向显示、多关系及有界遍历，不证明人物/地点历史语义或家族循环提示已实现。未添加投影测试：在成员资格和映射规则未确定时，测试会虚构消费者契约。范围确认后，公共查询回归至少应覆盖无映射不推断、同端点多边、不同映射/范围/版本不合并、循环与多归属、无日期/争议来源、稳定顺序及截断；并在需要时贯通 `wl`/`wl-agent`，断言查询不修改源码、Timeline 或运行指纹。
+在隔离工作树的 CAP-08A 代码中，新增公共 core 测试覆盖显式/空/未知映射、亲生/养亲角色、同端点多边与 directed/undirected `cycle_hint`、同显示名跨 kind、period/version scope、正向截断与零预算不产生停滞 continuation、人物 `with`、地点显式事件→地点关系、文本提及排除、锚点引用、undated、parallel 非同时语义、partial-order edges 与分离的争议 period 关系；并断言查询前后 fingerprint 相同。CLI 集成测试覆盖 role JSON、scoped 输出、cycle_hint、unknown type 错误及源码字节不变；RPC 测试覆盖 `relation.project` 的 history、cycle_hint、unknown type 与 `-32602`。
+
+已实际启动 `wl` 并运行 `wl relations project .scratch/cap08a-smoke --target entity:harbor --role-mapping-json '{"happens_at":"地点"}' --scope period:era --scope entity:version_one --depth 2 --json`：输出 `ok:true`、`cycle_hint:false`、保留 `arrival_harbor` 的 role/source/scope、列出 period/rank，`truncated:false`。实际 `wl-agent` 的 `compile` → `relation.project` → `shutdown` 行协议 smoke 同样成功，且 `cycle_hint:false`、保留同一 scope。临时 smoke 工程已清理。以上为聚焦检查；项目全量验证由 integration owner 运行。

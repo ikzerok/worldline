@@ -138,3 +138,107 @@ rank 是同一时段先后约束的拓扑层级(零起),无约束为 0;同级事
 关系可以逐页读完。自定义低于一条边所需节点数的上限或 max_edges=0 不能前进，
 继续入口使用默认展示上限。offset 仅适用于同一目录快照及相同筛选；工作区修订
 变化后调用方必须从 0 重新查询，不得混合两次快照。查询不修改 Project、源码或展示文档。
+
+## 9. 查询时专题投影（CAP-08A）
+
+`Analysis::query_topic_projection(&TargetRef, TopicProjectionOptions)` 是 family/organization
+关系与 character/place 历史的只读组合查询。映射只属于一次调用，不写 `.wl`、
+展示文档或 Project。其输入字段为：
+
+```text
+TopicProjectionOptions {
+  role_mapping: BTreeMap<relation_type_id, role_label>
+  offset, history_offset: usize
+  depth: u8
+  direction: RelationQueryDirection
+  scope_refs: Vec<TargetRef>
+  include_unscoped, include_period_children: bool
+  max_nodes, max_edges: usize
+}
+```
+
+`role_mapping` 的 key 必须是当前目录已声明的稳定 `relation_type` ID，value
+必须是非空白调用方标签。未知类型或空白标签返回查询错误；空映射合法，但语义
+关系结果只有起点节点、没有边。映射中列出的类型是唯一关系筛选；不得按类型
+ID/显示名、端点 kind、`entity_type` 或旧 `CharacterRelation` 标签猜测映射。
+
+core 错误使用稳定 code：`UNKNOWN_TARGET`、`UNKNOWN_SCOPE`、
+`UNKNOWN_RELATION_TYPE` 与 `EMPTY_ROLE_LABEL`。
+输出边在既有关系字段上增加 `role`，仍保留关系 ID、原始类型、端点、方向、来源、
+scope 与作者标签。相同端点的多边不合并；读取反向端只使用既有 `inverse_display`
+投影，不写反向副本。
+
+`TopicProjectionResult` 含 `relations`、`history` 与总 `truncated`。`relations` 复用
+`Catalog::query_relations` 的深度、方向、范围、节点/边限制、确定顺序与 continuation；
+continuation 另携本次 `role_mapping`。`cycle_hint` 报告当前页 directed 环或忽略方向的
+端点拓扑环；相同端点的平行边不单独构成环，原始边仍分别保留。它只描述当前页，
+因此 `cycle_hint=false` 不证明全图无环。
+
+机器 DTO 的形状为：
+
+```json
+{
+  "schema_version": 1,
+  "target": {"kind": "character", "id": "lin"},
+  "relations": {
+    "depth": 1,
+    "nodes": [{"ref": {"kind": "character", "id": "lin"}, "depth": 0}],
+    "edges": [{"id": "edge_1", "relation_type": "parent", "role": "生亲",
+      "from_ref": {"kind": "character", "id": "lin"},
+      "to_ref": {"kind": "character", "id": "mei"},
+      "scope_refs": [],
+      "label": "父母", "direction": "directed", "source_note": null,
+      "file": "world.wl", "line": 1}],
+    "cycle_hint": false,
+    "truncated": false,
+    "continuation": null
+  },
+  "history": {
+    "items": [{"event": {"kind": "event", "id": "arrival"},
+      "source": {"kind": "with"}, "file": "world.wl", "line": 2}],
+    "events": [{"target": {"kind": "event", "id": "arrival"},
+      "file": "world.wl", "line": 2, "time_status": "period_ranked",
+      "period": {"kind": "period", "id": "era"}, "rank": 0, "anchors": []}],
+    "temporal_edges": [],
+    "parallel_groups": [],
+    "target_anchors": [],
+    "offset": 0,
+    "truncated": false,
+    "next_offset": null
+  },
+  "truncated": false
+}
+```
+
+`time_status` 为 `unknown` 时 `period` 与 `rank` 均为 null；映射关系源的
+`history.items.source` 为 `{kind:"relation", id, relation_type, role, scope_refs}`。顶层
+`truncated` 是关系页与历史页截断状态的逻辑 OR，continuation/next_offset 仍分属两页。
+
+
+历史成员资格严格按来源区分：
+
+- `character` 只列出显式 `with` 该角色的事件，关联来源标为 `with`。未标 scope 的
+  `with` 关联在请求 scope 时只在 `include_unscoped=true` 下返回；不从旧关系、文本提及、
+  锚点或事件控制流推导参与关系。
+- `entity` 且 `entity_type == "place"` 只列出映射类型中 `from_ref.kind == "event"`、
+  `to_ref == target` 的显式语义关系。每条边分别输出关系 ID、映射 role 与源码来源；
+  正文链接、地图标记、其它端点方向不建立地点历史。
+- 历史事件及其直接锚点返回完整 `TargetRef`；锚点是单独引用，不制造事件成员关系。
+
+`history.items` 按事件 ID、再按关系 ID 稳定排序；多条地点关系指向同一事件时事件
+对象可去重，但每条关联项保留。`history_offset` 按关联项分页，`next_offset` 与
+`history.truncated` 明示局部历史页不完整。`max_nodes` 限制历史页中的不同事件数，
+`max_edges` 限制关联项数；关系图与历史各自遵守同一已登记上限。
+
+若关联/边预算达到上限但 offset 没有前进，则 `truncated=true`、continuation/`next_offset`
+为 null；调用方须提高预算或重新查询，不得循环请求同一页。`max_nodes=0` 沿用关系
+查询的根节点最小值；`max_edges=0` 可产生空且 truncated 的关系/历史页。
+
+历史时间仅投影现有 Timeline：事件有显式 period 时返回 `period` 与现有 `rank`，
+否则 `time_status="unknown"` 且不补日期。`temporal_edges` 只返回当前页事件之间已有
+的直接 `before → after` 约束。`parallel_groups` 只分组相同直接 period/rank 的事件；
+parallel 只表示同一拓扑层级、不表示同时发生。不同 rank 不推出先后，数组按稳定
+对象 ID 排序，不生成全序、日期或冲突裁定。工作区诊断仍由调用方单独返回。
+
+每页只读当前 Analysis 快照，不能跨 `workspace_revision` 混用 offset。结果和查询
+不修改 Project、源码、Timeline、运行状态或 fingerprint。

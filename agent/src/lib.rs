@@ -289,6 +289,7 @@ impl Server {
             "reader.export.preview" | "reader.preview" => self.reader_export(params, false),
             "reader.export.apply" | "reader.export" => self.reader_export(params, true),
             "relation.query" | "relations.query" => self.relation_query(params),
+            "relation.project" => self.relation_project(params),
             "relation.type.create" | "relation_type.create" => {
                 self.relation_type_mutation(params, RelationTypeOperation::Create)
             }
@@ -542,6 +543,71 @@ impl Server {
             story_options,
         )
     }
+    fn relation_project(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        let target = relation_target(params)?;
+        let options = topic_projection_options(params)?;
+        if let Some(project_id) = params.get("project_id").and_then(Value::as_str) {
+            let unit = self.projects.get_mut(project_id).ok_or_else(|| {
+                ProtoError::new(-32602, format!("未知 project_id `{project_id}`"))
+            })?;
+            let conflicts = match unit.project.refresh() {
+                Ok(conflicts) => conflicts,
+                Err(error) => {
+                    let result = unit.project.compile();
+                    let mut response = project_failure_with_workspace(
+                        "IO_ERROR",
+                        format!("刷新工程失败：{error}"),
+                        Some(&result.diagnostics),
+                        Some(unit.project.content_baseline()),
+                        Some(result.options.language_version.as_str()),
+                        unit.project.authoring_diagnostics(),
+                    );
+                    response["target"] = json!(target);
+                    response["relations"] = Value::Null;
+                    response["history"] = Value::Null;
+                    response["truncated"] = json!(false);
+                    return Ok(response);
+                }
+            };
+            let result = unit.project.compile();
+            if result.has_errors() {
+                let mut response = relation_compile_failure(
+                    &result,
+                    unit.project.authoring_diagnostics(),
+                    Some(unit.project.content_baseline()),
+                );
+                response["target"] = json!(target);
+                response["relations"] = Value::Null;
+                response["history"] = Value::Null;
+                return Ok(response);
+            }
+            let baseline = unit.project.content_baseline();
+            let mut response = topic_projection_value(
+                &result.analysis,
+                &result.diagnostics,
+                unit.project.authoring_diagnostics(),
+                result.options.language_version,
+                Some(&baseline),
+                &target,
+                options,
+            )?;
+            if !conflicts.is_empty() {
+                response["conflicts"] = json!(conflicts);
+            }
+            return Ok(response);
+        }
+        let story_id = param_str(params, "story_id")?;
+        let unit = self.story(story_id)?;
+        topic_projection_value(
+            unit.analysis,
+            &[],
+            &[],
+            unit.language_version,
+            None,
+            &target,
+            options,
+        )
+    }
 }
 
 fn relation_target(params: &Value) -> Result<TargetRef, ProtoError> {
@@ -638,6 +704,83 @@ fn relation_query_options(params: &Value) -> Result<(RelationQueryOptions, bool)
     ))
 }
 
+fn topic_projection_options(
+    params: &Value,
+) -> Result<worldline_core::TopicProjectionOptions, ProtoError> {
+    if params.get("relation_type").is_some() || params.get("type").is_some() {
+        return Err(ProtoError::new(
+            -32602,
+            "`relation.project` 使用 `role_mapping`，不接受 `relation_type`",
+        ));
+    }
+    let (relation, include_period_children) = relation_query_options(params)?;
+    let role_mapping = match params.get("role_mapping") {
+        None => std::collections::BTreeMap::new(),
+        Some(Value::Object(values)) => values
+            .iter()
+            .map(|(relation_type, role)| {
+                role.as_str()
+                    .map(|role| (relation_type.clone(), role.to_string()))
+                    .ok_or_else(|| {
+                        ProtoError::new(-32602, "`role_mapping` 的值必须是字符串")
+                    })
+            })
+            .collect::<Result<_, _>>()?,
+        Some(_) => {
+            return Err(ProtoError::new(
+                -32602,
+                "`role_mapping` 必须是 JSON 对象",
+            ))
+        }
+    };
+    let history_offset = params
+        .get("history_offset")
+        .map(|value| {
+            value
+                .as_u64()
+                .ok_or_else(|| ProtoError::new(-32602, "`history_offset` 必须是非负整数"))?
+                .try_into()
+                .map_err(|_| ProtoError::new(-32602, "`history_offset` 超出平台整数范围"))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let max_nodes = params
+        .get("max_nodes")
+        .map(|value| {
+            value
+                .as_u64()
+                .ok_or_else(|| ProtoError::new(-32602, "`max_nodes` 必须是非负整数"))?
+                .try_into()
+                .map_err(|_| ProtoError::new(-32602, "`max_nodes` 超出平台整数范围"))
+        })
+        .transpose()?
+        .unwrap_or(250);
+    let max_edges = params
+        .get("max_edges")
+        .map(|value| {
+            value
+                .as_u64()
+                .ok_or_else(|| ProtoError::new(-32602, "`max_edges` 必须是非负整数"))?
+                .try_into()
+                .map_err(|_| ProtoError::new(-32602, "`max_edges` 超出平台整数范围"))
+        })
+        .transpose()?
+        .unwrap_or(500);
+    Ok(worldline_core::TopicProjectionOptions {
+        role_mapping,
+        offset: relation.offset,
+        history_offset,
+        depth: relation.depth,
+        direction: relation.direction,
+        scope_refs: relation.scope_refs,
+        include_unscoped: relation.include_unscoped,
+        include_period_children,
+        max_nodes,
+        max_edges,
+    })
+}
+
+
 fn relation_compile_failure(
     result: &CompileResult,
     workspace_diagnostics: &[Diagnostic],
@@ -693,6 +836,34 @@ fn relation_query_value(
         .as_object()
         .cloned()
         .expect("关系查询结果必须是对象");
+    payload.insert("ok".into(), json!(true));
+    payload.insert("language_version".into(), json!(language_version.as_str()));
+    payload.insert(
+        "workspace_revision".into(),
+        baseline.map_or(Value::Null, |value| json!(value)),
+    );
+    payload.insert("diagnostics".into(), json!(diagnostics));
+    payload.insert("workspace_diagnostics".into(), json!(workspace_diagnostics));
+    payload.insert("read_only".into(), json!(!workspace_diagnostics.is_empty()));
+    Ok(Value::Object(payload))
+}
+fn topic_projection_value(
+    analysis: &Analysis,
+    diagnostics: &[Diagnostic],
+    workspace_diagnostics: &[Diagnostic],
+    language_version: LanguageVersion,
+    baseline: Option<&str>,
+    target: &TargetRef,
+    options: worldline_core::TopicProjectionOptions,
+) -> Result<Value, ProtoError> {
+    let projection = analysis
+        .query_topic_projection(target, options)
+        .map_err(|error| ProtoError::new(-32602, error.to_string()))?;
+    let mut payload = serde_json::to_value(projection)
+        .expect("专题投影结果可序列化")
+        .as_object()
+        .cloned()
+        .expect("专题投影结果必须是对象");
     payload.insert("ok".into(), json!(true));
     payload.insert("language_version".into(), json!(language_version.as_str()));
     payload.insert(

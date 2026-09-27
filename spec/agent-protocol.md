@@ -190,6 +190,45 @@ CLI 的 `--clear-*` 只接受 `update`，同一字段不能同时使用设置参
 组成的 `LegacyRelationHandle` 是临时读取句柄，不是可持久化 ID。预览包含迁移前后
 运行 fingerprint 差异和待写入资料，预览本身不修改源码。
 
+### 2.9 `wl relations project` 查询时专题投影
+
+```text
+wl relations project <目录或入口> --target KIND:ID
+  [--role-mapping-json '<JSON object>'] [--offset N] [--history-offset N]
+  [--depth 1|2] [--direction outgoing|incoming|both] [--scope KIND:ID]*
+  [--include-unscoped] [--include-period-children]
+  [--max-nodes N] [--max-edges N] --json
+```
+
+`role-mapping-json` 可省略（等于 `{}`）；对象的 key 是当前工程中已有的稳定
+`relation_type` ID，value 是本次查询的非空白角色标签。它只对本次请求生效。空映射
+不猜测关系类型，因此 `relations.edges` 为空；character 的 `with` 历史仍可返回。
+未知 target、scope、关系类型、角色标签或格式错误为用法失败（退出码 2）；源码有
+故事编译 error 时按查询命令的公共规则返回诊断且不输出部分成功投影。
+
+JSON 返回 `{ok, schema_version, language_version, workspace_revision, target,
+relations, history, truncated, diagnostics, workspace_diagnostics, read_only}`。
+`relations` 是 core `TopicProjectionResult.relations`，每条边除关系原字段外增加
+`role` 与 `scope_refs`；`cycle_hint` 为当前页 directed 环或忽略方向的端点拓扑环，
+相同端点的平行边本身不构成环；false 仅描述当前页，不能证明全图无环。
+`history` 返回 `items/events/temporal_edges/parallel_groups/target_anchors/offset/truncated/next_offset`。总 `truncated` 为关系或历史任一部分截断。
+`offset` 续关系页，`history-offset` 续历史关联页；调用方必须在相同
+`workspace_revision`、target、mapping 与 filters 下续查，否则从 0 重查。预算截断但
+offset 未推进时 continuation/`next_offset` 为 null，调用方应提高预算而非重复同一页；
+地图/网络展示、源码、运行状态及 fingerprint 均不写入。
+
+`max_nodes=0` 仍保留起点节点；`max_edges=0` 可返回空且 `truncated=true` 的关系/历史页。
+若预算截断但 continuation/next_offset 不能前进，它们为 null，调用方应提高预算，不能
+重复请求同一页。
+`wl-agent` 的 `relation.project` 接受 `{story_id, target, role_mapping?, offset?,
+history_offset?, depth?, direction?, scope_refs?, include_unscoped?,
+include_period_children?, max_nodes?, max_edges?}`，或以 `project_id` 替换
+`story_id`。`role_mapping` 是同一 JSON 对象；`scope_refs` 与分页语义沿用
+`relation.query`。成功 result 除上述 `relations/history/truncated` 外保留 agent 查询
+公共字段及同一快照诊断；参数类型、未知映射类型/target/scope 以 `-32602` 返回。
+此方法只调用 core 查询，不修改已打开 Project。
+
+
 ### 2.1 `wl check <file> --json`
 
 见 `diagnostics.md` §3,不在此重复:`{ok, stats, diagnostics[],
@@ -339,6 +378,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `reader.export.preview` | `{path, selection}` 或 `{project_id, selection}`；`selection` 是 core `ReaderExportSelection` DTO | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；只读当前 Project 缓冲，`plan` 含作者专用排除报告与 `plan_digest` |
 | `reader.export.apply` | `{path, selection, plan_digest, output}` 或 `{project_id, selection, plan_digest, output}` | `{ok, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`；摘要过期或发布失败返回 `ok:false` 与 `STALE_PLAN` / `EXPORT_FAILED`，不覆盖已有目标；`reader.preview` 和 `reader.export` 是对应的短方法别名 |
 | `relation.query` | `{story_id, target, offset?, depth?, direction?, relation_type?, scope_refs?, include_unscoped?, include_period_children?}` 或同字段的 `project_id` 请求 | `{ok, schema_version, language_version, workspace_revision, target, depth, nodes, edges, truncated, continuation, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`scope_refs` 为 TargetRef 数组，同维度 OR、跨维度 AND；未标范围仅在 `include_unscoped=true` 时包含；时期子树仅在 `include_period_children=true` 时显式展开；`offset` 为非负整数续查偏移，continuation 保留全部筛选；未知目标/范围/类型或深度参数使用 error `-32602` |
+| `relation.project` | `{story_id, target, role_mapping?, offset?, history_offset?, depth?, direction?, scope_refs?, include_unscoped?, include_period_children?, max_nodes?, max_edges?}` 或以 `project_id` 替代 `story_id` | `{ok, schema_version, language_version, workspace_revision, target, relations, history, truncated, diagnostics, workspace_diagnostics, read_only, conflicts?}`；`role_mapping` 是稳定 `relation_type` ID 到非空白角色标签的本次映射；空映射不产生语义边；人物 history 仅取 `with`、地点 history 仅取映射类型的显式 `event→place` 关系；history 的 period/rank/parallel 仅为现有偏序投影，不暗示同时或总序；关系 `offset` 与 `history_offset` 分页，过期快照须从 0 重查 |
 | `relation.type.create` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | `{ok, operation, relation_type, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `relation.type.update` | `{project_id, relation_type, baseline?}` 或 `{path, relation_type, baseline?}` | 同 `relation.type.create`;关系类型 ID 保持稳定 |
 | `relation.type.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, relation_type:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |

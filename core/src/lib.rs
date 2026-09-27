@@ -42,6 +42,7 @@ pub mod relation_context;
 pub mod relations;
 pub mod source_config;
 pub mod states;
+mod topic_projection;
 mod storage;
 pub mod timeline;
 pub mod wiki;
@@ -75,6 +76,12 @@ pub use relations::{
     RelationDraft, RelationPromotionPreview, RelationQueryContinuation, RelationQueryDirection,
     RelationQueryEdge, RelationQueryNode, RelationQueryOptions, RelationQueryResult,
     RelationTypeDraft, RelationTypeInfo, SemanticRelationInfo,
+};
+pub use topic_projection::{
+    TopicProjectionContinuation, TopicProjectionEdge, TopicProjectionError,
+    TopicProjectionHistory, TopicProjectionHistoryEvent, TopicProjectionHistoryItem,
+    TopicProjectionHistorySource, TopicProjectionOptions, TopicProjectionRelationResult,
+    TopicProjectionResult, TopicProjectionTimeStatus,
 };
 
 /// 编译快照:源文件、程序、分析与全部诊断。

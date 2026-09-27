@@ -291,6 +291,92 @@ fn relations_json_uses_core_query_and_preserves_edge_identity() {
 }
 
 #[test]
+fn relations_project_json_preserves_explicit_roles_and_place_history() {
+    let root = temp_presentation_project("relations-project");
+    std::fs::write(
+        root.join("world.wl"),
+        "character lin as \"林舟\"\nentity harbor kind place as \"雾港\"\nperiod era as \"旧纪元\"\nevent arrival with lin during era\n  到达。\n  -> END\nevent lost with lin\n  无日期记录。\n  -> END\nevent mention\n  [[entity:harbor|港口提及]]\n  -> END\nrelation_type happens_at as \"发生地点\"\nrelation_def arrival_at type happens_at from event arrival to entity harbor\n  scope period era\nrelation_def lost_at type happens_at from event lost to entity harbor\n",
+    )
+    .unwrap();
+    let original = std::fs::read(root.join("world.wl")).unwrap();
+    let path = root.to_string_lossy().to_string();
+    let (code, out) = run_args(&[
+        "relations",
+        "project",
+        &path,
+        "--target",
+        "entity:harbor",
+        "--role-mapping-json",
+        r#"{"happens_at":"记录地点"}"#,
+        "--depth",
+        "2",
+        "--scope",
+        "period:era",
+        "--include-unscoped",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let place = json_lines(&out).remove(0);
+    assert_eq!(place["ok"], true);
+    assert_eq!(place["relations"]["edges"][0]["role"], "记录地点");
+    assert_eq!(place["relations"]["edges"][0]["id"], "arrival_at");
+    assert_eq!(place["relations"]["cycle_hint"], false);
+    assert_eq!(
+        place["relations"]["edges"][0]["scope_refs"],
+        serde_json::json!([{"kind":"period","id":"era"}])
+    );
+    assert_eq!(
+        place["history"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["source"]["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["arrival_at", "lost_at"]
+    );
+    assert_eq!(place["history"]["events"][1]["time_status"], "unknown");
+    assert_eq!(place["truncated"], false);
+    assert!(place["workspace_revision"].as_str().is_some());
+
+    let (code, out) = run_args(&[
+        "relations",
+        "project",
+        &path,
+        "--target",
+        "character:lin",
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 0, "{out:?}");
+    let character = json_lines(&out).remove(0);
+    assert!(character["relations"]["edges"].as_array().unwrap().is_empty());
+    assert_eq!(
+        character["history"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["event"]["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["arrival", "lost"]
+    );
+    let (code, out) = run_args(&[
+        "relations",
+        "project",
+        &path,
+        "--target",
+        "entity:harbor",
+        "--role-mapping-json",
+        r#"{"missing":"关系"}"#,
+        "--json",
+    ]);
+    assert_eq!(code.unwrap(), 2);
+    assert_eq!(
+        json_lines(&out).remove(0)["error"]["code"],
+        "UNKNOWN_RELATION_TYPE"
+    );
+    assert_eq!(std::fs::read(root.join("world.wl")).unwrap(), original);
+}
+
+#[test]
 fn relations_scope_flags_filter_author_scopes_without_inference() {
     let root = temp_presentation_project("relations-scope");
     std::fs::write(

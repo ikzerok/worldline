@@ -1651,3 +1651,63 @@ fn fingerprint_mismatch_is_story_failure() {
     assert_eq!(r["ok"], false, "指纹不匹配应拒绝读档");
     assert!(r["run_error"].is_object());
 }
+#[test]
+fn relation_project_rpc_returns_mapped_relations_and_explicit_history() {
+    let source = r#"
+character lin as "林舟"
+character mei as "梅"
+period era as "旧纪元"
+event arrival with lin during era
+  到达。
+  -> END
+event lost with lin
+  无日期记录。
+  -> END
+relation_type family_link as "亲属"
+relation_def lin_mei type family_link from character lin to character mei
+"#;
+    let (_, responses) = exchange(&[
+        req(
+            1,
+            "compile",
+            json!({ "source": source, "language_version": "1.10" }),
+        ),
+        req(
+            2,
+            "relation.project",
+            json!({
+                "story_id": "s1",
+                "target": "character:lin",
+                "role_mapping": {"family_link":"生亲"}
+            }),
+        ),
+        req(
+            3,
+            "relation.project",
+            json!({
+                "story_id": "s1",
+                "target": "character:lin",
+                "role_mapping": {"unknown_type":"猜测"}
+            }),
+        ),
+        req(4, "shutdown", json!({})),
+    ]);
+    assert_eq!(responses[0]["result"]["ok"], true, "{responses:?}");
+    let result = &responses[1]["result"];
+    assert_eq!(result["ok"], true, "{responses:?}");
+    assert_eq!(result["relations"]["edges"][0]["id"], "lin_mei");
+    assert_eq!(result["relations"]["edges"][0]["role"], "生亲");
+    assert_eq!(result["relations"]["cycle_hint"], false);
+    assert_eq!(
+        result["history"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["event"]["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["arrival", "lost"]
+    );
+    assert_eq!(result["history"]["events"][1]["time_status"], "unknown");
+    assert!(result["workspace_revision"].is_null());
+    assert_eq!(responses[2]["error"]["code"], -32602);
+}

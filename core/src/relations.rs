@@ -738,7 +738,7 @@ fn scope_dimension(catalog: &Catalog, target: &TargetRef) -> String {
     }
 }
 
-fn relation_matches_scope(
+pub(crate) fn relation_matches_scope(
     catalog: &Catalog,
     relation: &SemanticRelationInfo,
     options: &RelationQueryOptions,

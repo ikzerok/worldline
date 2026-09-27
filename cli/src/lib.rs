@@ -161,6 +161,22 @@ struct RelationsArgs {
     json: bool,
 }
 
+struct TopicProjectionArgs {
+    path: PathBuf,
+    target: TargetRef,
+    role_mapping: std::collections::BTreeMap<String, String>,
+    offset: usize,
+    history_offset: usize,
+    depth: u8,
+    direction: RelationQueryDirection,
+    scope_refs: Vec<TargetRef>,
+    include_unscoped: bool,
+    include_period_children: bool,
+    max_nodes: usize,
+    max_edges: usize,
+    json: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RelationEditOperation {
     Create,
@@ -272,6 +288,8 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "relations" => {
             if rest.first().is_some_and(|arg| arg == "promote") {
                 cmd_promotion(&parse_promotion_args(rest)?, out)
+            } else if rest.first().is_some_and(|arg| arg == "project") {
+                cmd_topic_projection(&parse_topic_projection_args(rest)?, out)
             } else {
                 cmd_relations(&parse_relations_args(rest)?, out)
             }
@@ -761,6 +779,150 @@ fn parse_relations_args(args: &[String]) -> Result<RelationsArgs, String> {
         scope_refs,
         include_unscoped,
         include_period_children,
+        json,
+    })
+}
+
+fn parse_topic_projection_args(args: &[String]) -> Result<TopicProjectionArgs, String> {
+    if args.first().map(String::as_str) != Some("project") {
+        return Err("relations 需要 project 子命令".into());
+    }
+    let path = PathBuf::from(
+        args.get(1)
+            .ok_or("relations project 需要一个目录或入口")?,
+    );
+    let mut target = None;
+    let mut role_mapping = std::collections::BTreeMap::new();
+    let mut mapping_seen = false;
+    let mut offset = 0;
+    let mut history_offset = 0;
+    let mut depth = 1;
+    let mut direction = RelationQueryDirection::Both;
+    let mut scope_refs = Vec::new();
+    let mut include_unscoped = false;
+    let mut include_period_children = false;
+    let mut max_nodes = 250;
+    let mut max_edges = 500;
+    let mut json = false;
+    let mut iter = args[2..].iter();
+    while let Some(arg) = iter.next() {
+        let (key, inline) = arg
+            .split_once('=')
+            .map(|(key, value)| (key, Some(value)))
+            .unwrap_or((arg.as_str(), None));
+        match key {
+            "--json" => {
+                if inline.is_some() {
+                    return Err("--json 不接受值".into());
+                }
+                json = true;
+            }
+            "--target" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--target` 需要 KIND:ID")?;
+                if target.replace(parse_target_ref(&value)?).is_some() {
+                    return Err("参数 `--target` 只能提供一次".into());
+                }
+            }
+            "--role-mapping-json" => {
+                if mapping_seen {
+                    return Err("参数 `--role-mapping-json` 只能提供一次".into());
+                }
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--role-mapping-json` 需要 JSON 对象")?;
+                role_mapping = serde_json::from_str(&value)
+                    .map_err(|error| format!("参数 `--role-mapping-json` 无效：{error}"))?;
+                mapping_seen = true;
+            }
+            "--offset" | "--history-offset" | "--depth" | "--max-nodes" | "--max-edges" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or_else(|| format!("参数 `{key}` 需要非负整数"))?;
+                match key {
+                    "--offset" => {
+                        offset = value
+                            .parse()
+                            .map_err(|_| "参数 `--offset` 需要非负整数")?
+                    }
+                    "--history-offset" => {
+                        history_offset = value
+                            .parse()
+                            .map_err(|_| "参数 `--history-offset` 需要非负整数")?
+                    }
+                    "--depth" => {
+                        depth = value
+                            .parse::<u8>()
+                            .map_err(|_| "参数 `--depth` 需要 1 或 2")?;
+                        if !matches!(depth, 1 | 2) {
+                            return Err("参数 `--depth` 只能是 1 或 2".into());
+                        }
+                    }
+                    "--max-nodes" => {
+                        max_nodes = value
+                            .parse()
+                            .map_err(|_| "参数 `--max-nodes` 需要非负整数")?
+                    }
+                    "--max-edges" => {
+                        max_edges = value
+                            .parse()
+                            .map_err(|_| "参数 `--max-edges` 需要非负整数")?
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            "--direction" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--direction` 需要 outgoing / incoming / both")?;
+                direction = match value.as_str() {
+                    "outgoing" => RelationQueryDirection::Outgoing,
+                    "incoming" => RelationQueryDirection::Incoming,
+                    "both" => RelationQueryDirection::Both,
+                    _ => return Err("参数 `--direction` 需要 outgoing / incoming / both".into()),
+                };
+            }
+            "--scope" => {
+                let value = inline
+                    .map(str::to_string)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("参数 `--scope` 需要 KIND:ID")?;
+                scope_refs.push(parse_target_ref(&value)?);
+            }
+            "--include-unscoped" => {
+                if inline.is_some() {
+                    return Err("--include-unscoped 不接受值".into());
+                }
+                include_unscoped = true;
+            }
+            "--include-period-children" => {
+                if inline.is_some() {
+                    return Err("--include-period-children 不接受值".into());
+                }
+                include_period_children = true;
+            }
+            key if key.starts_with("--") => return Err(format!("未知参数 {key}")),
+            value => return Err(format!("relations project 不接受额外位置参数 `{value}`")),
+        }
+    }
+    Ok(TopicProjectionArgs {
+        path,
+        target: target.ok_or("relations project 需要 --target KIND:ID")?,
+        role_mapping,
+        offset,
+        history_offset,
+        depth,
+        direction,
+        scope_refs,
+        include_unscoped,
+        include_period_children,
+        max_nodes,
+        max_edges,
         json,
     })
 }
@@ -1721,6 +1883,93 @@ fn cmd_relations(args: &RelationsArgs, out: &mut impl Write) -> Result<i32, Stri
         }
         if query.truncated {
             writeln!(out, "结果已截断，请使用 continuation 继续查询").map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(0)
+}
+
+fn cmd_topic_projection(
+    args: &TopicProjectionArgs,
+    out: &mut impl Write,
+) -> Result<i32, String> {
+    let snapshot = match open_workspace_snapshot(&args.path) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return write_query_failure(&args.path, args.json, &error, out),
+    };
+    if snapshot.result.has_errors() {
+        if args.json {
+            let mut payload = query_payload_base(&snapshot);
+            payload.insert("ok".into(), json!(false));
+            payload.insert("target".into(), json!(&args.target));
+            payload.insert("relations".into(), Value::Null);
+            payload.insert("history".into(), Value::Null);
+            writeln!(out, "{}", Value::Object(payload)).map_err(|e| e.to_string())?;
+        } else {
+            print_errors_hint(&snapshot.result.diagnostics, out);
+        }
+        return Ok(1);
+    }
+    let projection = match snapshot.result.analysis.query_topic_projection(
+        &args.target,
+        worldline_core::TopicProjectionOptions {
+            role_mapping: args.role_mapping.clone(),
+            offset: args.offset,
+            history_offset: args.history_offset,
+            depth: args.depth,
+            direction: args.direction,
+            scope_refs: args.scope_refs.clone(),
+            include_unscoped: args.include_unscoped,
+            include_period_children: args.include_period_children,
+            max_nodes: args.max_nodes,
+            max_edges: args.max_edges,
+        },
+    ) {
+        Ok(projection) => projection,
+        Err(error) => {
+            return write_query_error(
+                &args.path,
+                args.json,
+                error.code(),
+                &error.to_string(),
+                out,
+                2,
+            )
+        }
+    };
+    if args.json {
+        let mut payload = query_payload_base(&snapshot);
+        payload.insert("ok".into(), json!(true));
+        if let Value::Object(fields) =
+            serde_json::to_value(&projection).expect("专题投影结果可序列化")
+        {
+            payload.extend(fields);
+        }
+        writeln!(out, "{}", Value::Object(payload)).map_err(|e| e.to_string())?;
+    } else {
+        writeln!(
+            out,
+            "{}:{}: {} 条关系边 / {} 条历史关联",
+            args.target.kind,
+            args.target.id,
+            projection.relations.edges.len(),
+            projection.history.items.len()
+        )
+        .map_err(|e| e.to_string())?;
+        for edge in &projection.relations.edges {
+            writeln!(
+                out,
+                "{} [{}]  {} -> {}  {}",
+                edge.id, edge.role, edge.from_ref.id, edge.to_ref.id, edge.label
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        for item in &projection.history.items {
+            writeln!(out, "历史: event:{} ({})", item.event.id, item.file)
+                .map_err(|e| e.to_string())?;
+        }
+        if projection.truncated {
+            writeln!(out, "投影结果已截断，请使用 relations/history continuation 继续查询")
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(0)
