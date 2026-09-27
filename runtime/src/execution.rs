@@ -1,0 +1,472 @@
+use std::time::Duration;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) use std::time::Instant as MonotonicInstant;
+#[cfg(target_arch = "wasm32")]
+pub(super) use web_time::Instant as MonotonicInstant;
+
+use worldline_core::ast::{DivertTarget, EffectWhen, Stmt};
+
+use super::util::{choice_signature, expression_source, stable_hash, stmt_line};
+use super::{
+    AnchorKind, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ChoiceView,
+    ConditionExplanation, Frame, FrameSrc, Output, Pause, ReplayBudget, ReplayCancellation,
+    ReplayStatus, ReplayStep, ReplayTrace, RunError, Story, Value,
+};
+
+pub(super) struct ContinueOutcome {
+    pub(super) outputs: Vec<Output>,
+    pub(super) stop: Option<ReplayStatus>,
+}
+
+pub(super) struct ReplayExecutionBudget<'a> {
+    pub(super) limits: ReplayBudget,
+    pub(super) cancellation: &'a ReplayCancellation,
+    pub(super) started: MonotonicInstant,
+    pub(super) steps: u64,
+}
+
+impl ReplayExecutionBudget<'_> {
+    fn consume_step(&mut self) -> Option<ReplayStatus> {
+        if self.cancellation.is_cancelled() {
+            return Some(ReplayStatus::Cancelled);
+        }
+        if self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms) {
+            return Some(ReplayStatus::TimeBudgetExceeded);
+        }
+        if self.steps >= self.limits.max_steps {
+            return Some(ReplayStatus::StepBudgetExceeded);
+        }
+        self.steps += 1;
+        None
+    }
+}
+
+impl<'p> Story<'p> {
+    // -- 推进 ---------------------------------------------------------------
+
+    /// 推进到暂停(选择)或结束;返回本轮输出。
+    pub fn continue_story(&mut self) -> Result<Vec<Output>, RunError> {
+        let outcome = self.continue_story_inner(None)?;
+        self.record_continuation(&outcome.outputs);
+        Ok(outcome.outputs)
+    }
+
+    pub(super) fn continue_story_inner(
+        &mut self,
+        mut budget: Option<&mut ReplayExecutionBudget<'_>>,
+    ) -> Result<ContinueOutcome, RunError> {
+        let mut out = Vec::new();
+        if self.paused.is_some() {
+            return Ok(ContinueOutcome {
+                outputs: out,
+                stop: None,
+            });
+        }
+        loop {
+            if let Some(run_budget) = budget.as_deref_mut() {
+                if let Some(status) = run_budget.consume_step() {
+                    return Ok(ContinueOutcome {
+                        outputs: out,
+                        stop: Some(status),
+                    });
+                }
+            }
+            let Some(fi) = self.frames.len().checked_sub(1) else {
+                out.push(Output::Ended);
+                return Ok(ContinueOutcome {
+                    outputs: out,
+                    stop: None,
+                });
+            };
+            if self.frames[fi].idx >= self.frames[fi].stmts.len() {
+                // 事件自然完成先 done 后 exit；弹栈前保留记录的事件归属。
+                if fi == 0 {
+                    self.run_exit_effects(true)?;
+                }
+                self.frames.pop();
+                continue;
+            }
+            // 借用当前语句;修改帧前先放弃借用
+            let stmt_loc_line = stmt_line(&self.frames[fi].stmts[self.frames[fi].idx]);
+            match &self.frames[fi].stmts[self.frames[fi].idx] {
+                Stmt::Text(t) => {
+                    let (content, links) = self.render_parts(&t.parts)?;
+                    let tags = t.tags.clone();
+                    let new_line = !self.glue_pending;
+                    self.glue_pending = false;
+                    if !content.is_empty() {
+                        out.push(Output::Text {
+                            content,
+                            new_line,
+                            tags,
+                            links,
+                        });
+                    }
+                    if t.glue {
+                        self.glue_pending = true;
+                    }
+                    self.frames[fi].idx += 1;
+                }
+                Stmt::Let(l) => {
+                    let v = self.eval(&l.expr)?;
+                    self.vars.insert(l.name.clone(), v);
+                    self.frames[fi].idx += 1;
+                }
+                Stmt::Set(s) => {
+                    let v = self.eval(&s.expr)?;
+                    self.vars.insert(s.name.clone(), v);
+                    self.frames[fi].idx += 1;
+                }
+                Stmt::If(i) => {
+                    let mut taken: Option<usize> = None;
+                    for (k, (cond, _)) in i.branches.iter().enumerate() {
+                        let hit = match cond {
+                            Some(c) => matches!(self.eval(c)?, Value::Bool(true)),
+                            None => true,
+                        };
+                        if hit {
+                            taken = Some(k);
+                            break;
+                        }
+                    }
+                    match taken {
+                        Some(k) => {
+                            self.frames[fi].idx += 1;
+                            let stmt_idx = self.frames[fi].idx - 1;
+                            self.frames.push(Frame {
+                                stmts: &i.branches[k].1,
+                                idx: 0,
+                                node: None,
+                                src: Some(FrameSrc::IfBranch {
+                                    stmt: stmt_idx,
+                                    branch: k,
+                                }),
+                            });
+                        }
+                        None => {
+                            self.frames[fi].idx += 1;
+                        }
+                    }
+                }
+                Stmt::Scene(s) => {
+                    let parent = self.frames[fi]
+                        .node
+                        .clone()
+                        .unwrap_or_else(|| self.current_node().unwrap_or_default());
+                    let full = format!("{parent}.{}", s.name);
+                    *self.visits.entry(full.clone()).or_insert(0) += 1;
+                    self.frames[fi].idx += 1;
+                    self.frames.push(Frame {
+                        stmts: &s.body,
+                        idx: 0,
+                        node: Some(full),
+                        src: None,
+                    });
+                }
+                Stmt::Divert(d) => {
+                    match &d.target {
+                        DivertTarget::End => {
+                            self.run_exit_effects(false)?;
+                            self.frames.clear();
+                            out.push(Output::Ended);
+                            return Ok(ContinueOutcome {
+                                outputs: out,
+                                stop: None,
+                            });
+                        }
+                        DivertTarget::Node(target) => {
+                            let current_event = self.current_event_name();
+                            let Some(path) = self
+                                .symbols
+                                .resolve_target(target, current_event.as_deref())
+                            else {
+                                return Err(RunError {
+                                    message: format!("跃迁目标 `{target}` 无法解析"),
+                                    node: self.current_node(),
+                                    line: Some(stmt_loc_line),
+                                });
+                            };
+                            let entering_event = path.scenes.is_empty()
+                                || current_event.as_deref()
+                                    != Some(self.program.events[path.event].name.as_str());
+                            if entering_event {
+                                self.run_exit_effects(false)?;
+                                // 源 exit 先于目标准入；失败保留变更并终止源事件。
+                                if let Err(error) = self.admit(path.event) {
+                                    self.frames.clear();
+                                    return Err(error);
+                                }
+                            }
+                            // 漂流:切换故事线 + 锚点记录(记录发生在帧替换前,归属源节点)
+                            if d.drift {
+                                let sl = self.program.events[path.event].storyline.clone();
+                                self.storyline = sl;
+                                self.push_anchor(
+                                    AnchorKind::Drift,
+                                    "漂流",
+                                    None,
+                                    Some(target.clone()),
+                                );
+                            }
+                            let chain = self.node_frames(path.event, &path.scenes);
+                            for frame in chain.iter().skip(usize::from(!entering_event)) {
+                                if let Some(node) = &frame.node {
+                                    *self.visits.entry(node.clone()).or_insert(0) += 1;
+                                }
+                            }
+                            self.frames = chain;
+                            if entering_event {
+                                self.run_effects(path.event, EffectWhen::Enter)?;
+                            }
+                        }
+                    }
+                }
+                Stmt::Change(c) => {
+                    self.apply_change(&c.change)?;
+                    self.frames[fi].idx += 1;
+                }
+                Stmt::Anchor(a) => {
+                    self.push_anchor(AnchorKind::Manual, &a.name, a.note.clone(), None);
+                    self.frames[fi].idx += 1;
+                }
+                // 解析期应已提取或报错;运行期遇到则跳过
+                Stmt::Effect(_) => {
+                    self.frames[fi].idx += 1;
+                }
+                Stmt::Choice(_) => {
+                    // 选择组 = 连续 Choice 语句
+                    let stmts = self.frames[fi].stmts;
+                    let start = self.frames[fi].idx;
+                    let mut group_len = 0usize;
+                    while matches!(stmts.get(start + group_len), Some(Stmt::Choice(_))) {
+                        group_len += 1;
+                    }
+                    let mut choices = Vec::new();
+                    let mut explanations = Vec::with_capacity(group_len);
+                    let mut offset = 0usize;
+                    let rng_before = self.rng.get();
+                    while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
+                        let mut identity =
+                            self.choice_identity(fi, start, offset, c.label_raw.clone());
+                        let condition = if let Some(cond) = &c.cond {
+                            let value = self.eval(cond).map_err(|mut error| {
+                                error
+                                    .node
+                                    .get_or_insert_with(|| self.current_node().unwrap_or_default());
+                                if error.line.is_none() || error.line == Some(0) {
+                                    error.line = Some(c.loc.line);
+                                }
+                                error
+                            })?;
+                            let result = matches!(value, Value::Bool(true));
+                            Some(ConditionExplanation {
+                                expression: expression_source(cond),
+                                result: Some(result),
+                                error: None,
+                            })
+                        } else {
+                            None
+                        };
+                        if condition
+                            .as_ref()
+                            .is_some_and(|value| value.result == Some(false))
+                        {
+                            explanations.push(ChoiceExplanation {
+                                choice: identity,
+                                available: false,
+                                condition,
+                                unavailable_reason: Some("条件求值为 false".into()),
+                            });
+                            offset += 1;
+                            continue;
+                        }
+                        if c.once {
+                            let id = self.choice_id(fi, start, offset);
+                            if self.taken_once.contains(&id) {
+                                explanations.push(ChoiceExplanation {
+                                    choice: identity,
+                                    available: false,
+                                    condition,
+                                    unavailable_reason: Some("once 选择已使用".into()),
+                                });
+                                offset += 1;
+                                continue;
+                            }
+                        }
+                        let (label, links) = self.render_parts(&c.label)?;
+                        identity.label = label.clone();
+                        choices.push(ChoiceView {
+                            id: identity.id.clone(),
+                            label,
+                            links,
+                            line: c.loc.line,
+                            offset,
+                        });
+                        explanations.push(ChoiceExplanation {
+                            choice: identity,
+                            available: true,
+                            condition,
+                            unavailable_reason: None,
+                        });
+                        offset += 1;
+                    }
+                    if choices.is_empty() {
+                        // 组耗尽:落穿到组后(隐式汇聚)
+                        self.frames[fi].idx = start + group_len;
+                        continue;
+                    }
+                    self.paused = Some(Box::new(Pause {
+                        frame_depth: fi,
+                        start,
+                        group_len,
+                        choices,
+                        explanations,
+                        rng_before,
+                    }));
+                    return Ok(ContinueOutcome {
+                        outputs: out,
+                        stop: None,
+                    });
+                }
+            }
+        }
+    }
+
+    /// 玩家做出选择。
+    pub fn choose(&mut self, idx: usize) -> Result<(), RunError> {
+        let Some(pause) = self.paused.take() else {
+            return Err(RunError::new("当前没有待选选择"));
+        };
+        let Some(view) = pause.choices.get(idx) else {
+            self.paused = Some(pause);
+            return Err(RunError::new(format!("选择序号 {idx} 超出范围")));
+        };
+        let selected_id = view.id.clone();
+        let offset = view.offset;
+        let selected_identity = pause
+            .explanations
+            .iter()
+            .find(|explanation| explanation.available && explanation.choice.id == selected_id)
+            .map(|explanation| explanation.choice.clone())
+            .ok_or_else(|| RunError::new("内部状态损坏:选择解释丢失"))?;
+        let fi = pause.frame_depth;
+        let start = pause.start;
+        let group_len = pause.group_len;
+        let stmts = self.frames[fi].stmts;
+        let Some(Stmt::Choice(c)) = stmts.get(start + offset) else {
+            return Err(RunError::new("内部状态损坏:选择语句丢失"));
+        };
+        if c.once {
+            let id = self.choice_id(fi, start, offset);
+            if !self.taken_once.contains(&id) {
+                self.taken_once.push(id);
+            }
+        }
+        self.turns += 1;
+        // 组结束位置 = 选择体落回点(隐式汇聚)
+        self.frames[fi].idx = start + group_len;
+        let body: &'p [Stmt] = &c.body;
+        let src = FrameSrc::ChoiceBody {
+            stmt: start + offset,
+        };
+        self.frames.push(Frame {
+            stmts: body,
+            idx: 0,
+            node: None,
+            src: Some(src),
+        });
+        let coverage = self
+            .choice_coverage
+            .entry(selected_identity.id.clone())
+            .or_insert_with(|| ChoiceCoverage {
+                id: selected_identity.id.clone(),
+                node: selected_identity.node.clone(),
+                label: selected_identity.label.clone(),
+                line: selected_identity.line,
+                count: 0,
+            });
+        coverage.count = coverage.count.saturating_add(1);
+        self.trace.steps.push(ReplayStep {
+            choice: selected_identity,
+            observation: None,
+        });
+        Ok(())
+    }
+
+    /// 从头开始(多周目)。
+    pub fn restart(&mut self) -> Result<(), RunError> {
+        self.vars.clear();
+        self.visits.clear();
+        self.turns = 0;
+        self.taken_once.clear();
+        self.frames.clear();
+        self.glue_pending = false;
+        self.paused = None;
+        self.met.clear();
+        self.anchors.clear();
+        self.states.clone_from(&self.initial_states);
+        self.state_history.clear();
+        self.choice_coverage.clear();
+        self.rng.set(self.seed);
+        self.init_vars()?;
+        self.enter_event(&self.program.entry)?;
+        self.trace = ReplayTrace::entry(self.fingerprint, self.seed);
+        Ok(())
+    }
+
+    pub(super) fn current_event_name(&self) -> Option<String> {
+        self.frames.first().and_then(|frame| frame.node.clone())
+    }
+
+    pub(super) fn choice_id(&self, frame_depth: usize, start: usize, offset: usize) -> String {
+        let node = self.frames[frame_depth]
+            .node
+            .clone()
+            .or_else(|| self.current_node())
+            .unwrap_or_else(|| "?".into());
+        format!("{node}:{start}:{offset}")
+    }
+
+    pub(super) fn choice_identity(
+        &self,
+        frame_depth: usize,
+        start: usize,
+        offset: usize,
+        label: String,
+    ) -> ChoiceIdentity {
+        let frame = &self.frames[frame_depth];
+        let Some(Stmt::Choice(choice)) = frame.stmts.get(start + offset) else {
+            return ChoiceIdentity {
+                id: "invalid-choice".into(),
+                node: self.current_node().unwrap_or_default(),
+                line: 0,
+                offset,
+                label,
+            };
+        };
+        let node = frame
+            .node
+            .clone()
+            .or_else(|| self.current_node())
+            .unwrap_or_else(|| "?".into());
+        let signature = choice_signature(choice);
+        let occurrence = frame.stmts[start..start + offset]
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::Choice(previous) if choice_signature(previous) == signature => Some(()),
+                _ => None,
+            })
+            .count();
+        ChoiceIdentity {
+            id: format!(
+                "{node}:{:016x}:{occurrence}",
+                stable_hash(signature.as_bytes())
+            ),
+            node,
+            line: choice.loc.line,
+            offset,
+            label,
+        }
+    }
+}

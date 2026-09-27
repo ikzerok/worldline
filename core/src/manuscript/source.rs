@@ -1,0 +1,232 @@
+use super::*;
+use crate::ast::{Stmt, TextPart};
+use crate::CompileResult;
+
+pub(super) fn resolve_source(
+    target: &TargetRef,
+    content: &CompileResult,
+    index: &mut ManuscriptIndex,
+) -> ManuscriptSource {
+    if !matches!(target.kind.as_str(), "event" | "scene" | "entity") {
+        index.error(
+            "MAN008",
+            format!("书稿正文目标类型 `{}` 不受支持", target.kind),
+        );
+        return ManuscriptSource {
+            status: ManuscriptReferenceStatus::Invalid,
+            location: None,
+            stats: None,
+        };
+    }
+    if target.kind == "entity" && !content.options.language_version.supports_entities() {
+        index.error(
+            "MAN004",
+            format!("当前语言版本无法确认实体 `{}`", target.id),
+        );
+        return ManuscriptSource {
+            status: ManuscriptReferenceStatus::Unresolved,
+            location: None,
+            stats: None,
+        };
+    }
+    let Some(object) = content.analysis.catalog.object(target) else {
+        let status = missing_or_unresolved(content);
+        report_missing_target(target, status, index);
+        return ManuscriptSource {
+            status,
+            location: None,
+            stats: None,
+        };
+    };
+    let text = match target.kind.as_str() {
+        "event" => content
+            .program
+            .events
+            .iter()
+            .find(|event| event.name == target.id)
+            .map(|event| narrative_text(&event.body)),
+        "scene" => content
+            .analysis
+            .symbols
+            .scenes
+            .get(&target.id)
+            .and_then(|path| {
+                content
+                    .program
+                    .events
+                    .get(path.event)
+                    .map(|event| (event, path))
+            })
+            .and_then(|(event, path)| scene_body(&event.body, &path.scenes))
+            .map(narrative_text),
+        "entity" => content
+            .analysis
+            .catalog
+            .entities
+            .get(&target.id)
+            .map(|entity| entity.description.clone()),
+        _ => None,
+    };
+    let Some(text) = text else {
+        index.error(
+            "MAN004",
+            format!("正文目标 `{}` 的源码范围无法确认", target.id),
+        );
+        return ManuscriptSource {
+            status: ManuscriptReferenceStatus::Unresolved,
+            location: None,
+            stats: None,
+        };
+    };
+    ManuscriptSource {
+        status: ManuscriptReferenceStatus::Resolved,
+        location: Some(ManuscriptSourceLocation {
+            file: object.file.clone(),
+            line: object.line,
+        }),
+        stats: Some(text_stats(&text)),
+    }
+}
+
+pub(super) fn resolve_perspective(
+    target: &TargetRef,
+    content: &CompileResult,
+    index: &mut ManuscriptIndex,
+) -> ManuscriptReferenceStatus {
+    if target.kind != "character" {
+        index.error(
+            "MAN008",
+            format!("POV 目标类型 `{}` 必须是 character", target.kind),
+        );
+        return ManuscriptReferenceStatus::Invalid;
+    }
+    if content.analysis.catalog.object(target).is_some() {
+        ManuscriptReferenceStatus::Resolved
+    } else {
+        let status = missing_or_unresolved(content);
+        report_missing_target(target, status, index);
+        status
+    }
+}
+
+fn missing_or_unresolved(content: &CompileResult) -> ManuscriptReferenceStatus {
+    if content.has_errors() {
+        ManuscriptReferenceStatus::Unresolved
+    } else {
+        ManuscriptReferenceStatus::Missing
+    }
+}
+
+fn report_missing_target(
+    target: &TargetRef,
+    status: ManuscriptReferenceStatus,
+    index: &mut ManuscriptIndex,
+) {
+    let (code, wording) = match status {
+        ManuscriptReferenceStatus::Unresolved => ("MAN004", "无法确认是否存在"),
+        ManuscriptReferenceStatus::Missing => ("MAN003", "不存在"),
+        _ => return,
+    };
+    index.error(
+        code,
+        format!("书稿引用的 {} `{}` {wording}", target.kind, target.id),
+    );
+}
+
+fn scene_body<'a>(body: &'a [Stmt], names: &[String]) -> Option<&'a [Stmt]> {
+    let (name, rest) = names.split_first()?;
+    let scene = body.iter().find_map(|statement| match statement {
+        Stmt::Scene(scene) if &scene.name == name => Some(scene),
+        _ => None,
+    })?;
+    if rest.is_empty() {
+        Some(&scene.body)
+    } else {
+        scene_body(&scene.body, rest)
+    }
+}
+
+fn narrative_text(statements: &[Stmt]) -> String {
+    fn append_parts(parts: &[TextPart], output: &mut String) {
+        for part in parts {
+            match part {
+                TextPart::Str(text) => output.push_str(text),
+                TextPart::Link(link) => output.push_str(&link.label),
+                TextPart::Expr(_) => {}
+            }
+        }
+    }
+    fn append(statements: &[Stmt], output: &mut String) {
+        for statement in statements {
+            match statement {
+                Stmt::Text(text) => {
+                    append_parts(&text.parts, output);
+                    if !text.glue {
+                        output.push('\n');
+                    }
+                }
+                Stmt::Choice(choice) => {
+                    append_parts(&choice.label, output);
+                    output.push('\n');
+                    append(&choice.body, output);
+                    output.push('\n');
+                }
+                Stmt::If(condition) => {
+                    for (_, branch) in &condition.branches {
+                        append(branch, output);
+                        output.push('\n');
+                    }
+                }
+                Stmt::Scene(scene) => append(&scene.body, output),
+                // 声明、表达式、跳转、效果和其他控制语法不属于静态阅读文本。
+                Stmt::Divert(_)
+                | Stmt::Let(_)
+                | Stmt::Set(_)
+                | Stmt::Change(_)
+                | Stmt::Anchor(_)
+                | Stmt::Effect(_) => {}
+            }
+        }
+    }
+    let mut output = String::new();
+    append(statements, &mut output);
+    output
+}
+
+fn text_stats(text: &str) -> ManuscriptTextStats {
+    let mut stats = ManuscriptTextStats::default();
+    let mut in_non_han_word = false;
+    for character in text.chars() {
+        if is_han_ideograph(character) {
+            stats.han_characters += 1;
+            stats.words += 1;
+            in_non_han_word = false;
+        } else if character.is_alphanumeric() {
+            if !in_non_han_word {
+                stats.words += 1;
+            }
+            in_non_han_word = true;
+        } else {
+            in_non_han_word = false;
+        }
+    }
+    stats
+}
+
+fn is_han_ideograph(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF
+            | 0x2F800..=0x2FA1F
+            | 0x20000..=0x2A6DF
+            | 0x2A700..=0x2B73F
+            | 0x2B740..=0x2B81F
+            | 0x2B820..=0x2CEAF
+            | 0x2CEB0..=0x2EBEF
+            | 0x2EBF0..=0x2EE5F
+            | 0x30000..=0x3134F
+            | 0x31350..=0x323AF
+    )
+}

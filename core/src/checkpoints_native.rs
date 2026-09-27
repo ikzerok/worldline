@@ -1,3 +1,9 @@
+use super::capture::*;
+use super::restore::RestoreFile;
+use super::*;
+use std::collections::BTreeSet;
+use std::path::{Component, Path};
+
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;
@@ -21,7 +27,7 @@ fn lock_checkpoints() -> Result<std::sync::MutexGuard<'static, ()>, String> {
         .map_err(|_| "检查点存储锁不可用".to_string())
 }
 
-fn publish_checkpoint(
+pub(super) fn publish_checkpoint(
     root: &Path,
     manifest: CheckpointManifest,
     files: &Files,
@@ -33,9 +39,12 @@ fn publish_checkpoint(
     if records.len() >= limits.max_count {
         return Err("检查点数量配额已满，请显式删除旧记录".into());
     }
-    let used_bytes = records.iter().try_fold(0u64, |total, record| {
-        total.checked_add(record.summary.payload_bytes)
-    }).ok_or("检查点历史字节数超出可表示范围")?;
+    let used_bytes = records
+        .iter()
+        .try_fold(0u64, |total, record| {
+            total.checked_add(record.summary.payload_bytes)
+        })
+        .ok_or("检查点历史字节数超出可表示范围")?;
     if used_bytes.saturating_add(manifest.payload_bytes) > limits.max_total_bytes as u64 {
         return Err("检查点历史字节配额已满，请显式删除旧记录".into());
     }
@@ -97,7 +106,7 @@ fn publish_checkpoint(
     result
 }
 
-fn list_checkpoint_records(root: &Path) -> Result<Vec<CheckpointListing>, String> {
+pub(super) fn list_checkpoint_records(root: &Path) -> Result<Vec<CheckpointListing>, String> {
     let _lock = lock_checkpoints()?;
     read_checkpoint_records(root)
 }
@@ -153,7 +162,7 @@ fn read_checkpoint_records(root: &Path) -> Result<Vec<CheckpointListing>, String
     Ok(records)
 }
 
-fn load_checkpoint(root: &Path, id: &str) -> Result<CheckpointBundle, String> {
+pub(super) fn load_checkpoint(root: &Path, id: &str) -> Result<CheckpointBundle, String> {
     let _lock = lock_checkpoints()?;
     read_checkpoint_bundle(root, id)
 }
@@ -171,10 +180,9 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
     {
         return Err("检查点清单类型或大小无效".into());
     }
-    let manifest: CheckpointManifest = serde_json::from_slice(
-        &fs::read(&manifest_path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("检查点清单损坏：{error}"))?;
+    let manifest: CheckpointManifest =
+        serde_json::from_slice(&fs::read(&manifest_path).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("检查点清单损坏：{error}"))?;
     let format_is_valid = match manifest.version {
         LEGACY_CHECKPOINT_FORMAT_VERSION => {
             manifest.text_base.is_none() && manifest.text_base_digest.is_none()
@@ -191,7 +199,10 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
             .text_base
             .as_ref()
             .is_some_and(|entries| entries.len() > MAX_CHECKPOINT_FILES)
-        || manifest.label.as_ref().is_some_and(|label| label.chars().count() > 120)
+        || manifest
+            .label
+            .as_ref()
+            .is_some_and(|label| label.chars().count() > 120)
     {
         return Err("检查点清单版本或字段无效".into());
     }
@@ -211,9 +222,7 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
         if !payloads.insert(file.payload.clone()) {
             return Err("检查点包含重复负载路径".into());
         }
-        total = total
-            .checked_add(file.bytes)
-            .ok_or("检查点文件大小无效")?;
+        total = total.checked_add(file.bytes).ok_or("检查点文件大小无效")?;
         if total > DEFAULT_MAX_CHECKPOINT_BYTES as u64 {
             return Err("检查点负载超过格式上限".into());
         }
@@ -243,10 +252,11 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
                 return Err("检查点文本基线路径无效或重复".into());
             }
             let bytes = match &entry.source {
-                CheckpointTextBaseSource::Snapshot => files
-                    .get(&path)
-                    .cloned()
-                    .ok_or_else(|| format!("检查点文本基线引用了不存在的快照文件：{}", entry.path))?,
+                CheckpointTextBaseSource::Snapshot => {
+                    files.get(&path).cloned().ok_or_else(|| {
+                        format!("检查点文本基线引用了不存在的快照文件：{}", entry.path)
+                    })?
+                }
                 CheckpointTextBaseSource::Absent => {
                     bases.insert(path, None);
                     continue;
@@ -329,7 +339,7 @@ fn read_checkpoint_bundle(root: &Path, id: &str) -> Result<CheckpointBundle, Str
     })
 }
 
-fn delete_checkpoint_record(root: &Path, id: &str) -> Result<(), String> {
+pub(super) fn delete_checkpoint_record(root: &Path, id: &str) -> Result<(), String> {
     let _lock = lock_checkpoints()?;
     let directory = checkpoint_path(root, id);
     let metadata = match fs::symlink_metadata(&directory) {
@@ -431,7 +441,11 @@ fn validate_checkpoint_directory(root: &Path, directory: &Path) -> Result<(), St
     validate_record_path_components(&root, directory, false)
 }
 
-fn validate_record_path_components(root: &Path, directory: &Path, create: bool) -> Result<(), String> {
+fn validate_record_path_components(
+    root: &Path,
+    directory: &Path,
+    create: bool,
+) -> Result<(), String> {
     let relative = directory
         .strip_prefix(root)
         .map_err(|_| "检查点目录越出工作区边界".to_string())?;
@@ -444,7 +458,10 @@ fn validate_record_path_components(root: &Path, directory: &Path, create: bool) 
         match fs::symlink_metadata(&current) {
             Ok(metadata) => {
                 if crate::file_access::is_link_or_junction(&metadata) || !metadata.is_dir() {
-                    return Err(format!("检查点路径不能经过链接或普通文件：{}", current.display()));
+                    return Err(format!(
+                        "检查点路径不能经过链接或普通文件：{}",
+                        current.display()
+                    ));
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
@@ -465,7 +482,11 @@ fn remove_staging_directories(root: &Path, history: &Path) -> Result<(), String>
         }
         let entry = entry.map_err(|error| error.to_string())?;
         let path = entry.path();
-        if !entry.file_name().to_string_lossy().starts_with(STAGING_PREFIX) {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(STAGING_PREFIX)
+        {
             continue;
         }
         let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
@@ -488,7 +509,7 @@ fn write_checkpoint_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     file.sync_all().map_err(|error| error.to_string())
 }
 
-fn persist_restored_files(
+pub(super) fn persist_restored_files(
     root: &Path,
     pending: &[RestoreFile],
     _target: &Files,
@@ -505,26 +526,6 @@ fn persist_restored_files(
         })
         .collect::<Vec<_>>();
     crate::storage::save(root, &pending)
-}
-
-fn native_path_is_read_only(path: &Path) -> Result<bool, String> {
-    let mut current = path;
-    loop {
-        match fs::symlink_metadata(current) {
-            Ok(metadata) => return Ok(metadata.permissions().readonly()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                current = current
-                    .parent()
-                    .ok_or_else(|| format!("无法检查恢复路径权限：{}", path.display()))?;
-            }
-            Err(error) => {
-                return Err(format!(
-                    "无法检查恢复路径权限 {}：{error}",
-                    current.display()
-                ));
-            }
-        }
-    }
 }
 
 fn failure_requested(phase: &str) -> bool {
