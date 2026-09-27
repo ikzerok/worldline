@@ -11,10 +11,10 @@ use worldline_core::ast::PropertyValue;
 use worldline_core::authoring::EntityDraft;
 use worldline_core::authoring_intents::AuthoringIntent;
 use worldline_core::catalog::TargetRef;
+use worldline_core::localization::{LocalizationExchange, LocalizationSelection};
 use worldline_core::project::Project;
 use worldline_core::queries::{CatalogQuery, CatalogQueryCursor, CatalogQueryOptions};
 use worldline_core::reader_export::ReaderExportSelection;
-use worldline_core::localization::{LocalizationExchange, LocalizationSelection};
 use worldline_core::{
     compile_path_with_options, compile_source, compile_source_with_options, Analysis,
     CompileOptions, CompileResult, Diagnostic, LanguageVersion, LegacyRelationHandle, Program,
@@ -728,17 +728,10 @@ fn topic_projection_options(
             .map(|(relation_type, role)| {
                 role.as_str()
                     .map(|role| (relation_type.clone(), role.to_string()))
-                    .ok_or_else(|| {
-                        ProtoError::new(-32602, "`role_mapping` 的值必须是字符串")
-                    })
+                    .ok_or_else(|| ProtoError::new(-32602, "`role_mapping` 的值必须是字符串"))
             })
             .collect::<Result<_, _>>()?,
-        Some(_) => {
-            return Err(ProtoError::new(
-                -32602,
-                "`role_mapping` 必须是 JSON 对象",
-            ))
-        }
+        Some(_) => return Err(ProtoError::new(-32602, "`role_mapping` 必须是 JSON 对象")),
     };
     let history_offset = params
         .get("history_offset")
@@ -786,7 +779,6 @@ fn topic_projection_options(
         max_edges,
     })
 }
-
 
 fn relation_compile_failure(
     result: &CompileResult,
@@ -1198,11 +1190,7 @@ impl Server {
         ))
     }
 
-    fn localization_export(
-        &mut self,
-        params: &Value,
-        apply: bool,
-    ) -> Result<Value, ProtoError> {
+    fn localization_export(&mut self, params: &Value, apply: bool) -> Result<Value, ProtoError> {
         let selection: LocalizationSelection = serde_json::from_value(
             params
                 .get("selection")
@@ -1262,11 +1250,7 @@ impl Server {
         ))
     }
 
-    fn localization_import(
-        &mut self,
-        params: &Value,
-        apply: bool,
-    ) -> Result<Value, ProtoError> {
+    fn localization_import(&mut self, params: &Value, apply: bool) -> Result<Value, ProtoError> {
         let selection: LocalizationSelection = serde_json::from_value(
             params
                 .get("selection")

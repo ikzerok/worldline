@@ -2,9 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use worldline_core::ast::Stmt;
-use worldline_core::localization::{
-    LocalizationExchange, LocalizationPart, LocalizationSelection,
-};
+use worldline_core::localization::{LocalizationExchange, LocalizationPart, LocalizationSelection};
 use worldline_core::project::Project;
 
 const SOURCE: &str = concat!(
@@ -85,7 +83,6 @@ fn selection(ids: &[&str]) -> LocalizationSelection {
     }
 }
 
-
 #[test]
 fn export_uses_only_selected_ids_and_keeps_expressions_and_link_targets_opaque() {
     let mut fixture = fixture("export", SOURCE, false);
@@ -95,17 +92,24 @@ fn export_uses_only_selected_ids_and_keeps_expressions_and_link_targets_opaque()
         panic!("the selected text line should compile as text");
     };
     assert_eq!(text.localization_id.as_deref(), Some("welcome"));
-    assert!(!text.tags.iter().any(|tag| tag.starts_with("wl-localization:")));
+    assert!(!text
+        .tags
+        .iter()
+        .any(|tag| tag.starts_with("wl-localization:")));
     let Stmt::Choice(choice) = &compiled.program.events[0].body[1] else {
         panic!("the selected option should compile as a choice");
     };
     assert_eq!(choice.localization_id.as_deref(), Some("reply"));
-    let source = fixture.project.document(&fixture.root.join("world.wl")).unwrap();
+    let source = fixture
+        .project
+        .document(&fixture.root.join("world.wl"))
+        .unwrap();
     let mut without_ids = fixture.project.clone();
     without_ids
         .set_text(
             &fixture.root.join("world.wl"),
-            source.replace(" #wl-localization:welcome", "")
+            source
+                .replace(" #wl-localization:welcome", "")
                 .replace(" #wl-localization:reply", ""),
         )
         .unwrap();
@@ -134,9 +138,10 @@ fn export_uses_only_selected_ids_and_keeps_expressions_and_link_targets_opaque()
         .find(|entry| entry.id == "welcome")
         .unwrap();
     assert_eq!(welcome.source.file, "world.wl");
-    assert!(welcome.source_parts.iter().any(
-        |part| matches!(part, LocalizationPart::Placeholder { token } if token == "p0")
-    ));
+    assert!(welcome
+        .source_parts
+        .iter()
+        .any(|part| matches!(part, LocalizationPart::Placeholder { token } if token == "p0")));
     assert!(welcome.source_parts.iter().any(
         |part| matches!(part, LocalizationPart::Link { token, label } if token == "l0" && label == "Harbor")
     ));
@@ -149,8 +154,14 @@ fn export_uses_only_selected_ids_and_keeps_expressions_and_link_targets_opaque()
     ));
     assert!(!json.contains("PRIVATE_SOURCE_SENTINEL"));
     assert!(!json.contains("PRIVATE_EVENT_SENTINEL"));
-    assert!(!json.contains("private_event"), "link targets are not exported");
-    assert!(!json.contains("traveler"), "interpolation expressions are not exported");
+    assert!(
+        !json.contains("private_event"),
+        "link targets are not exported"
+    );
+    assert!(
+        !json.contains("traveler"),
+        "interpolation expressions are not exported"
+    );
 }
 
 fn translated(mut exchange: LocalizationExchange) -> LocalizationExchange {
@@ -163,11 +174,9 @@ fn translated(mut exchange: LocalizationExchange) -> LocalizationExchange {
                     LocalizationPart::Text { text } => LocalizationPart::Text {
                         text: text.replace("Welcome", "欢迎").replace("Continue", "继续"),
                     },
-                    LocalizationPart::Placeholder { token } => {
-                        LocalizationPart::Placeholder {
-                            token: token.clone(),
-                        }
-                    }
+                    LocalizationPart::Placeholder { token } => LocalizationPart::Placeholder {
+                        token: token.clone(),
+                    },
                     LocalizationPart::Link { token, .. } => LocalizationPart::Link {
                         token: token.clone(),
                         label: "港口".into(),
@@ -204,7 +213,9 @@ fn import_updates_existing_locale_sidecar_preserving_unknown_fields() {
     assert_eq!(result.baseline, baseline);
     assert_eq!(result.new_baseline, fixture.project.content_baseline());
     assert_ne!(result.new_baseline, baseline);
-    assert!(!result.changed_files.contains(&fixture.root.join(".world/project.json")));
+    assert!(!result
+        .changed_files
+        .contains(&fixture.root.join(".world/project.json")));
     let sidecar_path = fixture.root.join(".world/localization/zh-Hant.json");
     assert!(result.changed_files.contains(&sidecar_path));
     let manifest: serde_json::Value =
@@ -260,12 +271,13 @@ fn first_import_registers_a_new_locale_sidecar() {
         manifest["localizations"]["zh-Hant"],
         ".world/localization/zh-Hant.json"
     );
-    assert!(result.changed_files.contains(&fixture.root.join(".world/project.json")));
+    assert!(result
+        .changed_files
+        .contains(&fixture.root.join(".world/project.json")));
     assert!(result
         .changed_files
         .contains(&fixture.root.join(".world/localization/zh-Hant.json")));
 }
-
 
 #[test]
 fn missing_or_invalid_translations_and_stale_sources_block_the_whole_import() {
@@ -313,10 +325,16 @@ fn missing_or_invalid_translations_and_stale_sources_block_the_whole_import() {
         .apply_localization_import(&selection, &invalid_tokens, &invalid.plan_digest)
         .is_err());
     assert_eq!(fixture.project.content_baseline(), baseline);
-    assert!(!fixture.root.join(".world/localization/zh-Hant.json").exists());
+    assert!(!fixture
+        .root
+        .join(".world/localization/zh-Hant.json")
+        .exists());
 
     let valid = translated(exported);
-    let source = fixture.project.document(&fixture.root.join("world.wl")).unwrap();
+    let source = fixture
+        .project
+        .document(&fixture.root.join("world.wl"))
+        .unwrap();
     fixture
         .project
         .set_text(
@@ -338,7 +356,10 @@ fn missing_or_invalid_translations_and_stale_sources_block_the_whole_import() {
         .apply_localization_import(&selection, &valid, &stale.plan_digest)
         .is_err());
     assert_eq!(fixture.project.content_baseline(), dirty_baseline);
-    assert!(!fixture.root.join(".world/localization/zh-Hant.json").exists());
+    assert!(!fixture
+        .root
+        .join(".world/localization/zh-Hant.json")
+        .exists());
 }
 
 #[test]
@@ -375,7 +396,10 @@ fn source_baseline_mismatch_rejects_a_clean_project_import() {
         fs::read(fixture.root.join(".world/project.json")).unwrap(),
         manifest_before
     );
-    assert!(!fixture.root.join(".world/localization/zh-Hant.json").exists());
+    assert!(!fixture
+        .root
+        .join(".world/localization/zh-Hant.json")
+        .exists());
 }
 
 #[test]
@@ -446,15 +470,18 @@ fn duplicate_source_ids_and_unsupported_package_versions_are_reported() {
         .project
         .apply_localization_import(&selection, &expanded_selection, &expanded_plan.plan_digest)
         .is_err());
-    assert!(!fixture.root.join(".world/localization/zh-Hant.json").exists());
+    assert!(!fixture
+        .root
+        .join(".world/localization/zh-Hant.json")
+        .exists());
 }
 
 #[test]
 fn localization_annotation_requires_the_manifest_feature() {
     let fixture = fixture("feature-gate", SOURCE, false);
     let manifest_path = fixture.root.join(".world/project.json");
-    let mut manifest: serde_json::Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap())
-        .unwrap();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
     manifest["required_features"] = serde_json::json!([]);
     fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
     let project = Project::open(&fixture.root).unwrap();
@@ -476,11 +503,14 @@ fn exchange_json_roundtrips_unicode_and_rejects_duplicate_keys() {
         .unwrap()
         .exchange;
     let bytes = serde_json::to_vec(&exchange).unwrap();
-    assert_eq!(LocalizationExchange::from_json_bytes(&bytes).unwrap(), exchange);
-    assert!(LocalizationExchange::from_json_bytes(
-        br#"{"schema_version":1,"schema_version":1}"#
-    )
-    .is_err());
+    assert_eq!(
+        LocalizationExchange::from_json_bytes(&bytes).unwrap(),
+        exchange
+    );
+    assert!(
+        LocalizationExchange::from_json_bytes(br#"{"schema_version":1,"schema_version":1}"#)
+            .is_err()
+    );
 }
 
 #[test]

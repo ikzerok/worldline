@@ -117,10 +117,7 @@ fn continuation_pages_parallel_edges_and_reaches_second_depth() {
         .query_topic_projection(
             &TargetRef::new("entity", "a"),
             worldline_core::TopicProjectionOptions {
-                role_mapping: std::collections::BTreeMap::from([(
-                    "links".into(),
-                    "连接".into(),
-                )]),
+                role_mapping: std::collections::BTreeMap::from([("links".into(), "连接".into())]),
                 depth: 2,
                 max_nodes: 0,
                 max_edges: 0,
@@ -793,11 +790,8 @@ relation_def cycle type biological_parent from character mei to character lin
   scope period now
   scope entity version_one
 "#;
-    let result = compile_source_with_options(
-        "world.wl",
-        source,
-        worldline_core::CompileOptions::v1_10(),
-    );
+    let result =
+        compile_source_with_options("world.wl", source, worldline_core::CompileOptions::v1_10());
     assert!(!result.has_errors(), "{:#?}", result.diagnostics);
     let fingerprint = result.analysis.fingerprint;
     let target = TargetRef::new("character", "lin");
@@ -827,7 +821,11 @@ relation_def cycle type biological_parent from character mei to character lin
             .collect::<Vec<_>>(),
         ["birth_a", "cycle"]
     );
-    assert!(mapped.relations.edges.iter().all(|edge| edge.role == "生亲"));
+    assert!(mapped
+        .relations
+        .edges
+        .iter()
+        .all(|edge| edge.role == "生亲"));
     assert!(mapped.relations.cycle_hint);
     let birth = mapped
         .relations
@@ -842,9 +840,11 @@ relation_def cycle type biological_parent from character mei to character lin
             TargetRef::new("entity", "version_one")
         ]
     );
-    assert!(mapped.relations.edges.iter().all(|edge| {
-        edge.file == "world.wl" && edge.from_ref.kind == "character"
-    }));
+    assert!(mapped
+        .relations
+        .edges
+        .iter()
+        .all(|edge| { edge.file == "world.wl" && edge.from_ref.kind == "character" }));
     assert!(!mapped.relations.truncated);
     let outgoing = result
         .analysis
@@ -938,10 +938,7 @@ relation_def cycle type biological_parent from character mei to character lin
 
     let unmapped = result
         .analysis
-        .query_topic_projection(
-            &target,
-            worldline_core::TopicProjectionOptions::default(),
-        )
+        .query_topic_projection(&target, worldline_core::TopicProjectionOptions::default())
         .unwrap();
     assert!(unmapped.relations.edges.is_empty());
     assert_eq!(unmapped.relations.nodes.len(), 1);
@@ -1015,11 +1012,8 @@ relation_def claim_a type date_claim from event alpha to period era
 relation_def claim_b type date_claim from event alpha to period disputed
   source_note "史料乙"
 "#;
-    let result = compile_source_with_options(
-        "world.wl",
-        source,
-        worldline_core::CompileOptions::v1_10(),
-    );
+    let result =
+        compile_source_with_options("world.wl", source, worldline_core::CompileOptions::v1_10());
     assert!(!result.has_errors(), "{:#?}", result.diagnostics);
 
     let character_history = result
@@ -1038,11 +1032,10 @@ relation_def claim_b type date_claim from event alpha to period disputed
             .collect::<Vec<_>>(),
         ["alpha", "beta", "later", "undated"]
     );
-    assert!(character_history
-        .history
-        .items
-        .iter()
-        .all(|item| matches!(&item.source, worldline_core::TopicProjectionHistorySource::With)));
+    assert!(character_history.history.items.iter().all(|item| matches!(
+        &item.source,
+        worldline_core::TopicProjectionHistorySource::With
+    )));
     assert_eq!(
         character_history
             .history
@@ -1132,7 +1125,10 @@ relation_def claim_b type date_claim from event alpha to period disputed
         .filter(|edge| edge.relation_type == "date_claim")
         .collect();
     assert_eq!(
-        claims.iter().map(|edge| edge.id.as_str()).collect::<Vec<_>>(),
+        claims
+            .iter()
+            .map(|edge| edge.id.as_str())
+            .collect::<Vec<_>>(),
         ["claim_a", "claim_b"]
     );
     assert_eq!(

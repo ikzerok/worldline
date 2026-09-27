@@ -975,13 +975,8 @@ impl<'a> Parser<'a> {
             LineKind::Text { content, loc } => {
                 let (text_part, glue, tags) = split_text_decorations(&content);
                 let options = self.options();
-                let (tags, localization_id) = extract_localization_id(
-                    tags,
-                    &file,
-                    loc,
-                    options.localization_ids,
-                    self.diags,
-                );
+                let (tags, localization_id) =
+                    extract_localization_id(tags, &file, loc, options.localization_ids, self.diags);
                 let parts = parse_interpolations_with_options(
                     &text_part,
                     &file,

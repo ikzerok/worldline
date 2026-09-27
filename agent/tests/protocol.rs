@@ -255,13 +255,10 @@ fn localization_rpc_exports_and_imports_typed_translation_data() {
         "target_locale": "zh-Hant",
         "string_ids": ["greeting"]
     });
-    let package = root
-        .parent()
-        .unwrap()
-        .join(format!(
-            "{}-translation.json",
-            root.file_name().unwrap().to_string_lossy()
-        ));
+    let package = root.parent().unwrap().join(format!(
+        "{}-translation.json",
+        root.file_name().unwrap().to_string_lossy()
+    ));
     let (_, export_responses) = exchange(&[
         req(1, "project.open", json!({"path":path.clone()})),
         req(
@@ -274,10 +271,7 @@ fn localization_rpc_exports_and_imports_typed_translation_data() {
     let preview = &export_responses[1]["result"];
     assert_eq!(preview["ok"], true, "{preview:?}");
     assert_eq!(preview["plan"]["can_export"], true);
-    let export_digest = preview["plan"]["plan_digest"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let export_digest = preview["plan"]["plan_digest"].as_str().unwrap().to_string();
     let source_exchange = preview["plan"]["exchange"].clone();
 
     let (_, export_apply_responses) = exchange(&[
@@ -367,7 +361,6 @@ fn localization_rpc_exports_and_imports_typed_translation_data() {
     let _ = std::fs::remove_file(package);
     let _ = std::fs::remove_dir_all(root);
 }
-
 
 #[test]
 fn localization_rpc_rejects_duplicate_translation_parts_keys() {

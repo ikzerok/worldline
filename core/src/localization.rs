@@ -117,12 +117,7 @@ impl Project {
                 .event_files
                 .get(event_index)
                 .ok_or("事件缺少源码文件映射")?;
-            collect_units(
-                &event.body,
-                Path::new(file),
-                &self.root,
-                &mut all,
-            )?;
+            collect_units(&event.body, Path::new(file), &self.root, &mut all)?;
         }
 
         let source_baseline = source_baseline(self)?;
@@ -164,7 +159,8 @@ impl Project {
         };
         let content_baseline = self.content_baseline();
         let can_export = diagnostics.is_empty();
-        let plan_digest = export_plan_digest(&selection, &exchange, &content_baseline, &diagnostics)?;
+        let plan_digest =
+            export_plan_digest(&selection, &exchange, &content_baseline, &diagnostics)?;
         Ok(LocalizationExportPlan {
             schema_version: LOCALIZATION_SCHEMA_VERSION,
             plan_digest,
@@ -203,7 +199,11 @@ impl Project {
         if destination.starts_with(crate::compiler::source_path(&self.root)) {
             return Err("本地化交换包必须写到当前工作区之外".into());
         }
-        if destination.extension().and_then(|extension| extension.to_str()) != Some("json") {
+        if destination
+            .extension()
+            .and_then(|extension| extension.to_str())
+            != Some("json")
+        {
             return Err("本地化交换包目标必须使用 .json 扩展名".into());
         }
         let parent = destination.parent().ok_or("本地化交换包缺少父目录")?;
@@ -239,7 +239,10 @@ fn normalize_selection(selection: &LocalizationSelection) -> Result<Localization
         return Err("本地化 selection 至少要包含一个 ID".into());
     }
     let mut string_ids = selection.string_ids.clone();
-    if string_ids.iter().any(|id| !crate::workspace_documents::valid_id(id)) {
+    if string_ids
+        .iter()
+        .any(|id| !crate::workspace_documents::valid_id(id))
+    {
         return Err("selection 含无效的本地化字符串 ID".into());
     }
     string_ids.sort();
@@ -760,18 +763,12 @@ fn prepare_import(
     let mut create_sidecar = false;
     if diagnostics.is_empty() {
         match prepare_sidecar(project, &sidecar_path, sidecar_registered, exchange) {
-            Ok((manifest, bytes, create)) => {
-                manifest_bytes = manifest;
-                sidecar_bytes = Some(bytes);
-                create_sidecar = create;
+            Ok(sidecar) => {
+                manifest_bytes = sidecar.manifest_bytes;
+                sidecar_bytes = Some(sidecar.bytes);
+                create_sidecar = sidecar.create;
             }
-            Err(message) => diagnostic(
-                &mut diagnostics,
-                "SIDECAR_INVALID",
-                None,
-                None,
-                message,
-            ),
+            Err(message) => diagnostic(&mut diagnostics, "SIDECAR_INVALID", None, None, message),
         }
     }
     let can_apply = diagnostics.is_empty();
@@ -853,12 +850,18 @@ fn localization_sidecar_path(project: &Project, locale: &str) -> Result<(PathBuf
     Ok((path, false))
 }
 
+struct PreparedSidecar {
+    manifest_bytes: Option<Vec<u8>>,
+    bytes: Vec<u8>,
+    create: bool,
+}
+
 fn prepare_sidecar(
     project: &Project,
     path: &Path,
     registered: bool,
     exchange: &LocalizationExchange,
-) -> Result<(Option<Vec<u8>>, Vec<u8>, bool), String> {
+) -> Result<PreparedSidecar, String> {
     let manifest_path = crate::workspace_documents::manifest_path(&project.root);
     let manifest_bytes = if registered {
         None
@@ -899,7 +902,11 @@ fn prepare_sidecar(
     let object = sidecar
         .as_object_mut()
         .ok_or("locale sidecar 顶层必须是 JSON 对象")?;
-    if object.get("schema_version").and_then(serde_json::Value::as_u64) != Some(1) {
+    if object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(1)
+    {
         return Err("locale sidecar schema_version 不受支持".into());
     }
     let features = object
@@ -912,9 +919,13 @@ fn prepare_sidecar(
     {
         return Err("locale sidecar 缺少 content.localization.v1".into());
     }
-    if object.get("source_locale").and_then(serde_json::Value::as_str)
+    if object
+        .get("source_locale")
+        .and_then(serde_json::Value::as_str)
         != Some(exchange.source_locale.as_str())
-        || object.get("target_locale").and_then(serde_json::Value::as_str)
+        || object
+            .get("target_locale")
+            .and_then(serde_json::Value::as_str)
             != Some(exchange.target_locale.as_str())
     {
         return Err("locale sidecar 的 source/target locale 不匹配".into());
@@ -942,7 +953,11 @@ fn prepare_sidecar(
     }
     let bytes = serde_json::to_vec(&sidecar)
         .map_err(|error| format!("无法序列化 locale sidecar：{error}"))?;
-    Ok((manifest_bytes, bytes, create_sidecar))
+    Ok(PreparedSidecar {
+        manifest_bytes,
+        bytes,
+        create: create_sidecar,
+    })
 }
 
 fn register_localization_path(
@@ -972,7 +987,10 @@ fn register_localization_path(
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
         .as_object_mut()
         .ok_or("工程清单 localizations 必须是对象")?;
-    if let Some(existing) = localizations.get(locale).and_then(serde_json::Value::as_str) {
+    if let Some(existing) = localizations
+        .get(locale)
+        .and_then(serde_json::Value::as_str)
+    {
         if existing.replace('\\', "/") != relative {
             return Err("目标 locale 已登记到其他 sidecar 路径".into());
         }

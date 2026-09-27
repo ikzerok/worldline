@@ -234,7 +234,8 @@ impl Analysis {
                 continuation: None,
             }
         } else {
-            self.catalog.query_relations(target, relation_options.clone())
+            self.catalog
+                .query_relations(target, relation_options.clone())
         };
         let relation_edges: Vec<_> = relation_query
             .edges
@@ -260,8 +261,8 @@ impl Analysis {
                 }
             })
             .collect();
-        let cycle_hint = directed_cycle_hint(&relation_edges)
-            || undirected_cycle_hint(&relation_edges);
+        let cycle_hint =
+            directed_cycle_hint(&relation_edges) || undirected_cycle_hint(&relation_edges);
         let relations = TopicProjectionRelationResult {
             depth: relation_query.depth,
             nodes: relation_query.nodes,
@@ -368,8 +369,7 @@ impl Analysis {
             });
             consumed += 1;
         }
-        let next_offset =
-            (truncated && consumed > options.history_offset).then_some(consumed);
+        let next_offset = (truncated && consumed > options.history_offset).then_some(consumed);
         let event_ids: BTreeSet<_> = event_targets
             .iter()
             .map(|target| target.id.as_str())
@@ -419,8 +419,7 @@ impl Analysis {
             .edges
             .iter()
             .filter(|edge| {
-                event_ids.contains(edge.before.as_str())
-                    && event_ids.contains(edge.after.as_str())
+                event_ids.contains(edge.before.as_str()) && event_ids.contains(edge.after.as_str())
             })
             .cloned()
             .collect();

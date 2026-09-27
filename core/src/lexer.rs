@@ -1555,7 +1555,11 @@ fn split_choice_localization_annotation(
     let Some(&start) = positions.first() else {
         return (raw.trim_end().to_string(), None);
     };
-    let source = chars[..start].iter().collect::<String>().trim_end().to_string();
+    let source = chars[..start]
+        .iter()
+        .collect::<String>()
+        .trim_end()
+        .to_string();
     let id = chars[start + marker.len()..].iter().collect::<String>();
     let annotation_column = column + start as u32;
     if positions.len() != 1 || id.is_empty() || !crate::workspace_documents::valid_id(&id) {
@@ -1571,7 +1575,11 @@ fn split_choice_localization_annotation(
         diagnostics.push(Diagnostic::error(
             "P004",
             file,
-            Span::new(line, annotation_column, MARKER.chars().count() as u32 + id.len() as u32),
+            Span::new(
+                line,
+                annotation_column,
+                MARKER.chars().count() as u32 + id.len() as u32,
+            ),
             "本地化注记需要清单能力 content.localization.v1",
         ));
         return (source, None);

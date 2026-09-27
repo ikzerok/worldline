@@ -10,11 +10,11 @@ use worldline_core::ast::PropertyValue;
 use worldline_core::authoring::EntityDraft;
 use worldline_core::authoring_intents::AuthoringIntent;
 use worldline_core::catalog::TargetRef;
+use worldline_core::localization::{LocalizationExchange, LocalizationSelection};
 use worldline_core::markdown_import::MarkdownImportRequest;
 use worldline_core::project::Project;
 use worldline_core::queries::{CatalogQuery, CatalogQueryCursor, CatalogQueryOptions};
 use worldline_core::reader_export::ReaderExportSelection;
-use worldline_core::localization::{LocalizationExchange, LocalizationSelection};
 use worldline_core::{
     compile_path, compile_path_with_options, CompileOptions, CompileResult, Diagnostic,
     LanguageVersion, RelationDirection, RelationDraft, RelationQueryDirection,
@@ -717,16 +717,25 @@ fn parse_localization_args(args: &[String]) -> Result<LocalizationArgs, String> 
         (LocalizationDirection::Import, LocalizationOperation::Apply)
             if has_plan && has_package && !has_output => {}
         (LocalizationDirection::Export, LocalizationOperation::Preview) => {
-            return Err("localization export preview 不接受 --plan-digest、--package 或 --out".into());
+            return Err(
+                "localization export preview 不接受 --plan-digest、--package 或 --out".into(),
+            );
         }
         (LocalizationDirection::Export, LocalizationOperation::Apply) => {
-            return Err("localization export apply 需要 --plan-digest 和 --out，且不接受 --package".into());
+            return Err(
+                "localization export apply 需要 --plan-digest 和 --out，且不接受 --package".into(),
+            );
         }
         (LocalizationDirection::Import, LocalizationOperation::Preview) => {
-            return Err("localization import preview 需要 --package，且不接受 --plan-digest 或 --out".into());
+            return Err(
+                "localization import preview 需要 --package，且不接受 --plan-digest 或 --out"
+                    .into(),
+            );
         }
         (LocalizationDirection::Import, LocalizationOperation::Apply) => {
-            return Err("localization import apply 需要 --package 和 --plan-digest，且不接受 --out".into());
+            return Err(
+                "localization import apply 需要 --package 和 --plan-digest，且不接受 --out".into(),
+            );
         }
     }
     Ok(LocalizationArgs {
@@ -912,10 +921,7 @@ fn parse_topic_projection_args(args: &[String]) -> Result<TopicProjectionArgs, S
     if args.first().map(String::as_str) != Some("project") {
         return Err("relations 需要 project 子命令".into());
     }
-    let path = PathBuf::from(
-        args.get(1)
-            .ok_or("relations project 需要一个目录或入口")?,
-    );
+    let path = PathBuf::from(args.get(1).ok_or("relations project 需要一个目录或入口")?);
     let mut target = None;
     let mut role_mapping = std::collections::BTreeMap::new();
     let mut mapping_seen = false;
@@ -970,9 +976,7 @@ fn parse_topic_projection_args(args: &[String]) -> Result<TopicProjectionArgs, S
                     .ok_or_else(|| format!("参数 `{key}` 需要非负整数"))?;
                 match key {
                     "--offset" => {
-                        offset = value
-                            .parse()
-                            .map_err(|_| "参数 `--offset` 需要非负整数")?
+                        offset = value.parse().map_err(|_| "参数 `--offset` 需要非负整数")?
                     }
                     "--history-offset" => {
                         history_offset = value
@@ -2013,10 +2017,7 @@ fn cmd_relations(args: &RelationsArgs, out: &mut impl Write) -> Result<i32, Stri
     Ok(0)
 }
 
-fn cmd_topic_projection(
-    args: &TopicProjectionArgs,
-    out: &mut impl Write,
-) -> Result<i32, String> {
+fn cmd_topic_projection(args: &TopicProjectionArgs, out: &mut impl Write) -> Result<i32, String> {
     let snapshot = match open_workspace_snapshot(&args.path) {
         Ok(snapshot) => snapshot,
         Err(error) => return write_query_failure(&args.path, args.json, &error, out),
@@ -2093,8 +2094,11 @@ fn cmd_topic_projection(
                 .map_err(|e| e.to_string())?;
         }
         if projection.truncated {
-            writeln!(out, "投影结果已截断，请使用 relations/history continuation 继续查询")
-                .map_err(|e| e.to_string())?;
+            writeln!(
+                out,
+                "投影结果已截断，请使用 relations/history continuation 继续查询"
+            )
+            .map_err(|e| e.to_string())?;
         }
     }
     Ok(0)
@@ -3320,24 +3324,17 @@ fn cmd_reader_export(args: &ReaderExportArgs, out: &mut impl Write) -> Result<i3
 }
 
 fn cmd_localization(args: &LocalizationArgs, out: &mut impl Write) -> Result<i32, String> {
-    let operation = match args.operation {
-        LocalizationOperation::Preview => "preview",
-        LocalizationOperation::Apply => "apply",
-    };
     let selection: LocalizationSelection = match serde_json::from_str(&args.selection_json) {
         Ok(selection) => selection,
         Err(error) => {
             return localization_failure(
                 args,
                 out,
-                operation,
                 "INVALID_SELECTION",
                 format!("本地化选择 DTO 无效：{error}"),
                 None,
                 None,
                 &[],
-                false,
-                2,
             )
         }
     };
@@ -3347,14 +3344,11 @@ fn cmd_localization(args: &LocalizationArgs, out: &mut impl Write) -> Result<i32
             return localization_failure(
                 args,
                 out,
-                operation,
                 "IO_ERROR",
                 format!("无法打开工程：{error}"),
                 None,
                 None,
                 &[],
-                false,
-                2,
             )
         }
     };
@@ -3362,14 +3356,7 @@ fn cmd_localization(args: &LocalizationArgs, out: &mut impl Write) -> Result<i32
         LocalizationDirection::Export => {
             let diagnostics = project.authoring_diagnostics();
             let read_only = !diagnostics.is_empty();
-            cmd_localization_export(
-                args,
-                &project,
-                &selection,
-                &diagnostics,
-                read_only,
-                out,
-            )
+            cmd_localization_export(args, &project, &selection, diagnostics, read_only, out)
         }
         LocalizationDirection::Import => {
             let package_path = args.package.as_deref().expect("parser requires package");
@@ -3380,14 +3367,11 @@ fn cmd_localization(args: &LocalizationArgs, out: &mut impl Write) -> Result<i32
                     return localization_failure(
                         args,
                         out,
-                        operation,
                         if is_io { "IO_ERROR" } else { "INVALID_PACKAGE" },
                         error,
                         None,
                         None,
-                        &diagnostics,
-                        !diagnostics.is_empty(),
-                        if is_io { 2 } else { 1 },
+                        diagnostics,
                     );
                 }
             };
@@ -3414,24 +3398,17 @@ fn cmd_localization_export(
     read_only: bool,
     out: &mut impl Write,
 ) -> Result<i32, String> {
-    let operation = match args.operation {
-        LocalizationOperation::Preview => "preview",
-        LocalizationOperation::Apply => "apply",
-    };
     let plan = match project.preview_localization_export(selection) {
         Ok(plan) => plan,
         Err(error) => {
             return localization_failure(
                 args,
                 out,
-                operation,
                 "PREVIEW_FAILED",
                 error,
                 None,
                 None,
                 workspace_diagnostics,
-                read_only,
-                1,
             )
         }
     };
@@ -3445,13 +3422,7 @@ fn cmd_localization_export(
             "workspace_diagnostics": workspace_diagnostics,
             "read_only": read_only,
         });
-        return localization_response(
-            args.json,
-            out,
-            payload,
-            "本地化导出预览完成",
-            0,
-        );
+        return localization_response(args.json, out, payload, "本地化导出预览完成", 0);
     }
 
     let expected = args.plan_digest.as_deref().expect("parser requires digest");
@@ -3459,14 +3430,11 @@ fn cmd_localization_export(
         return localization_failure(
             args,
             out,
-            "apply",
             "STALE_PLAN",
             "本地化导出预览已过期，请重新预览".into(),
             Some(json!(plan)),
             Some(&baseline),
             workspace_diagnostics,
-            read_only,
-            1,
         );
     }
     if !plan.can_export {
@@ -3478,14 +3446,11 @@ fn cmd_localization_export(
         return localization_failure(
             args,
             out,
-            "apply",
             "EXPORT_REJECTED",
             message,
             Some(json!(plan)),
             Some(&baseline),
             workspace_diagnostics,
-            read_only,
-            1,
         );
     }
     let destination = args.output.as_deref().expect("parser requires output");
@@ -3517,14 +3482,11 @@ fn cmd_localization_export(
             localization_failure(
                 args,
                 out,
-                "apply",
                 code,
                 error,
                 Some(json!(plan)),
                 Some(&baseline),
                 workspace_diagnostics,
-                read_only,
-                1,
             )
         }
     }
@@ -3539,24 +3501,17 @@ fn cmd_localization_import(
     read_only: bool,
     out: &mut impl Write,
 ) -> Result<i32, String> {
-    let operation = match args.operation {
-        LocalizationOperation::Preview => "preview",
-        LocalizationOperation::Apply => "apply",
-    };
     let plan = match project.preview_localization_import(selection, exchange) {
         Ok(plan) => plan,
         Err(error) => {
             return localization_failure(
                 args,
                 out,
-                operation,
                 "PREVIEW_FAILED",
                 error,
                 None,
                 None,
                 workspace_diagnostics,
-                read_only,
-                1,
             )
         }
     };
@@ -3570,13 +3525,7 @@ fn cmd_localization_import(
             "workspace_diagnostics": workspace_diagnostics,
             "read_only": read_only,
         });
-        return localization_response(
-            args.json,
-            out,
-            payload,
-            "本地化导入预览完成",
-            0,
-        );
+        return localization_response(args.json, out, payload, "本地化导入预览完成", 0);
     }
 
     let expected = args.plan_digest.as_deref().expect("parser requires digest");
@@ -3584,14 +3533,11 @@ fn cmd_localization_import(
         return localization_failure(
             args,
             out,
-            "apply",
             "STALE_PLAN",
             "本地化导入预览已过期，请重新预览".into(),
             Some(json!(plan)),
             Some(&baseline),
             workspace_diagnostics,
-            read_only,
-            1,
         );
     }
     if !plan.can_apply {
@@ -3603,14 +3549,11 @@ fn cmd_localization_import(
         return localization_failure(
             args,
             out,
-            "apply",
             "IMPORT_REJECTED",
             message,
             Some(json!(plan)),
             Some(&baseline),
             workspace_diagnostics,
-            read_only,
-            1,
         );
     }
     match project.apply_localization_import(selection, exchange, expected) {
@@ -3637,14 +3580,11 @@ fn cmd_localization_import(
             localization_failure(
                 args,
                 out,
-                "apply",
                 code,
                 error,
                 Some(json!(plan)),
                 Some(&baseline),
                 workspace_diagnostics,
-                read_only,
-                1,
             )
         }
     }
@@ -3663,15 +3603,16 @@ fn read_localization_exchange(path: &Path) -> Result<LocalizationExchange, (bool
 fn localization_failure(
     args: &LocalizationArgs,
     out: &mut impl Write,
-    operation: &str,
     code: &str,
     message: String,
     plan: Option<Value>,
     baseline: Option<&str>,
     workspace_diagnostics: &[Diagnostic],
-    read_only: bool,
-    exit_code: i32,
 ) -> Result<i32, String> {
+    let operation = match args.operation {
+        LocalizationOperation::Preview => "preview",
+        LocalizationOperation::Apply => "apply",
+    };
     let payload = json!({
         "ok": false,
         "operation": operation,
@@ -3679,8 +3620,13 @@ fn localization_failure(
         "plan": plan,
         "baseline": baseline,
         "workspace_diagnostics": workspace_diagnostics,
-        "read_only": read_only,
+        "read_only": !workspace_diagnostics.is_empty(),
     });
+    let exit_code = if matches!(code, "INVALID_SELECTION" | "IO_ERROR") {
+        2
+    } else {
+        1
+    };
     localization_response(args.json, out, payload, &message, exit_code)
 }
 

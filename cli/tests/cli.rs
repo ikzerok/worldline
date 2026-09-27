@@ -348,7 +348,10 @@ fn relations_project_json_preserves_explicit_roles_and_place_history() {
     ]);
     assert_eq!(code.unwrap(), 0, "{out:?}");
     let character = json_lines(&out).remove(0);
-    assert!(character["relations"]["edges"].as_array().unwrap().is_empty());
+    assert!(character["relations"]["edges"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert_eq!(
         character["history"]["items"]
             .as_array()
@@ -1328,7 +1331,12 @@ fn localization_cli_exports_and_imports_only_the_explicit_translation_selection(
         &selection,
         "--json",
     ]);
-    assert_eq!(preview_code.unwrap(), 0, "{}", String::from_utf8_lossy(&out));
+    assert_eq!(
+        preview_code.unwrap(),
+        0,
+        "{}",
+        String::from_utf8_lossy(&out)
+    );
     let preview = json_lines(&out).remove(0);
     assert_eq!(preview["ok"], true);
     assert_eq!(preview["plan"]["can_export"], true);
@@ -1352,13 +1360,10 @@ fn localization_cli_exports_and_imports_only_the_explicit_translation_selection(
         })
         .collect::<Vec<_>>();
     exchange["entries"][0]["translation_parts"] = json!(translation_parts);
-    let package = workspace
-        .parent()
-        .unwrap()
-        .join(format!(
-            "{}-translation.json",
-            workspace.file_name().unwrap().to_string_lossy()
-        ));
+    let package = workspace.parent().unwrap().join(format!(
+        "{}-translation.json",
+        workspace.file_name().unwrap().to_string_lossy()
+    ));
     std::fs::write(&package, serde_json::to_vec(&exchange).unwrap()).unwrap();
     let package_path = package.to_string_lossy().into_owned();
 
