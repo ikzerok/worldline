@@ -3511,13 +3511,12 @@ fn cmd_markdown_import(args: &MarkdownImportArgs, out: &mut impl Write) -> Resul
             }
         }
     };
-    let current_baseline = new_baseline.as_deref().unwrap_or(&baseline);
     let payload = json!({
         "ok": true,
         "operation": args.operation.as_str(),
         "plan": plan,
         "changed_files": changed_files,
-        "baseline": current_baseline,
+        "baseline": baseline,
         "new_baseline": new_baseline,
         "workspace_diagnostics": workspace_diagnostics,
         "read_only": false,

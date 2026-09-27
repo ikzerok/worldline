@@ -90,7 +90,7 @@ new_baseline, diagnostics, workspace_diagnostics, read_only}`；合法 DTO 的�
 确认只在 apply 阶段提供；未确认的 preview 仍返回完整损失和候选计划，`can_apply` 为 false。
 `--id-map-json` 提供 source-relative-path 到稳定 ID 的显式映射，`--namespace` 选择输出命名空间。
 preview 返回可审阅映射、冲突、损失和全部待写路径，不写文件；apply 重扫输入并校验预览摘要、内容基线与目标路径。
-成功结果为 `{ok, operation, plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；preview 的 `changed_files` 为空且 `new_baseline` 为 null。成功写入通过 Project 可恢复保存协议；失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，预览/应用失败为 1。输入契约见 [markdown-import.md](markdown-import.md)。
+成功结果为 `{ok, operation, plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；`baseline` 始终为应用前工程基线，`new_baseline` 在 apply 成功后为持久化的新基线（preview 时为 null），CLI 与 RPC 同义。preview 的 `changed_files` 为空。成功写入通过 Project 可恢复保存协议；失败返回 `{ok:false,error:{code,message},...}`，用法错误退出码为 2，预览/应用失败为 1。输入契约见 [markdown-import.md](markdown-import.md)。
 
 `wl reader-export preview|apply <工程目录或入口> --selection-json '<JSON DTO>' [apply: --plan-digest 摘要 --out 新目录] [--json]` 调用 core `Project::preview_reader_export` / `export_reader_site`。preview 只读当前缓冲，返回 `plan`（作者可见的 `included` 与 `exclusions`、`content_baseline`、`plan_digest`），不写目标；apply 必须提供原选择、摘要和新目录。摘要绑定当前内容基线和被选附件字节；应用前重新验证，过期返回 `STALE_PLAN`，其他应用失败返回 `EXPORT_FAILED`。生成内容、显式允许范围、离线资源与完整备份差异见 [reader-export.md](reader-export.md)。
 

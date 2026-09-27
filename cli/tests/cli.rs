@@ -1826,6 +1826,13 @@ fn markdown_import_cli_requires_review_digest_and_explicit_loss_confirmation() {
     assert_eq!(applied["operation"], "apply");
     assert_eq!(applied["plan"]["can_apply"], true);
     assert!(!applied["changed_files"].as_array().unwrap().is_empty());
+    assert_eq!(applied["baseline"], baseline);
+    assert_eq!(
+        applied["new_baseline"],
+        worldline_core::project::Project::open(&project)
+            .unwrap()
+            .content_baseline()
+    );
     assert!(project.join(".world/markdown-imports").exists());
     let _ = std::fs::remove_dir_all(project.parent().unwrap());
 }
