@@ -149,7 +149,7 @@ choice once "翻墙"
 ```
 
 ```text
-choiceStmt := 'choice' ('once')? STRING ('if' expr)? block
+choiceStmt := 'choice' ('once')? STRING ('if' expr)? localizationAnnotation?
 ```
 
 - 标签 `STRING` 是必填的按钮文案,支持 `{}` 内插;
@@ -163,6 +163,25 @@ choiceStmt := 'choice' ('once')? STRING ('if' expr)? block
 - 一组选择全部不可用时,流程同样落到组后——这就是 fallback,
   无需专门语法。
 - 选择可任意嵌套;内层选择组耗尽后落到内层组之后。
+
+### 4.2.1 本地化字符串 ID
+
+Project 清单声明 `required_features` 中的 `content.localization.v1` 后，文本行和选择标签可附带源码身份注记：
+
+```wl
+event harbor_arrival
+  你好，{traveler} 👋，欢迎来到 [[event:harbor|雾港]]。 #wl-localization:welcome
+  choice "继续" if greeted #wl-localization:continue
+    -> END
+```
+
+```text
+localizationAnnotation := '#wl-localization:' ID
+ID := [A-Za-z_][A-Za-z0-9_-]*
+```
+
+文本行注记必须是行尾标签中的最后一个 tag；选择标签注记位于可选 `if` 条件之后。每项最多一个注记。没有清单能力时使用注记是 P004；不支持此能力的旧客户端按工作区只读处理。ID 在活动源码中须唯一，由作者维护，跟随源语句移动或改名；不从内容、路径、上下文或位置推导。缺失 ID 不产生诊断，但该文本不会进入本地化导出。此注记仅供 core 作者 API 使用，不成为 `Output.tags`、可见文本或运行 fingerprint 的一部分；完整交换和预览契约见 [localization.md](localization.md)。
+
 
 ### 4.3 跃迁
 

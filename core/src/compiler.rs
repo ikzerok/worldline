@@ -39,6 +39,9 @@ pub struct CompileOptions {
     /// 显式启用清单能力 `content.object_refs.v1`。独立源码编译默认关闭。
     #[serde(default)]
     pub object_refs: bool,
+    /// 显式启用清单能力 `content.localization.v1`。
+    #[serde(default)]
+    pub localization_ids: bool,
 }
 
 impl Default for CompileOptions {
@@ -46,6 +49,7 @@ impl Default for CompileOptions {
         Self {
             language_version: LanguageVersion::V1_9,
             object_refs: false,
+            localization_ids: false,
         }
     }
 }
@@ -55,6 +59,7 @@ impl CompileOptions {
         Self {
             language_version,
             object_refs: false,
+            localization_ids: false,
         }
     }
 
@@ -68,6 +73,11 @@ impl CompileOptions {
 
     pub const fn with_object_refs(mut self, enabled: bool) -> Self {
         self.object_refs = enabled;
+        self
+    }
+
+    pub const fn with_localization_ids(mut self, enabled: bool) -> Self {
+        self.localization_ids = enabled;
         self
     }
 }

@@ -100,6 +100,9 @@ v1.6:世界观、人物属性和关系是静态作者资料;不改变运行期�
 这些资料发生内容变化时参与指纹校验;事件 `at` 序号仅为展示布局,不参与指纹。
 `period` / `during` / `follows` 描述世界时间关系,不改变执行状态、不参与运行存档指纹。
 `tag` / `asset` / `mark` / `attach` / `anchor_def` / `anchor_link` 是创作目录元数据,同样不参与运行存档指纹;正文原有 `#标签` 的输出契约不变。
+
+启用 `content.localization.v1` 后的 `#wl-localization:<id>` 是文本身份元数据：core 从 Program 暴露其 ID，但不把它写入 `Output.tags`、可见文字或运行 fingerprint。locale sidecar 保存翻译，不改变当前 runtime 输出。
+
 未使用新元数据的旧故事保留原指纹策略,注释与文件移动不影响指纹。
 
 `StoryState` 可全量序列化为 JSON(serde)。

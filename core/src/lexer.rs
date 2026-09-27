@@ -135,6 +135,7 @@ pub enum LineKind {
         once: bool,
         label_raw: String,
         cond_src: Option<String>,
+        localization_id: Option<String>,
         loc: Loc,
         label_span: Span,
     },
@@ -1385,7 +1386,7 @@ fn classify(
             let off = (content.chars().count() - rc.len()) as u32;
             let mut i = skip_spaces(&rc, 0);
             let mut once = false;
-            // choice [once] ["label"] [if expr]
+            // choice [once] ["label"] [if expr] [#wl-localization:id]
             if rc[i..].starts_with(&['o', 'n', 'c', 'e']) {
                 let after = i + 4;
                 let is_word = after >= rc.len() || rc[after] == ' ' || rc[after] == '"';
@@ -1405,6 +1406,7 @@ fn classify(
                     once,
                     label_raw: String::new(),
                     cond_src: None,
+                    localization_id: None,
                     loc: Loc::new(no, word_col),
                     label_span: Span::new(no, off + i as u32 + 1, 1),
                 };
@@ -1420,6 +1422,7 @@ fn classify(
                         once,
                         label_raw: String::new(),
                         cond_src: None,
+                        localization_id: None,
                         loc: Loc::new(no, word_col),
                         label_span: Span::new(no, off + i as u32 + 1, 1),
                     }
@@ -1430,28 +1433,34 @@ fn classify(
                 off + label_start as u32 + 1,
                 label.chars().count().max(1) as u32,
             );
+            let raw_tail: String = rc[i..].iter().collect();
+            let (tail, localization_id) = split_choice_localization_annotation(
+                &raw_tail,
+                file,
+                no,
+                off + i as u32 + 1,
+                options.localization_ids,
+                diags,
+            );
             let mut cond_src = None;
-            if rc[i..].iter().collect::<String>().trim().starts_with("if") {
-                let s: String = rc[i..].iter().collect();
-                let s = s.trim();
+            if tail.trim().starts_with("if") {
+                let s = tail.trim();
                 if let Some(cond) = s.strip_prefix("if") {
                     cond_src = Some(cond.trim().to_string());
                 }
-            } else if i < rc.len() {
-                let tail: String = rc[i..].iter().collect();
-                if !tail.trim().is_empty() {
-                    diags.push(Diagnostic::error(
-                        "P004",
-                        file,
-                        Span::new(no, off + i as u32 + 1, tail.chars().count() as u32),
-                        "choice 标签之后只能是 `if 条件`",
-                    ));
-                }
+            } else if !tail.trim().is_empty() {
+                diags.push(Diagnostic::error(
+                    "P004",
+                    file,
+                    Span::new(no, off + i as u32 + 1, tail.chars().count() as u32),
+                    "choice 标签之后只能是 `if 条件` 或 `#wl-localization:<id>`",
+                ));
             }
             LineKind::Choice {
                 once,
                 label_raw: label,
                 cond_src,
+                localization_id,
                 loc: Loc::new(no, word_col),
                 label_span,
             }
@@ -1509,4 +1518,63 @@ fn classify(
             loc: Loc::new(no, 1),
         },
     }
+}
+
+fn split_choice_localization_annotation(
+    raw: &str,
+    file: &str,
+    line: u32,
+    column: u32,
+    enabled: bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (String, Option<String>) {
+    const MARKER: &str = "#wl-localization:";
+    let chars = raw.chars().collect::<Vec<_>>();
+    let marker = MARKER.chars().collect::<Vec<_>>();
+    let mut positions = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    for index in 0..chars.len() {
+        let current = chars[index];
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if current == '\\' {
+                escaped = true;
+            } else if current == '"' {
+                quoted = false;
+            }
+        } else if current == '"' {
+            quoted = true;
+        } else if chars[index..].starts_with(&marker)
+            && (index == 0 || chars[index - 1].is_whitespace())
+        {
+            positions.push(index);
+        }
+    }
+    let Some(&start) = positions.first() else {
+        return (raw.trim_end().to_string(), None);
+    };
+    let source = chars[..start].iter().collect::<String>().trim_end().to_string();
+    let id = chars[start + marker.len()..].iter().collect::<String>();
+    let annotation_column = column + start as u32;
+    if positions.len() != 1 || id.is_empty() || !crate::workspace_documents::valid_id(&id) {
+        diagnostics.push(Diagnostic::error(
+            "P004",
+            file,
+            Span::new(line, annotation_column, MARKER.chars().count() as u32),
+            "本地化注记必须是唯一的 `#wl-localization:<id>`",
+        ));
+        return (source, None);
+    }
+    if !enabled {
+        diagnostics.push(Diagnostic::error(
+            "P004",
+            file,
+            Span::new(line, annotation_column, MARKER.chars().count() as u32 + id.len() as u32),
+            "本地化注记需要清单能力 content.localization.v1",
+        ));
+        return (source, None);
+    }
+    (source, Some(id))
 }

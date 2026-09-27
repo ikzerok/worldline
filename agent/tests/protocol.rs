@@ -242,6 +242,133 @@ fn reader_export_rpc_previews_exports_and_rejects_stale_plans() {
 }
 
 #[test]
+fn localization_rpc_exports_and_imports_typed_translation_data() {
+    let root = temp_workspace(
+        "localization-roundtrip",
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.localization.v1"]}"#,
+        "let traveler = \"Ari\"\nevent greeting\n  Hello {traveler} [[event:secret|Harbor]] #wl-localization:greeting\n  -> END\nevent secret\n  -> END\n",
+    );
+    let path = root.to_string_lossy().into_owned();
+    let selection = json!({
+        "schema_version": 1,
+        "source_locale": "en",
+        "target_locale": "zh-Hant",
+        "string_ids": ["greeting"]
+    });
+    let package = root
+        .parent()
+        .unwrap()
+        .join(format!(
+            "{}-translation.json",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+    let (_, export_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "localization.export.preview",
+            json!({"project_id":"p1", "selection":selection.clone()}),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let preview = &export_responses[1]["result"];
+    assert_eq!(preview["ok"], true, "{preview:?}");
+    assert_eq!(preview["plan"]["can_export"], true);
+    let export_digest = preview["plan"]["plan_digest"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let source_exchange = preview["plan"]["exchange"].clone();
+
+    let (_, export_apply_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "localization.export.apply",
+            json!({
+                "project_id":"p1",
+                "selection":selection.clone(),
+                "plan_digest":export_digest,
+                "output":package.to_string_lossy().to_string(),
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    assert_eq!(export_apply_responses[1]["result"]["ok"], true);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&package).unwrap()).unwrap(),
+        source_exchange
+    );
+
+    let mut exchange_value = source_exchange;
+    let package_text = exchange_value.to_string();
+    assert!(!package_text.contains("traveler"));
+    assert!(!package_text.contains("secret"));
+    let translation_parts = exchange_value["entries"][0]["source_parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .cloned()
+        .map(|mut part| {
+            match part["type"].as_str().unwrap() {
+                "text" => part["text"] = json!("歡迎，"),
+                "link" => part["label"] = json!("港口譯名"),
+                "placeholder" => {}
+                other => panic!("unexpected source part {other}"),
+            }
+            part
+        })
+        .collect::<Vec<_>>();
+    exchange_value["entries"][0]["translation_parts"] = json!(translation_parts);
+    std::fs::write(&package, serde_json::to_vec(&exchange_value).unwrap()).unwrap();
+
+    let (_, import_preview_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "localization.import.preview",
+            json!({
+                "project_id":"p1",
+                "selection":selection.clone(),
+                "exchange":exchange_value.clone(),
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let import_preview = &import_preview_responses[1]["result"];
+    assert_eq!(import_preview["ok"], true, "{import_preview:?}");
+    assert_eq!(import_preview["plan"]["can_apply"], true);
+    let import_digest = import_preview["plan"]["plan_digest"].as_str().unwrap();
+    let (_, import_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path})),
+        req(
+            2,
+            "localization.import.apply",
+            json!({
+                "project_id":"p1",
+                "selection":selection,
+                "exchange":exchange_value,
+                "plan_digest":import_digest,
+            }),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let applied = &import_responses[1]["result"];
+    assert_eq!(applied["ok"], true, "{applied:?}");
+    assert_eq!(applied["changed_files"].as_array().unwrap().len(), 2);
+    let sidecar: Value = serde_json::from_slice(
+        &std::fs::read(root.join(".world/localization/zh-Hant.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        sidecar["entries"]["greeting"]["translation_parts"][0]["text"],
+        "歡迎，"
+    );
+    let _ = std::fs::remove_file(package);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn catalog_query_rpc_keeps_read_only_and_error_boundaries() {
     let root = temp_workspace(
         "catalog-query-read-only",

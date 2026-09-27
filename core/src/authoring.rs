@@ -830,15 +830,19 @@ impl Project {
                         label_raw,
                         once,
                         cond_src,
+                        localization_id,
                         ..
                     } => {
                         let updated = crate::navigation::rename_links(&label_raw, old, new);
                         (updated != label_raw).then(|| {
                             format!(
-                                "choice {}{}{}",
+                                "choice {}{}{}{}",
                                 if once { "once " } else { "" },
                                 quote(&updated),
-                                cond_src.map(|c| format!(" if {c}")).unwrap_or_default()
+                                cond_src.map(|c| format!(" if {c}")).unwrap_or_default(),
+                                localization_id
+                                    .map(|id| format!(" #wl-localization:{id}"))
+                                    .unwrap_or_default()
                             )
                         })
                     }

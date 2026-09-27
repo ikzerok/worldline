@@ -30,6 +30,11 @@
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
       "additionalProperties": { "type": "string", "minLength": 1 }
     },
+    "localizations": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
     "graph_views": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
@@ -128,6 +133,21 @@
         "properties": {
           "required_features": {
             "contains": { "const": "content.templates.v1" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "localizations": { "type": "object", "minProperties": 1 }
+        },
+        "required": ["localizations"]
+      },
+      "then": {
+        "properties": {
+          "required_features": {
+            "contains": { "const": "content.localization.v1" }
           }
         }
       }

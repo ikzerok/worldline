@@ -156,6 +156,8 @@ pub struct TextStmt {
     pub glue: bool,
     /// 行尾 `#标签`:元数据,不输出。
     pub tags: Vec<String>,
+    /// 显式稳定的本地化源身份，不参与运行语义。
+    pub localization_id: Option<String>,
     pub loc: Loc,
 }
 
@@ -355,6 +357,8 @@ pub struct ChoiceStmt {
     pub cond: Option<Expr>,
     pub body: Vec<Stmt>,
     pub loc: Loc,
+    /// 显式稳定的本地化源身份，不参与运行语义。
+    pub localization_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]

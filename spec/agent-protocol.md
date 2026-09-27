@@ -323,6 +323,22 @@ workspace_diagnostics[], read_only, language_version}`。工作区存在 `WS003`
 选项列表不进入状态视图,只出现在各协议事件/结果的 `choices` 字段中。
 `perms` 是世界叙事身份状态的旧权限名称投影，不维护第二份集合；独立锚点在 `catalog.anchors`，这里的 `anchors` 仍是运行时记录。
 
+
+### 2.10 本地化翻译交换
+
+```text
+wl localization export preview <工程目录> --selection-json '<DTO>' --json
+wl localization export apply <工程目录> --selection-json '<DTO>' --plan-digest 摘要 --out 新包.json --json
+wl localization import preview <工程目录> --selection-json '<DTO>' --package 交换包.json --json
+wl localization import apply <工程目录> --selection-json '<DTO>' --package 交换包.json --plan-digest 摘要 --json
+```
+
+selection 使用 core `LocalizationSelection` DTO：`{schema_version:1, source_locale, target_locale, string_ids}`。export preview 调用 `Project::preview_localization_export`，只读返回 `{ok:true, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；plan 包含带选中源文与受保护 token 的 versioned UTF-8 `exchange`、`source_baseline`、`plan_digest`、diagnostics 与 `can_export`。export apply 重算计划并调用 `Project::export_localization`，只写入工作区外不存在的新 JSON 文件；返回 `{ok:true, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`。
+
+import 读取 `LocalizationExchange` JSON，并要求调用方重复提供导出时的相同 selection；不允许交换包扩大 ID 白名单。preview 调用 `Project::preview_localization_import`，只读返回 `{ok:true, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；plan 含目标 locale、受影响 ID、诊断、`plan_digest` 与 `can_apply`。即使 `can_apply:false`，preview 仍是成功的审阅结果，不写盘。apply 调用 `Project::apply_localization_import`，重验 package 版本/selection/source revision/source baseline、token 完整性、Project content baseline 与 digest，然后在单一可恢复事务中注册并更新 locale sidecar；成功返回 `{ok:true, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`。locale sidecar 不参与 runtime 输出。
+
+apply 验证失败时 CLI 退出码为 1 并返回稳定 `error.code`、中文 `message` 及诊断；输出文件/包读取等 IO 错误退出码为 2。CLI/RPC 只转发 core DTO 和结果，不解析 `.wl`、不自行校验 token。JSON-RPC 方法的确切映射见 §3.3。
+
 ## 3. `wl-agent` 协议(JSON-RPC 2.0 · stdio 行分帧)
 
 `wl-agent` 是有状态的机器协议入口:外部 agent 程序 spawn 子进程,经
@@ -390,6 +406,11 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `entity.create` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | `{ok, operation, entity, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `entity.update` | `{project_id, entity, baseline?}` 或 `{path, entity, baseline?}` | 同 `entity.create`;实体 ID 为稳定身份 |
 | `entity.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, entity:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
+| `localization.export.preview` | `{path|project_id, selection}` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；`plan` 带 versioned exchange、source baseline、diagnostics、plan digest 与 `can_export` |
+| `localization.export.apply` | `{path|project_id, selection, plan_digest, output}` | `{ok, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`；重算 export 计划，拒绝过期摘要、已有文件或工程内输出路径 |
+| `localization.import.preview` | `{path|project_id, selection, exchange}` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；有效 DTO 的内容错误留在 plan diagnostics / `can_apply:false` 且不写盘；结构无效的 package 返回 result `INVALID_PACKAGE` |
+| `localization.import.apply` | `{path|project_id, selection, exchange, plan_digest}` | `{ok, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；任何版本、选择、源文、token、Project 基线或摘要冲突均整批零写入 |
+
 | `shutdown` | `{}` | `{bye: true}`(响应后进程退出,码 0) |
 
 ### 3.4 生命周期语义

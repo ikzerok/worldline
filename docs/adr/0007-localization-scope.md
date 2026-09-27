@@ -1,36 +1,26 @@
 # ADR-0007：本地化字符串身份与翻译往返范围
 
-- 状态：提案，待用户授权；不是已批准的功能契约
+- 状态：已决定（用户已批准选项 A）
 - 关联：ikzerok/worldline#26（CAP-09B）、ikzerok/worldline#24（已关闭，不提供游戏引擎适配器）
 
 ## 背景
 
-CAP-09B 仍处于 `decision-gate`，目标写有稳定字符串 ID、源文修订、占位符、链接与上下文，但没有已批准的字符串身份或翻译保存生命周期。当前 `TextStmt` / `ChoiceStmt` 没有持久字符串 ID；源码位置、事件/场景名、选择顺序都会因移动或重排改变，不能单独充当稳定 ID。现有 `Project::content_baseline()` 绑定工作区当前内容；运行 fingerprint 则绑定可见原文及插值表达式，另有不同用途。两者不能被假定为同一个翻译修订号。
+CAP-09B 起初缺少获批的字符串身份和翻译保存生命周期。当前 `TextStmt` / `ChoiceStmt` 没有持久字符串 ID；源码位置、事件/场景名、选择顺序都会因移动或重排改变，不能单独充当稳定 ID。`Project::content_baseline()` 绑定工作区当前内容；运行 fingerprint 则绑定可见原文及插值表达式，另有不同用途。两者不能被假定为同一个翻译修订号。
 
 正文和选择中的显式链接具有目标 `TargetRef` 与可译显示文字；插值由 AST 表达式表示。当前语言只有一份作者原文，没有 locale 选择、翻译覆盖层或运行时语言回退契约。`Project` 有基线保护及可恢复保存事务，但跨文件文件系统原子性不作保证。
 
 依赖 #24 已决定不选引擎、不制作引擎产物或适配器。这不决定翻译数据是否参与运行时输出，也不批准任何自动 ID 派生或自动选择内容策略。
 
-## 待授权的实施范围
+## 决定
 
-以下三种范围共用边界：每个 ID 均由作者显式指定、项目内唯一且不由文本/路径/行号自动生成；ID 随对应片段移动/改名；导出只含调用者明确选择的字符串，不沿链接或 include 自动扩展；source revision 与 Project 基线是不同检查；占位符和链接目标不可由译文改写；不含机器翻译或游戏引擎适配器。需先选一个范围，再将其细化为规范和协议。
+用户批准选项 A：采用翻译交换与工程内 locale sidecar，不改写 `.wl` 原文，不增加运行时 locale、回退或引擎适配器。
 
-### A. 保守翻译交换（建议）
+- `.wl` 文本行和选择标签可在行尾声明作者维护的 `#wl-localization:<id>`。ID 项目内唯一、随片段移动，不由内容、路径或位置生成；不自动补建。
+- 导出必须携带显式 ID 白名单。仅导出白名单中的源文、相对来源位置和必要的受保护 token；不沿 include/链接扩展，不默认导出说话者、相邻文案或链接目标资料。
+- 交换文件是版本化 UTF-8 JSON。插值与显式链接用不可编辑 token 表示；链接显示文字可译，链接目标不进入交换文件。译文作为 `.world/project.json` 注册的独立 locale sidecar 保存。
+- preview 报告缺译、重复/未知 ID、token/版本错误及源文过期；过期标记为 `needs_review`。任一错误、过期项或 Project 基线不匹配均使整批 apply 失败。apply 重算预览与基线后，在同一 Project 候选/可恢复保存事务中写入清单及 sidecar；不宣称跨文件系统原子性。
+- 每个字符串的 source revision 与 Project `content_baseline` 分离。源文或插值/链接结构变化标记过期；移动/改名本身不重建 ID。身份注记、locale sidecar 不改变运行 fingerprint，原文仍按既有规则参与 fingerprint。
 
-- 在 `.wl` 可翻译文本与选择旁使用作者显式 ID；缺失 ID 不自动补建。导出仅接受明确 ID 白名单，源引用只给出所选片段的工程相对路径与 ID，不含绝对路径；默认不含说话者/周边文案/目标资料。变量表达式和链接目标用不可编辑 token 隔离，链接显示文字可译。
-- 以版本化 UTF-8 交换文件传递译文；不改写原 `.wl`，导入目标为独立 locale sidecar。预览逐项报告缺译、未知/重复 ID、token 错误和 source revision 过期；过期项在预览中标为 `needs_review`，不持久化该状态。任一必需译文缺失、校验错误、过期，或 Project 基线/格式版本不匹配，都拒绝整批 apply。apply 只在完整重验后通过 Project 保存事务写入；不声称跨文件系统原子性。
-- **取舍：**保留原文及既有 runtime/fingerprint 语义，边界最易审计；但新增作者 ID 注记/迁移负担，locale sidecar 暂不被 runtime 消费。
+## 后果
 
-### B. 翻译替换所选 `.wl` 原文
-
-- 同样采用作者显式 ID、明确白名单、受保护 token、版本与基线预览/整批拒绝；通过后把所选文本替换为译文，仍只保留单份可执行 `.wl` 稿件，不生成 locale runtime。
-- **取舍：**现有 runtime 可直接运行替换后的文字，工程里无需第二份 locale 数据；但原文会被覆盖，本地化工具不能恢复原文或并存多个语言，除非作者另用版本控制/备份。可见文本变化按现有 fingerprint 规则使旧存档不兼容。
-
-### C. 运行时 locale sidecar
-
-- 采用显式 ID 与选择白名单，将多份译文保存在 sidecar，并新增 runtime 的 locale 选择以渲染文本和选择标签；不涉及引擎适配器。
-- **取舍：**原文与多语言译文并存且可由 runtime 使用；同时扩大到运行 API/CLI/RPC，必须新增并测试 locale 选择、未译文本回退和 save/fingerprint 兼容契约。当前语义没有这些政策，选 C 还须在实现前明确：未译文是回退原文还是阻止该 locale；locale 是调用方 session 配置还是存档身份；locale 翻译更新是否使既有存档失效。未获明确决定前不可推定。
-
-## 决策请求与后续
-
-请授权 **A、B 或 C** 之一，或拒绝三者并指定不同边界。建议选 A；这不是已批准决定。A/B 获批后，source ID 的具体注记语法、交换 DTO、source revision 算法、token 表示、sidecar 注册/存储格式和诊断编号须先写入 `spec/` 与 `spec/agent-protocol.md`，再实现 core Project API、CLI/RPC 及 roundtrip 测试。C 获批时还须先决定其列出的三项 runtime 政策。CAP-09B 在用户授权与实现验收前保持 decision-gate，不关闭 #26。
+作者须显式维护 ID；缺少 ID 的字符串不能加入导出，复制片段时重复 ID 会使涉及该 ID 的往返失败。译文能安全往返并保留多 locale，但在后续获批 runtime 能力前不会被 `worldline-runtime` 消费。源文替换、自动 ID 生成、默认公开选择、引用闭包、机器翻译与所有引擎集成都不在本决定内。实现细节和 CLI/RPC 形状以 `spec/localization.md` 与 `spec/agent-protocol.md` 为准。

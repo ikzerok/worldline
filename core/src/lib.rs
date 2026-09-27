@@ -22,6 +22,7 @@ mod fingerprint;
 pub mod graph;
 pub mod graph_views;
 pub mod lexer;
+pub mod localization;
 pub mod manuscript;
 pub mod map_creation;
 pub mod markdown_import;

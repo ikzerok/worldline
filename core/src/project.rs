@@ -511,16 +511,23 @@ impl Project {
 
     pub fn compile_options(&self) -> CompileOptions {
         let manifest = crate::workspace_documents::manifest_path(&self.root);
-        let object_refs = self
+        let required_features = self
             .authoring_documents
             .get(&manifest)
             .filter(|document| !document.is_deleted())
-            .is_some_and(|document| {
+            .map(|document| {
                 crate::workspace_documents::parse_registry(&self.root, document.bytes())
                     .required_features
-                    .contains(crate::project_templates::OBJECT_REFS_REQUIRED_FEATURE)
-            });
-        CompileOptions::new(self.language_version).with_object_refs(object_refs)
+            })
+            .unwrap_or_default();
+        CompileOptions::new(self.language_version)
+            .with_object_refs(
+                required_features
+                    .contains(crate::project_templates::OBJECT_REFS_REQUIRED_FEATURE),
+            )
+            .with_localization_ids(
+                required_features.contains(crate::localization::LOCALIZATION_REQUIRED_FEATURE),
+            )
     }
 
     pub(crate) fn compile_current(&self) -> CompileResult {

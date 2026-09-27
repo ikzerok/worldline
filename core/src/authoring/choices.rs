@@ -118,12 +118,21 @@ impl EventDraft {
         let indent = block.as_ref().map_or(0, |b| b.indent);
         let padding = " ".repeat(indent);
         let body_padding = " ".repeat(block.as_ref().map_or(2, |b| b.body_indent));
+        let localization_id = existing
+            .and_then(|index| match &parsed[index].kind {
+                LineKind::Choice {
+                    localization_id, ..
+                } => localization_id.clone(),
+                _ => None,
+            })
+            .map(|id| format!(" #wl-localization:{id}"))
+            .unwrap_or_default();
         let suffix = block
             .as_ref()
             .map(|b| header_comment(&self.body[b.range.start..b.header_end]))
             .unwrap_or("");
         let mut text = format!(
-            "{padding}choice {}{}{}{suffix}\n",
+            "{padding}choice {}{}{}{localization_id}{suffix}\n",
             if choice.once { "once " } else { "" },
             quote(&choice.label),
             if choice.condition.trim().is_empty() {

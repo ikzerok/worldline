@@ -70,6 +70,7 @@ pub(crate) struct Registry {
     pub(crate) comments: BTreeMap<String, PathBuf>,
     pub(crate) proposals: BTreeMap<String, PathBuf>,
     pub(crate) saved_queries: BTreeMap<String, PathBuf>,
+    pub(crate) localizations: BTreeMap<String, PathBuf>,
     pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
@@ -102,6 +103,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let mut registry = Registry::default();
     let mut manifest_read_only = manifest_capability_is_read_only(manifest);
     let mut templates_feature_missing = false;
+    let mut localization_feature_missing = false;
     registry
         .documents
         .insert(manifest_path(root), manifest_read_only);
@@ -210,6 +212,20 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         );
     }
 
+    if object
+        .get("localizations")
+        .and_then(Value::as_object)
+        .is_some_and(|localizations| !localizations.is_empty())
+        && !required_feature(object, "content.localization.v1")
+    {
+        localization_feature_missing = true;
+        registry.report(
+            root,
+            "WS003",
+            "清单注册 localizations 时必须声明 required_features content.localization.v1",
+        );
+    }
+
     if let Some(config) = object.get("source_config") {
         match parse_source_selection(root, object, config) {
             Ok(selection) => registry.source_selection = Some(selection),
@@ -236,6 +252,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         "comments",
         "proposals",
         "saved_queries",
+        "localizations",
     ] {
         let Some(value) = object.get(key) else {
             continue;
@@ -280,7 +297,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     continue;
                 }
                 paths.insert(path_key, path.clone());
-                if key == "templates" && templates_feature_missing {
+                if (key == "templates" && templates_feature_missing)
+                    || (key == "localizations" && localization_feature_missing)
+                {
                     read_only_paths.insert(path.clone());
                 }
                 match key {
@@ -309,6 +328,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "saved_queries" => {
                         registry.saved_queries.insert(id.clone(), path);
+                    }
+                    "localizations" => {
+                        registry.localizations.insert(id.clone(), path);
                     }
                     _ => unreachable!(),
                 }
@@ -499,6 +521,7 @@ fn supported_feature(feature: &str) -> bool {
             | "collaboration.proposals.v1"
             | "catalog.saved_queries.v1"
             | "workspace.source_sets.v1"
+            | "content.localization.v1"
     )
 }
 

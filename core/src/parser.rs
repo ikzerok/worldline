@@ -117,6 +117,7 @@ pub struct Parser<'a> {
     cur_storyline: Option<String>,
     allow_entities: bool,
     allow_object_refs: bool,
+    allow_localization_ids: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -136,6 +137,7 @@ impl<'a> Parser<'a> {
             cur_storyline: None,
             allow_entities: options.language_version.supports_entities(),
             allow_object_refs: options.object_refs,
+            allow_localization_ids: options.localization_ids,
         }
     }
 
@@ -162,6 +164,7 @@ impl<'a> Parser<'a> {
             crate::compiler::LanguageVersion::V1_9
         })
         .with_object_refs(self.allow_object_refs)
+        .with_localization_ids(self.allow_localization_ids)
     }
 
     /// 顶层解析。include 已在驱动层展开;入口 = 主文件第一个事件。
@@ -971,18 +974,27 @@ impl<'a> Parser<'a> {
         match line.kind.clone() {
             LineKind::Text { content, loc } => {
                 let (text_part, glue, tags) = split_text_decorations(&content);
+                let options = self.options();
+                let (tags, localization_id) = extract_localization_id(
+                    tags,
+                    &file,
+                    loc,
+                    options.localization_ids,
+                    self.diags,
+                );
                 let parts = parse_interpolations_with_options(
                     &text_part,
                     &file,
                     line.no,
                     indent + 1,
                     self.diags,
-                    self.options(),
+                    options,
                 );
                 Stmt::Text(TextStmt {
                     parts,
                     glue,
                     tags,
+                    localization_id,
                     loc,
                 })
             }
@@ -1006,6 +1018,7 @@ impl<'a> Parser<'a> {
                 once,
                 label_raw,
                 cond_src,
+                localization_id,
                 loc,
                 label_span,
             } => {
@@ -1034,6 +1047,7 @@ impl<'a> Parser<'a> {
                     cond,
                     body,
                     loc,
+                    localization_id,
                 })
             }
             LineKind::If { cond_src, loc } => {
@@ -1081,6 +1095,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc,
                 })
             }
@@ -1095,6 +1110,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc,
                 })
             }
@@ -1178,6 +1194,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc: Loc::new(espan.line, espan.column),
                 })
             }
@@ -1192,6 +1209,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc: Loc::new(span.line, span.column),
                 })
             }
@@ -1222,6 +1240,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc,
                 })
             }
@@ -1237,6 +1256,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc: Loc::new(loc.line, loc.column),
                 })
             }
@@ -1256,6 +1276,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc: Loc::new(loc.line, loc.column),
                 })
             }
@@ -1270,6 +1291,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc,
                 })
             }
@@ -1286,6 +1308,7 @@ impl<'a> Parser<'a> {
                     parts: vec![],
                     glue: false,
                     tags: vec![],
+                    localization_id: None,
                     loc,
                 })
             }
@@ -1300,6 +1323,7 @@ impl<'a> Parser<'a> {
                     parts: Vec::new(),
                     glue: false,
                     tags: Vec::new(),
+                    localization_id: None,
                     loc: Loc::new(line.no, 1),
                 })
             }
@@ -1469,4 +1493,73 @@ fn split_text_decorations(raw: &str) -> (String, bool, Vec<String>) {
         }
     }
     (text, glue, tags)
+}
+
+fn extract_localization_id(
+    tags: Vec<String>,
+    file: &str,
+    loc: Loc,
+    enabled: bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (Vec<String>, Option<String>) {
+    let mut output_tags = Vec::with_capacity(tags.len());
+    let mut localization_id = None;
+    let mut annotation_count = 0;
+    let tags_len = tags.len();
+    for (index, tag) in tags.into_iter().enumerate() {
+        let Some(id) = tag.strip_prefix("wl-localization:") else {
+            if tag == "wl-localization" {
+                diagnostics.push(Diagnostic::error(
+                    "P004",
+                    file,
+                    Span::new(loc.line, loc.column, tag.chars().count() as u32),
+                    "本地化注记需要 `#wl-localization:<id>`",
+                ));
+                annotation_count += 1;
+            } else {
+                output_tags.push(tag);
+            }
+            continue;
+        };
+        annotation_count += 1;
+        if index + 1 != tags_len {
+            diagnostics.push(Diagnostic::error(
+                "P004",
+                file,
+                Span::new(loc.line, loc.column, tag.chars().count() as u32),
+                "`#wl-localization:<id>` 必须是文本行最后一个标签",
+            ));
+            continue;
+        }
+        if !enabled {
+            diagnostics.push(Diagnostic::error(
+                "P004",
+                file,
+                Span::new(loc.line, loc.column, tag.chars().count() as u32),
+                "本地化注记需要清单能力 content.localization.v1",
+            ));
+            continue;
+        }
+        if !crate::workspace_documents::valid_id(id) {
+            diagnostics.push(Diagnostic::error(
+                "P004",
+                file,
+                Span::new(loc.line, loc.column, tag.chars().count() as u32),
+                "本地化 ID 只能包含 ASCII 字母、数字、下划线和连字符",
+            ));
+            continue;
+        }
+        if localization_id.replace(id.to_string()).is_some() {
+            diagnostics.push(Diagnostic::error(
+                "P004",
+                file,
+                Span::new(loc.line, loc.column, tag.chars().count() as u32),
+                "同一文本行只能声明一个本地化 ID",
+            ));
+        }
+    }
+    if annotation_count > 1 {
+        localization_id = None;
+    }
+    (output_tags, localization_id)
 }
