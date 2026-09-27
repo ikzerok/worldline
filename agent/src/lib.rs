@@ -125,9 +125,11 @@ impl Server {
     }
 
     fn dispatch(&mut self, line: &str) -> Option<Value> {
-        let msg: Value = match serde_json::from_str(line) {
+        let msg: Value = match worldline_core::parse_unique_json(line.as_bytes()) {
             Ok(v) => v,
-            Err(e) => return Some(err(Value::Null, -32700, "解析失败", json!(e.to_string()))),
+            Err(error) => {
+                return Some(err(Value::Null, -32700, "解析失败", json!(error)));
+            }
         };
         if !msg.is_object() {
             return Some(err(

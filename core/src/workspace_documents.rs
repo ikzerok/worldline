@@ -538,8 +538,8 @@ pub(crate) fn valid_template_id(id: &str) -> bool {
 }
 
 /// serde_json 默认对重复键采用后者覆盖前者的语义。
-/// 清单路径决定载入哪些文件，因此必须在注册前拒绝重复键。
-pub(crate) fn parse_unique_json(bytes: &[u8]) -> Result<Value, String> {
+/// 解析 JSON 并拒绝对象中的重复键，供工程与协议输入共享。
+pub fn parse_unique_json(bytes: &[u8]) -> Result<Value, String> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let value = deserializer
         .deserialize_any(UniqueValueVisitor)

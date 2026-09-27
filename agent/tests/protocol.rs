@@ -368,6 +368,47 @@ fn localization_rpc_exports_and_imports_typed_translation_data() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+
+#[test]
+fn localization_rpc_rejects_duplicate_translation_parts_keys() {
+    let root = temp_workspace(
+        "localization-duplicate-json-key",
+        r#"{"schema_version":1,"language_version":"1.10","entry":"world.wl","required_features":["content.localization.v1"]}"#,
+        "let traveler = \"Ari\"\nevent greeting\n  Hello {traveler} #wl-localization:greeting\n  -> END\n",
+    );
+    let path = root.to_string_lossy().to_string();
+    let selection = json!({
+        "schema_version": 1,
+        "source_locale": "en",
+        "target_locale": "zh-Hant",
+        "string_ids": ["greeting"]
+    });
+    let (_, preview_responses) = exchange(&[
+        req(1, "project.open", json!({"path":path.clone()})),
+        req(
+            2,
+            "localization.export.preview",
+            json!({"project_id":"p1", "selection":selection.clone()}),
+        ),
+        req(3, "shutdown", json!({})),
+    ]);
+    let exported = preview_responses[1]["result"]["plan"]["exchange"].to_string();
+    let duplicate_exchange = exported.replace(
+        "\"translation_parts\":null",
+        "\"translation_parts\":[{\"type\":\"text\",\"text\":\"first\"},{\"type\":\"placeholder\",\"token\":\"p0\"}],\"translation_parts\":[{\"type\":\"text\",\"text\":\"second\"},{\"type\":\"placeholder\",\"token\":\"p0\"}]",
+    );
+    assert_ne!(duplicate_exchange, exported);
+    let raw_request = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"localization.import.preview\",\"params\":{{\"path\":{},\"selection\":{},\"exchange\":{duplicate_exchange}}}}}",
+        serde_json::to_string(&path).unwrap(),
+        serde_json::to_string(&selection).unwrap(),
+    );
+    let (code, responses) = exchange_raw(&raw_request);
+    assert_eq!(code, 0);
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["error"]["code"], -32700);
+    let _ = std::fs::remove_dir_all(root);
+}
 #[test]
 fn catalog_query_rpc_keeps_read_only_and_error_boundaries() {
     let root = temp_workspace(

@@ -351,6 +351,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 - **单线程顺序处理**:上一请求响应完成后才处理下一请求;无并发交错。
 - `id` 必须回显;通知(无 id)不响应。
 - stdout 上只写协议消息;日志一律走 stderr(当前实现不主动输出日志)。
+- 请求中任意 JSON object key 重复时按 parse error `-32700` 拒绝，不采用后者覆盖前者。
 
 ### 3.2 错误模型
 
@@ -408,7 +409,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `entity.delete` | `{project_id, id, baseline?}` 或 `{path, id, baseline?}` | `{ok, operation, entity:null, catalog, language_version, baseline, workspace_diagnostics, read_only}` |
 | `localization.export.preview` | `{path|project_id, selection}` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；`plan` 带 versioned exchange、source baseline、diagnostics、plan digest 与 `can_export` |
 | `localization.export.apply` | `{path|project_id, selection, plan_digest, output}` | `{ok, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`；重算 export 计划，拒绝过期摘要、已有文件或工程内输出路径 |
-| `localization.import.preview` | `{path|project_id, selection, exchange}` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；有效 DTO 的内容错误留在 plan diagnostics / `can_apply:false` 且不写盘；结构无效的 package 返回 result `INVALID_PACKAGE` |
+| `localization.import.preview` | `{path|project_id, selection, exchange}` | `{ok, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；有效 DTO 的内容错误留在 plan diagnostics / `can_apply:false` 且不写盘；结构无效的 package 返回 result `INVALID_PACKAGE`，raw JSON 重复键按 §3.1 拒绝 |
 | `localization.import.apply` | `{path|project_id, selection, exchange, plan_digest}` | `{ok, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`；任何版本、选择、源文、token、Project 基线或摘要冲突均整批零写入 |
 
 | `shutdown` | `{}` | `{bye: true}`(响应后进程退出,码 0) |

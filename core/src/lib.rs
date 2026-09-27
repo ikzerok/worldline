@@ -48,6 +48,7 @@ mod storage;
 pub mod timeline;
 pub mod wiki;
 mod workspace_documents;
+pub use workspace_documents::parse_unique_json;
 pub mod workspace_snapshot;
 
 pub use analysis::{Analysis, Stats, Symbols};
