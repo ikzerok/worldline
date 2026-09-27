@@ -14,9 +14,14 @@ use super::{
     ReplayStatus, ReplayStep, ReplayTrace, RunError, Story, Value,
 };
 
+pub(super) enum ReplayStop {
+    Status(ReplayStatus),
+    Yield,
+}
+
 pub(super) struct ContinueOutcome {
     pub(super) outputs: Vec<Output>,
-    pub(super) stop: Option<ReplayStatus>,
+    pub(super) stop: Option<ReplayStop>,
 }
 
 pub(super) struct ReplayExecutionBudget<'a> {
@@ -24,21 +29,37 @@ pub(super) struct ReplayExecutionBudget<'a> {
     pub(super) cancellation: &'a ReplayCancellation,
     pub(super) started: MonotonicInstant,
     pub(super) steps: u64,
+    pub(super) slice: Option<ReplayBudget>,
+    pub(super) slice_started: MonotonicInstant,
+    pub(super) slice_steps: u64,
 }
 
 impl ReplayExecutionBudget<'_> {
-    fn consume_step(&mut self) -> Option<ReplayStatus> {
+    pub(super) fn consume_step(&mut self) -> Option<ReplayStop> {
         if self.cancellation.is_cancelled() {
-            return Some(ReplayStatus::Cancelled);
+            return Some(ReplayStop::Status(ReplayStatus::Cancelled));
         }
         if self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms) {
-            return Some(ReplayStatus::TimeBudgetExceeded);
+            return Some(ReplayStop::Status(ReplayStatus::TimeBudgetExceeded));
         }
         if self.steps >= self.limits.max_steps {
-            return Some(ReplayStatus::StepBudgetExceeded);
+            return Some(ReplayStop::Status(ReplayStatus::StepBudgetExceeded));
+        }
+        if self.slice_exhausted() {
+            return Some(ReplayStop::Yield);
         }
         self.steps += 1;
+        if self.slice.is_some() {
+            self.slice_steps += 1;
+        }
         None
+    }
+
+    pub(super) fn slice_exhausted(&self) -> bool {
+        self.slice.is_some_and(|slice| {
+            self.slice_steps >= slice.max_steps
+                || self.slice_started.elapsed() >= Duration::from_millis(slice.time_budget_ms)
+        })
     }
 }
 
@@ -65,10 +86,10 @@ impl<'p> Story<'p> {
         }
         loop {
             if let Some(run_budget) = budget.as_deref_mut() {
-                if let Some(status) = run_budget.consume_step() {
+                if let Some(stop) = run_budget.consume_step() {
                     return Ok(ContinueOutcome {
                         outputs: out,
-                        stop: Some(status),
+                        stop: Some(stop),
                     });
                 }
             }

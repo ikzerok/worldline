@@ -8,11 +8,125 @@ use web_time::Instant as MonotonicInstant;
 use worldline_core::ast::Program;
 use worldline_core::Analysis;
 
-use super::execution::ReplayExecutionBudget;
+use super::execution::{ReplayExecutionBudget, ReplayStop};
 use super::{
-    ReplayBudget, ReplayCancellation, ReplayObservation, ReplayOrigin, ReplayResult, ReplayStatus,
-    ReplayTrace, RunError, Story, REPLAY_SCHEMA_VERSION,
+    Output, ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
+    ReplayResult, ReplayStatus, ReplayTrace, RunError, Story, REPLAY_SCHEMA_VERSION,
 };
+
+struct ReplayCursor {
+    initial_state: serde_json::Value,
+    initial_pending: bool,
+    pending_outputs: Vec<Output>,
+    step_index: usize,
+    completed_choices: usize,
+    choice_pending: bool,
+}
+
+impl ReplayCursor {
+    fn new(story: &Story<'_>) -> Self {
+        Self {
+            initial_state: story.state_view(),
+            initial_pending: true,
+            pending_outputs: Vec::new(),
+            step_index: 0,
+            completed_choices: 0,
+            choice_pending: false,
+        }
+    }
+}
+
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Boxing the final result allocates on every replay"
+)]
+enum ReplayProgress {
+    Yielded,
+    Finished(ReplayResult),
+}
+
+/// Cooperative replay state for callers that return control between bounded slices.
+///
+/// Reuse the same program and analysis for every `advance` call. `Ok(None)` means the
+/// replay yielded; `Ok(Some(result))` is its final structured status, including cancellation.
+pub struct ReplaySession {
+    trace: ReplayTrace,
+    limits: ReplayBudget,
+    cancellation: ReplayCancellation,
+    started: MonotonicInstant,
+    executed_steps: u64,
+    checkpoint: Option<ReplayCheckpoint>,
+    cursor: Option<ReplayCursor>,
+    finished: bool,
+}
+
+impl ReplaySession {
+    /// Validate and start a cooperative replay without executing story statements.
+    pub fn new(
+        trace: ReplayTrace,
+        limits: ReplayBudget,
+        cancellation: ReplayCancellation,
+    ) -> Result<Self, RunError> {
+        validate_replay_trace(&trace)?;
+        Ok(Self {
+            trace,
+            limits,
+            cancellation,
+            started: MonotonicInstant::now(),
+            executed_steps: 0,
+            checkpoint: None,
+            cursor: None,
+            finished: false,
+        })
+    }
+
+    /// Execute up to `slice` interpreter steps or elapsed time, whichever comes first.
+    /// The aggregate limits supplied to `new` apply across every call.
+    pub fn advance(
+        &mut self,
+        program: &Program,
+        analysis: &Analysis,
+        slice: ReplayBudget,
+    ) -> Result<Option<ReplayResult>, RunError> {
+        if self.finished {
+            return Err(RunError::new("重放会话已完成"));
+        }
+        let mut budget = ReplayExecutionBudget {
+            limits: self.limits,
+            cancellation: &self.cancellation,
+            started: self.started,
+            steps: self.executed_steps,
+            slice: Some(slice),
+            slice_started: MonotonicInstant::now(),
+            slice_steps: 0,
+        };
+        let mut story = match &self.checkpoint {
+            Some(checkpoint) => Story::from_checkpoint(program, analysis, checkpoint)?,
+            None => replay_story(program, analysis, &self.trace)?,
+        };
+        let cursor = self.cursor.get_or_insert_with(|| ReplayCursor::new(&story));
+        let progress = run_replay_slice(&self.trace, cursor, &mut story, &mut budget);
+        let executed_steps = budget.steps;
+        self.executed_steps = executed_steps;
+        match progress {
+            ReplayProgress::Yielded => {
+                let checkpoint = match story.checkpoint() {
+                    Ok(checkpoint) => checkpoint,
+                    Err(error) => {
+                        self.finished = true;
+                        return Err(error);
+                    }
+                };
+                self.checkpoint = Some(checkpoint);
+                Ok(None)
+            }
+            ReplayProgress::Finished(result) => {
+                self.finished = true;
+                Ok(Some(result))
+            }
+        }
+    }
+}
 
 impl ReplayTrace {
     /// Replay a recorded input sequence against a compiled story. Entry traces may be
@@ -24,78 +138,118 @@ impl ReplayTrace {
         limits: ReplayBudget,
         cancellation: &ReplayCancellation,
     ) -> Result<ReplayResult, RunError> {
-        if trace.schema_version != REPLAY_SCHEMA_VERSION {
-            return Err(RunError::new("重放 trace schema_version 不兼容"));
-        }
-        if trace.runtime_version != env!("CARGO_PKG_VERSION") {
-            return Err(RunError::new("重放 trace runtime_version 不兼容"));
-        }
-        let mut story = match &trace.origin {
-            ReplayOrigin::Entry { seed } => Story::new_with_seed(program, analysis, *seed)?,
-            ReplayOrigin::Checkpoint { checkpoint } => {
-                if checkpoint.fingerprint != trace.fingerprint {
-                    return Err(RunError::new("trace 与检查点 fingerprint 不一致"));
-                }
-                Story::from_checkpoint(program, analysis, checkpoint)?
-            }
-        };
+        validate_replay_trace(trace)?;
+        let mut story = replay_story(program, analysis, trace)?;
+        let started = MonotonicInstant::now();
         let mut budget = ReplayExecutionBudget {
             limits,
             cancellation,
-            started: MonotonicInstant::now(),
+            started,
             steps: 0,
+            slice: None,
+            slice_started: started,
+            slice_steps: 0,
         };
-        let mut initial_state = story.state_view();
-
-        if cancellation.is_cancelled() {
-            return Ok(make_replay_result(
-                ReplayStatus::Cancelled,
-                0,
-                0,
-                trace.fingerprint,
-                &story,
-                &initial_state,
-            ));
+        let mut cursor = ReplayCursor::new(&story);
+        match run_replay_slice(trace, &mut cursor, &mut story, &mut budget) {
+            ReplayProgress::Finished(result) => Ok(result),
+            ReplayProgress::Yielded => Err(RunError::new("同步重放意外让出执行")),
         }
+    }
+}
 
+fn validate_replay_trace(trace: &ReplayTrace) -> Result<(), RunError> {
+    if trace.schema_version != REPLAY_SCHEMA_VERSION {
+        return Err(RunError::new("重放 trace schema_version 不兼容"));
+    }
+    if trace.runtime_version != env!("CARGO_PKG_VERSION") {
+        return Err(RunError::new("重放 trace runtime_version 不兼容"));
+    }
+    if let ReplayOrigin::Checkpoint { checkpoint } = &trace.origin {
+        if checkpoint.fingerprint != trace.fingerprint {
+            return Err(RunError::new("trace 与检查点 fingerprint 不一致"));
+        }
+    }
+    Ok(())
+}
+
+fn replay_story<'p>(
+    program: &'p Program,
+    analysis: &'p Analysis,
+    trace: &ReplayTrace,
+) -> Result<Story<'p>, RunError> {
+    match &trace.origin {
+        ReplayOrigin::Entry { seed } => Story::new_with_seed(program, analysis, *seed),
+        ReplayOrigin::Checkpoint { checkpoint } => {
+            Story::from_checkpoint(program, analysis, checkpoint)
+        }
+    }
+}
+
+fn run_replay_slice(
+    trace: &ReplayTrace,
+    cursor: &mut ReplayCursor,
+    story: &mut Story<'_>,
+    budget: &mut ReplayExecutionBudget<'_>,
+) -> ReplayProgress {
+    if budget.cancellation.is_cancelled() {
+        return ReplayProgress::Finished(make_replay_result(
+            ReplayStatus::Cancelled,
+            budget.steps,
+            cursor.completed_choices,
+            trace.fingerprint,
+            story,
+            &cursor.initial_state,
+        ));
+    }
+
+    if cursor.initial_pending {
         let initial_actual = if story.is_paused() {
             story.observation(&[])
         } else {
-            let outcome = match story.continue_story_inner(Some(&mut budget)) {
+            let mut outcome = match story.continue_story_inner(Some(&mut *budget)) {
                 Ok(outcome) => outcome,
                 Err(error) => {
-                    return Ok(make_replay_result(
+                    return ReplayProgress::Finished(make_replay_result(
                         ReplayStatus::StoryFailed {
                             message: error.message,
                             node: error.node,
                             line: error.line,
                         },
                         budget.steps,
-                        0,
+                        cursor.completed_choices,
                         trace.fingerprint,
-                        &story,
-                        &initial_state,
+                        story,
+                        &cursor.initial_state,
                     ));
                 }
             };
-            let outputs = outcome.outputs;
-            story.record_continuation(&outputs);
-            if let Some(status) = outcome.stop {
-                return Ok(make_replay_result(
-                    status,
-                    budget.steps,
-                    0,
-                    trace.fingerprint,
-                    &story,
-                    &initial_state,
-                ));
+            cursor.pending_outputs.append(&mut outcome.outputs);
+            if let Some(stop) = outcome.stop {
+                match stop {
+                    ReplayStop::Yield => return ReplayProgress::Yielded,
+                    ReplayStop::Status(status) => {
+                        let outputs = std::mem::take(&mut cursor.pending_outputs);
+                        story.record_continuation(&outputs);
+                        return ReplayProgress::Finished(make_replay_result(
+                            status,
+                            budget.steps,
+                            cursor.completed_choices,
+                            trace.fingerprint,
+                            story,
+                            &cursor.initial_state,
+                        ));
+                    }
+                }
             }
+            let outputs = std::mem::take(&mut cursor.pending_outputs);
+            story.record_continuation(&outputs);
             story.observation(&outputs)
         };
-        initial_state = initial_actual.state.clone();
+        cursor.initial_state = initial_actual.state.clone();
         if let Some(expected) = &trace.initial_observation {
             if !observations_match(expected, &initial_actual) {
-                return Ok(make_replay_result(
+                return ReplayProgress::Finished(make_replay_result(
                     ReplayStatus::Diverged {
                         step_index: 0,
                         reason: "初始输出、状态或选择组不匹配".into(),
@@ -103,130 +257,146 @@ impl ReplayTrace {
                         actual_choices: initial_actual.choices,
                     },
                     budget.steps,
-                    0,
+                    cursor.completed_choices,
                     trace.fingerprint,
-                    &story,
+                    story,
                     &expected.state,
                 ));
             }
         }
+        cursor.initial_pending = false;
+    }
 
-        let mut completed_choices = 0;
-        for (step_index, step) in trace.steps.iter().enumerate() {
-            if cancellation.is_cancelled() {
-                return Ok(make_replay_result(
-                    ReplayStatus::Cancelled,
-                    budget.steps,
-                    completed_choices,
-                    trace.fingerprint,
-                    &story,
-                    &initial_state,
-                ));
-            }
+    while cursor.step_index < trace.steps.len() {
+        if budget.cancellation.is_cancelled() {
+            return ReplayProgress::Finished(make_replay_result(
+                ReplayStatus::Cancelled,
+                budget.steps,
+                cursor.completed_choices,
+                trace.fingerprint,
+                story,
+                &cursor.initial_state,
+            ));
+        }
+        if budget.slice_exhausted() {
+            return ReplayProgress::Yielded;
+        }
+        let step = &trace.steps[cursor.step_index];
+        if !cursor.choice_pending {
             let Some(choice_index) = story
                 .choices()
                 .iter()
                 .position(|choice| choice.id == step.choice.id)
             else {
-                return Ok(make_replay_result(
+                return ReplayProgress::Finished(make_replay_result(
                     ReplayStatus::Diverged {
-                        step_index,
+                        step_index: cursor.step_index,
                         reason: "记录的选择在当前暂停组中不存在".into(),
                         expected_choice: Some(step.choice.clone()),
                         actual_choices: story.observation(&[]).choices,
                     },
                     budget.steps,
-                    completed_choices,
+                    cursor.completed_choices,
                     trace.fingerprint,
-                    &story,
-                    &initial_state,
+                    story,
+                    &cursor.initial_state,
                 ));
             };
             if let Err(error) = story.choose(choice_index) {
-                return Ok(make_replay_result(
+                return ReplayProgress::Finished(make_replay_result(
                     ReplayStatus::StoryFailed {
                         message: error.message,
                         node: error.node,
                         line: error.line,
                     },
                     budget.steps,
-                    completed_choices,
+                    cursor.completed_choices,
                     trace.fingerprint,
-                    &story,
-                    &initial_state,
+                    story,
+                    &cursor.initial_state,
                 ));
             }
-            completed_choices += 1;
-            let Some(expected_observation) = &step.observation else {
-                return Ok(make_replay_result(
-                    ReplayStatus::IncompleteTrace,
-                    budget.steps,
-                    completed_choices,
-                    trace.fingerprint,
-                    &story,
-                    &initial_state,
-                ));
-            };
-            let outcome = match story.continue_story_inner(Some(&mut budget)) {
-                Ok(outcome) => outcome,
-                Err(error) => {
-                    return Ok(make_replay_result(
-                        ReplayStatus::StoryFailed {
-                            message: error.message,
-                            node: error.node,
-                            line: error.line,
-                        },
-                        budget.steps,
-                        completed_choices,
-                        trace.fingerprint,
-                        &story,
-                        &initial_state,
-                    ));
-                }
-            };
-            let outputs = outcome.outputs;
-            story.record_continuation(&outputs);
-            if let Some(status) = outcome.stop {
-                return Ok(make_replay_result(
-                    status,
-                    budget.steps,
-                    completed_choices,
-                    trace.fingerprint,
-                    &story,
-                    &initial_state,
-                ));
-            }
-            let actual = story.observation(&outputs);
-            if !observations_match(expected_observation, &actual) {
-                return Ok(make_replay_result(
-                    ReplayStatus::Diverged {
-                        step_index: step_index + 1,
-                        reason: "选择后的输出、状态或选择组不匹配".into(),
-                        expected_choice: Some(step.choice.clone()),
-                        actual_choices: actual.choices,
+            cursor.completed_choices += 1;
+            cursor.choice_pending = true;
+        }
+        let Some(expected_observation) = &step.observation else {
+            return ReplayProgress::Finished(make_replay_result(
+                ReplayStatus::IncompleteTrace,
+                budget.steps,
+                cursor.completed_choices,
+                trace.fingerprint,
+                story,
+                &cursor.initial_state,
+            ));
+        };
+        let mut outcome = match story.continue_story_inner(Some(&mut *budget)) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return ReplayProgress::Finished(make_replay_result(
+                    ReplayStatus::StoryFailed {
+                        message: error.message,
+                        node: error.node,
+                        line: error.line,
                     },
                     budget.steps,
-                    completed_choices,
+                    cursor.completed_choices,
                     trace.fingerprint,
-                    &story,
-                    &expected_observation.state,
+                    story,
+                    &cursor.initial_state,
                 ));
             }
+        };
+        cursor.pending_outputs.append(&mut outcome.outputs);
+        if let Some(stop) = outcome.stop {
+            match stop {
+                ReplayStop::Yield => return ReplayProgress::Yielded,
+                ReplayStop::Status(status) => {
+                    let outputs = std::mem::take(&mut cursor.pending_outputs);
+                    story.record_continuation(&outputs);
+                    return ReplayProgress::Finished(make_replay_result(
+                        status,
+                        budget.steps,
+                        cursor.completed_choices,
+                        trace.fingerprint,
+                        story,
+                        &cursor.initial_state,
+                    ));
+                }
+            }
         }
+        let outputs = std::mem::take(&mut cursor.pending_outputs);
+        story.record_continuation(&outputs);
+        let actual = story.observation(&outputs);
+        if !observations_match(expected_observation, &actual) {
+            return ReplayProgress::Finished(make_replay_result(
+                ReplayStatus::Diverged {
+                    step_index: cursor.step_index + 1,
+                    reason: "选择后的输出、状态或选择组不匹配".into(),
+                    expected_choice: Some(step.choice.clone()),
+                    actual_choices: actual.choices,
+                },
+                budget.steps,
+                cursor.completed_choices,
+                trace.fingerprint,
+                story,
+                &expected_observation.state,
+            ));
+        }
+        cursor.step_index += 1;
+        cursor.choice_pending = false;
+    }
 
-        let status = ReplayStatus::Replayed {
+    ReplayProgress::Finished(make_replay_result(
+        ReplayStatus::Replayed {
             ended: story.is_ended(),
             complete: trace.complete && story.is_ended(),
-        };
-        Ok(make_replay_result(
-            status,
-            budget.steps,
-            completed_choices,
-            trace.fingerprint,
-            &story,
-            &initial_state,
-        ))
-    }
+        },
+        budget.steps,
+        cursor.completed_choices,
+        trace.fingerprint,
+        story,
+        &cursor.initial_state,
+    ))
 }
 
 fn observations_match(expected: &ReplayObservation, actual: &ReplayObservation) -> bool {

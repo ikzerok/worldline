@@ -23,6 +23,7 @@ pub use replay::{
     ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
     ReplayResult, ReplayStatus, ReplayStep, ReplayTrace, REPLAY_SCHEMA_VERSION,
 };
+pub use replay_runner::ReplaySession;
 use util::{expression_source, initial_states, normalize_seed, seed_now};
 
 // ---------------------------------------------------------------------------

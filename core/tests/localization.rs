@@ -215,9 +215,14 @@ fn import_updates_existing_locale_sidecar_preserving_unknown_fields() {
     assert_ne!(result.new_baseline, baseline);
     assert!(!result
         .changed_files
-        .contains(&fixture.root.join(".world/project.json")));
+        .contains(&fixture.project.root.join(".world/project.json")));
     let sidecar_path = fixture.root.join(".world/localization/zh-Hant.json");
-    assert!(result.changed_files.contains(&sidecar_path));
+    assert!(result.changed_files.contains(
+        &fixture
+            .project
+            .root
+            .join(".world/localization/zh-Hant.json")
+    ));
     let manifest: serde_json::Value =
         serde_json::from_slice(&fs::read(fixture.root.join(".world/project.json")).unwrap())
             .unwrap();
@@ -273,10 +278,13 @@ fn first_import_registers_a_new_locale_sidecar() {
     );
     assert!(result
         .changed_files
-        .contains(&fixture.root.join(".world/project.json")));
-    assert!(result
-        .changed_files
-        .contains(&fixture.root.join(".world/localization/zh-Hant.json")));
+        .contains(&fixture.project.root.join(".world/project.json")));
+    assert!(result.changed_files.contains(
+        &fixture
+            .project
+            .root
+            .join(".world/localization/zh-Hant.json")
+    ));
 }
 
 #[test]

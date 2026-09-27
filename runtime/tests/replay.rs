@@ -2,7 +2,8 @@
 
 use worldline_core::{compile_source, CompileResult};
 use worldline_runtime::{
-    ChoiceExplanation, ReplayBudget, ReplayCancellation, ReplayStatus, ReplayTrace, Story,
+    ChoiceExplanation, ReplayBudget, ReplayCancellation, ReplaySession, ReplayStatus, ReplayTrace,
+    Story,
 };
 
 fn compile(source: &str) -> CompileResult {
@@ -243,6 +244,184 @@ fn self_loop_respects_step_budget_and_pre_cancelled_replay_stops_immediately() {
     .unwrap();
     assert_eq!(replay.status, ReplayStatus::Cancelled);
     assert_eq!(replay.executed_steps, 0);
+}
+
+#[test]
+fn cooperative_replay_yields_resumes_exactly_and_cancellation_keeps_partial_coverage() {
+    let result = compile(
+        "let count = 0\nevent start\n  let count = count + 1\n  值:{rnd(1, 100)}\n  choice \"再来\"\n    -> start\n",
+    );
+    let mut story = Story::new_with_seed(&result.program, &result.analysis, 1).unwrap();
+    story.continue_story().unwrap();
+    for _ in 0..20 {
+        story.choose(0).unwrap();
+        story.continue_story().unwrap();
+    }
+    let trace = story.replay_trace();
+
+    let expected = ReplayTrace::replay(
+        &result.program,
+        &result.analysis,
+        &trace,
+        ReplayBudget::new(10_000, 5_000),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        &expected.status,
+        ReplayStatus::Replayed {
+            ended: false,
+            complete: false
+        }
+    ));
+    let cancellation = ReplayCancellation::new();
+
+    let mut session = ReplaySession::new(
+        trace.clone(),
+        ReplayBudget::new(10_000, 5_000),
+        cancellation.clone(),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        assert!(
+            session
+                .advance(
+                    &result.program,
+                    &result.analysis,
+                    ReplayBudget::new(2, 5_000),
+                )
+                .unwrap()
+                .is_none(),
+            "long replay must yield while its recorded path remains"
+        );
+    }
+    let partial = {
+        cancellation.cancel();
+        session
+            .advance(
+                &result.program,
+                &result.analysis,
+                ReplayBudget::new(2, 5_000),
+            )
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(partial.status, ReplayStatus::Cancelled);
+    assert!(partial.executed_steps > 0);
+    assert!(partial.completed_choices > 0);
+    assert!(partial.completed_choices < trace.steps.len());
+    assert_eq!(
+        partial
+            .coverage
+            .selected_choices
+            .iter()
+            .map(|choice| choice.count)
+            .sum::<u32>(),
+        partial.completed_choices as u32
+    );
+    let partial_count = partial.current_state["vars"]["count"]["Num"]
+        .as_f64()
+        .unwrap();
+    let completed_count = expected.current_state["vars"]["count"]["Num"]
+        .as_f64()
+        .unwrap();
+    assert!(partial_count > 0.0 && partial_count < completed_count);
+
+    let mut session = ReplaySession::new(
+        trace,
+        ReplayBudget::new(10_000, 5_000),
+        ReplayCancellation::new(),
+    )
+    .unwrap();
+    let actual = loop {
+        if let Some(result) = session
+            .advance(
+                &result.program,
+                &result.analysis,
+                ReplayBudget::new(3, 5_000),
+            )
+            .unwrap()
+        {
+            break result;
+        }
+    };
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cooperative_replay_preserves_outputs_across_initial_and_choice_continuations() {
+    let result = compile(
+        "event start\n  初始第一段\n  初始第二段\n  choice \"继续\"\n    选择后第一段\n    选择后第二段\n    -> END\n",
+    );
+    let trace = captured_trace(&result, 17);
+    assert_eq!(trace.initial_observation.as_ref().unwrap().outputs.len(), 2);
+    assert_eq!(
+        trace.steps[0].observation.as_ref().unwrap().outputs.len(),
+        3
+    );
+    let expected = ReplayTrace::replay(
+        &result.program,
+        &result.analysis,
+        &trace,
+        ReplayBudget::new(100, 5_000),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        &expected.status,
+        ReplayStatus::Replayed {
+            ended: true,
+            complete: true
+        }
+    ));
+    let mut session = ReplaySession::new(
+        trace,
+        ReplayBudget::new(100, 5_000),
+        ReplayCancellation::new(),
+    )
+    .unwrap();
+    let actual = loop {
+        if let Some(result) = session
+            .advance(
+                &result.program,
+                &result.analysis,
+                ReplayBudget::new(1, 5_000),
+            )
+            .unwrap()
+        {
+            break result;
+        }
+    };
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cooperative_replay_enforces_aggregate_step_budget_across_slices() {
+    let result = compile("event start\n  -> start\n");
+    let trace = Story::new_with_seed(&result.program, &result.analysis, 1)
+        .unwrap()
+        .replay_trace();
+    let mut session = ReplaySession::new(
+        trace,
+        ReplayBudget::new(40, 5_000),
+        ReplayCancellation::new(),
+    )
+    .unwrap();
+    let replay = loop {
+        if let Some(result) = session
+            .advance(
+                &result.program,
+                &result.analysis,
+                ReplayBudget::new(2, 5_000),
+            )
+            .unwrap()
+        {
+            break result;
+        }
+    };
+    assert_eq!(replay.status, ReplayStatus::StepBudgetExceeded);
+    assert_eq!(replay.executed_steps, 40);
 }
 
 #[test]
