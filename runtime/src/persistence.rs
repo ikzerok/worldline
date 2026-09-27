@@ -223,15 +223,27 @@ impl<'p> Story<'p> {
                         .last()
                         .ok_or_else(|| RunError::new("存档首帧不能是内联帧"))?;
                     let parent_stmts = parent.stmts;
-                    let expect_parent_idx = match src {
-                        FrameSrc::IfBranch { stmt, .. } => stmt + 1,
-                        FrameSrc::ChoiceBody { stmt } => stmt + 1,
+                    let stmt_idx = match src {
+                        FrameSrc::IfBranch { stmt, .. } | FrameSrc::ChoiceBody { stmt } => *stmt,
+                    };
+                    let Some(source_stmt) = parent_stmts.get(stmt_idx) else {
+                        return Err(RunError::new("存档与程序结构不符(内联帧来源越界)"));
+                    };
+                    let expect_parent_idx = match (src, source_stmt) {
+                        (FrameSrc::IfBranch { .. }, Stmt::If(_)) => stmt_idx + 1,
+                        (FrameSrc::ChoiceBody { .. }, Stmt::Choice(_)) => {
+                            let mut end = stmt_idx + 1;
+                            while matches!(parent_stmts.get(end), Some(Stmt::Choice(_))) {
+                                end += 1;
+                            }
+                            end
+                        }
+                        _ => return Err(RunError::new("存档与程序结构不符(帧来源不匹配)")),
                     };
                     if parent.idx != expect_parent_idx {
                         return Err(RunError::new("存档与程序结构不符(内联帧错位)"));
                     }
-                    let stmt_idx = expect_parent_idx - 1;
-                    let stmts: &'p [Stmt] = match (&parent_stmts[stmt_idx], src) {
+                    let stmts: &'p [Stmt] = match (source_stmt, src) {
                         (Stmt::If(i), FrameSrc::IfBranch { branch, .. }) => {
                             let Some((_, body)) = i.branches.get(*branch) else {
                                 return Err(RunError::new("存档与程序结构不符(分支不存在)"));

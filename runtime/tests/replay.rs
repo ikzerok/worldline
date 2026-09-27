@@ -397,6 +397,52 @@ fn cooperative_replay_preserves_outputs_across_initial_and_choice_continuations(
 }
 
 #[test]
+fn cooperative_replay_restores_a_nonfinal_choice_body_after_yield() {
+    let mut source = String::from("event start\n  choice \"第一条\"\n");
+    for index in 0..600 {
+        source.push_str(&format!("    第{index}段\n"));
+    }
+    source.push_str("    -> END\n  choice \"另一条\"\n    -> END\n");
+    let result = compile(&source);
+    let trace = captured_trace(&result, 7);
+    let expected = ReplayTrace::replay(
+        &result.program,
+        &result.analysis,
+        &trace,
+        ReplayBudget::new(10_000, 5_000),
+        &ReplayCancellation::new(),
+    )
+    .unwrap();
+    let mut session = ReplaySession::new(
+        trace,
+        ReplayBudget::new(10_000, 5_000),
+        ReplayCancellation::new(),
+    )
+    .unwrap();
+    assert!(session
+        .advance(
+            &result.program,
+            &result.analysis,
+            ReplayBudget::new(512, 5_000)
+        )
+        .unwrap()
+        .is_none());
+    let actual = loop {
+        if let Some(result) = session
+            .advance(
+                &result.program,
+                &result.analysis,
+                ReplayBudget::new(512, 5_000),
+            )
+            .unwrap()
+        {
+            break result;
+        }
+    };
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn cooperative_replay_enforces_aggregate_step_budget_across_slices() {
     let result = compile("event start\n  -> start\n");
     let trace = Story::new_with_seed(&result.program, &result.analysis, 1)
