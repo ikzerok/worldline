@@ -4,6 +4,11 @@ use crate::project::Project;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+/// sidecar 字节只由原生应用路径消费；wasm32 仅提供预览，因此这些字段在该目标下未被读取。
+#[cfg_attr(
+    target_arch = "wasm32",
+    allow(dead_code, reason = "wasm32 only previews; native apply reads these")
+)]
 struct PreparedImport {
     plan: LocalizationImportPlan,
     sidecar_path: PathBuf,

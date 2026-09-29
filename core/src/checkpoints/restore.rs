@@ -1,5 +1,6 @@
 use super::*;
 use std::collections::BTreeSet;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]

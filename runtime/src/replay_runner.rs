@@ -36,9 +36,19 @@ impl ReplayCursor {
     }
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "Boxing the final result allocates on every replay"
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(
+        clippy::large_enum_variant,
+        reason = "Boxing the final result allocates on every replay"
+    )
+)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    allow(
+        clippy::large_enum_variant,
+        reason = "wasm32 shrinks the payload below the lint threshold"
+    )
 )]
 enum ReplayProgress {
     Yielded,

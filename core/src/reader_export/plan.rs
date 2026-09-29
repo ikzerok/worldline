@@ -1,5 +1,7 @@
 use super::render::render_object_body;
-use super::site::{html_escape, relative_url, render_package, validate_output_path};
+#[cfg(not(target_arch = "wasm32"))]
+use super::site::validate_output_path;
+use super::site::{html_escape, relative_url, render_package};
 use super::*;
 use crate::catalog::AssetInfo;
 use crate::manuscript::{ManuscriptEntryKind, ManuscriptReferenceStatus};
