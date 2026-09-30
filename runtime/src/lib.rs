@@ -8,6 +8,7 @@ use worldline_core::ast::{EffectWhen, Program, Stmt, TextPart};
 use worldline_core::Analysis;
 
 mod effects;
+mod evidence;
 mod execution;
 mod expression;
 mod model;
@@ -16,6 +17,7 @@ mod replay;
 mod replay_runner;
 mod util;
 
+pub use evidence::{ConditionEvidence, EvidenceNode, EvidenceOutcome};
 use model::FrameSrc;
 pub use model::{AnchorKind, AnchorRecord, ChoiceView, Output, RunError, StateRecord, Value};
 pub use replay::{
@@ -74,6 +76,7 @@ pub struct Story<'p> {
     state_history: Vec<StateRecord>,
     choice_coverage: BTreeMap<String, ChoiceCoverage>,
     trace: ReplayTrace,
+    failed_explanations: Option<Vec<ChoiceExplanation>>,
 }
 
 impl<'p> Story<'p> {
@@ -124,6 +127,7 @@ impl<'p> Story<'p> {
             initial_states,
             state_history: Vec::new(),
             choice_coverage: BTreeMap::new(),
+            failed_explanations: None,
             trace: ReplayTrace::entry(analysis.fingerprint, seed),
         };
         story.init_vars()?;
@@ -319,10 +323,24 @@ impl<'p> Story<'p> {
         Ok(())
     }
 
+    /// Actual evidence only: never evaluates, predicts, or advances the story.
+    pub fn choice_evidence(&self) -> Option<&[ChoiceExplanation]> {
+        self.paused
+            .as_ref()
+            .map(|pause| pause.explanations.as_slice())
+            .or(self.failed_explanations.as_deref())
+    }
+
     /// Explain the current choice group without changing runtime state or its random stream.
     pub fn explain_choices(&self) -> Result<Vec<ChoiceExplanation>, RunError> {
         if let Some(pause) = &self.paused {
-            return Ok(pause.explanations.clone());
+            let mut explanations = pause.explanations.clone();
+            for choice in &mut explanations {
+                if let Some(condition) = &mut choice.condition {
+                    condition.evidence = None;
+                }
+            }
+            return Ok(explanations);
         }
         let Some(fi) = self.frames.len().checked_sub(1) else {
             return Ok(Vec::new());
@@ -343,16 +361,19 @@ impl<'p> Story<'p> {
                         expression: expression_source(expression),
                         result: Some(result),
                         error: None,
+                        evidence: None,
                     },
                     Ok(_) => ConditionExplanation {
                         expression: expression_source(expression),
                         result: Some(false),
                         error: None,
+                        evidence: None,
                     },
                     Err(error) => ConditionExplanation {
                         expression: expression_source(expression),
                         result: None,
                         error: Some(error.message),
+                        evidence: None,
                     },
                 }
             });

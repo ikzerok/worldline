@@ -23,6 +23,8 @@ pub struct ConditionExplanation {
     pub expression: String,
     pub result: Option<bool>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<crate::ConditionEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -1,6 +1,8 @@
 use worldline_core::ast::{BinOp, Expr, TextPart, UnOp};
 
+use super::evidence::{EvidenceBudget, EvidenceRecorder};
 use super::util::{cmp_op, expr_loc_line, next_rnd, num_op};
+use super::ConditionEvidence;
 use super::{RunError, Story, Value};
 
 impl<'p> Story<'p> {
@@ -57,7 +59,28 @@ impl<'p> Story<'p> {
     }
 
     pub(super) fn eval_with_rng(&self, e: &Expr, rng: &mut u64) -> Result<Value, RunError> {
-        match e {
+        self.eval_recorded(e, rng, &mut None)
+    }
+
+    pub(super) fn eval_condition(
+        &self,
+        expression: &Expr,
+        budget: &mut EvidenceBudget,
+    ) -> (Result<Value, RunError>, ConditionEvidence) {
+        let mut rng = self.rng.get();
+        let mut recorder = Some(EvidenceRecorder::new(expression, budget));
+        let result = self.eval_recorded(expression, &mut rng, &mut recorder);
+        self.rng.set(rng);
+        (result, recorder.expect("condition recorder").finish(budget))
+    }
+
+    fn eval_recorded(
+        &self,
+        e: &Expr,
+        rng: &mut u64,
+        recorder: &mut Option<EvidenceRecorder>,
+    ) -> Result<Value, RunError> {
+        let result = (|| match e {
             Expr::Num(n) => Ok(Value::Num(*n)),
             Expr::Str(s) => Ok(Value::Str(s.clone())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
@@ -67,7 +90,7 @@ impl<'p> Story<'p> {
                 line: Some(loc.line),
             }),
             Expr::Unary { op, expr } => {
-                let v = self.eval_with_rng(expr, rng)?;
+                let v = self.eval_recorded(expr, rng, recorder)?;
                 match (op, v) {
                     (UnOp::Neg, Value::Num(n)) => Ok(Value::Num(-n)),
                     (UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
@@ -79,8 +102,8 @@ impl<'p> Story<'p> {
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
-                let l = self.eval_with_rng(lhs, rng)?;
-                let r = self.eval_with_rng(rhs, rng)?;
+                let l = self.eval_recorded(lhs, rng, recorder)?;
+                let r = self.eval_recorded(rhs, rng, recorder)?;
                 let line = expr_loc_line(e);
                 let type_err = || RunError {
                     message: format!(
@@ -215,9 +238,10 @@ impl<'p> Story<'p> {
                             line: Some(loc.line),
                         });
                     };
-                    let (Value::Num(lo), Value::Num(hi)) =
-                        (self.eval_with_rng(a, rng)?, self.eval_with_rng(b, rng)?)
-                    else {
+                    let (Value::Num(lo), Value::Num(hi)) = (
+                        self.eval_recorded(a, rng, recorder)?,
+                        self.eval_recorded(b, rng, recorder)?,
+                    ) else {
                         return Err(RunError {
                             message: "rnd 的参数必须是数值".into(),
                             node: self.current_node(),
@@ -242,6 +266,52 @@ impl<'p> Story<'p> {
                     line: Some(loc.line),
                 }),
             },
+        })();
+        if let Some(recorder) = recorder {
+            recorder.record(e, &result);
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use worldline_core::ast::Stmt;
+
+    #[test]
+    fn recording_and_plain_evaluation_have_identical_values_errors_rng_and_state() {
+        for expression in [
+            "not ((score + 2 >= 5) and (score * 2 == 6))",
+            "false and rnd(1, 100) > 0",
+            "true or rnd(1, 100) > 0",
+            "rnd(1, 100) / 0 > 0 and rnd(1, 100) > 0",
+            "rnd(1, 100) > 0 and rnd(1, 100) / 0 > 0",
+            "not (seen(\"start\") and visits(\"start\") > 0)",
+        ] {
+            let source = format!(
+                "let score = 3\nevent start\n  choice \"选\" if {expression}\n    -> END\n"
+            );
+            let compiled = worldline_core::compile_source("test.wl", &source);
+            assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
+            let Stmt::Choice(choice) = &compiled.program.events[0].body[0] else {
+                panic!("choice")
+            };
+            let expr = choice.cond.as_ref().unwrap();
+            let plain = Story::new_with_seed(&compiled.program, &compiled.analysis, 31).unwrap();
+            let recorded = Story::new_with_seed(&compiled.program, &compiled.analysis, 31).unwrap();
+            let expected = plain.eval(expr);
+            let (actual, _) = recorded.eval_condition(expr, &mut EvidenceBudget::default());
+            assert_eq!(
+                serde_json::to_value(expected).unwrap(),
+                serde_json::to_value(actual).unwrap(),
+                "{expression}"
+            );
+            assert_eq!(
+                plain.save().unwrap(),
+                recorded.save().unwrap(),
+                "{expression}"
+            );
         }
     }
 }

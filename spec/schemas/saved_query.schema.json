@@ -1,34 +1,152 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Saved catalog query v1",
+  "title": "Saved catalog query document v1 (query v1/v2)",
   "type": "object",
   "additionalProperties": true,
-  "required": ["schema_version", "id", "name", "query"],
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "query"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
-    "name": { "type": "string", "minLength": 1 },
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
     "query": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["schema_version", "filters"],
+      "required": [
+        "schema_version",
+        "filters"
+      ],
       "properties": {
-        "schema_version": { "const": 1 },
+        "schema_version": {
+          "enum": [
+            1,
+            2
+          ]
+        },
         "filters": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["dimension"],
+            "required": [
+              "dimension"
+            ],
             "properties": {
               "dimension": {
-                "enum": ["kind", "name", "tag", "property", "relation", "author_scope", "missing"]
+                "enum": [
+                  "kind",
+                  "name",
+                  "tag",
+                  "property",
+                  "relation",
+                  "author_scope",
+                  "missing"
+                ]
               },
-              "negate": { "type": "boolean" }
+              "negate": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "sort": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "schema_version": {
+              "const": 2
+            },
+            "sort": {
+              "$ref": "#/$defs/sort"
+            }
+          },
+          "required": [
+            "sort"
+          ]
+        }
+      ]
+    },
+    "required_features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "sort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "direction"
+      ],
+      "properties": {
+        "field": {
+          "enum": [
+            "name",
+            "kind"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "ascending",
+            "descending"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "query": {
+            "properties": {
+              "schema_version": {
+                "const": 2
+              }
+            },
+            "required": [
+              "schema_version"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "required_features"
+        ],
+        "properties": {
+          "required_features": {
+            "contains": {
+              "const": "catalog.query_sort.v1"
             }
           }
         }
       }
     }
-  }
+  ]
 }

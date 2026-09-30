@@ -11,6 +11,7 @@ fn query_cursor_pages_stably_and_rejects_a_changed_project_snapshot() {
     );
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Kind {
             values: vec!["entity".into()],
             negate: false,
@@ -42,6 +43,7 @@ fn query_cursor_pages_stably_and_rejects_a_changed_project_snapshot() {
         .continue_catalog_query(
             &CatalogQuery {
                 schema_version: 1,
+                sort: None,
                 filters: vec![CatalogQueryFilter::Kind {
                     values: vec!["character".into()],
                     negate: false,
@@ -71,6 +73,7 @@ fn query_cursor_preserves_the_initial_candidate_budget() {
     let project = project("cursor-budget", &source);
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Kind {
             values: vec!["entity".into()],
             negate: false,
@@ -121,6 +124,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
 
     let empty_or = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Kind {
             values: vec![],
             negate: false,
@@ -135,6 +139,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
     );
     let negated_empty_or = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Kind {
             values: vec![],
             negate: true,
@@ -150,6 +155,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
 
     let negative_property = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Property {
             values: vec![worldline_core::queries::PropertyCondition {
                 key: "status".into(),
@@ -166,6 +172,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
 
     let recursive_tag = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Tag {
             values: vec!["linked_alpha".into()],
             recursive: true,
@@ -181,6 +188,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
 
     let author_scope = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::AuthorScope {
             source_files: vec!["world.wl".into()],
             negate: false,
@@ -195,6 +203,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
     );
     let bad_author_scope = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::AuthorScope {
             source_files: vec!["../outside.wl".into()],
             negate: false,
@@ -206,6 +215,7 @@ fn query_semantics_cover_empty_or_negation_cycles_and_unknown_property_types() {
 
     let outgoing = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Relation {
             values: vec![worldline_core::queries::RelationCondition {
                 relation_type: Some("connects".into()),
@@ -243,6 +253,7 @@ fn query_summary_is_readable_and_or_values_are_bounded() {
     let project = project("summary", "entity keeper kind place as \"守护者\"\n");
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![
             CatalogQueryFilter::Relation {
                 values: vec![worldline_core::queries::RelationCondition {
@@ -268,6 +279,7 @@ fn query_summary_is_readable_and_or_values_are_bounded() {
 
     let too_many_values = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Name {
             values: vec!["候选".into(); 101],
             negate: false,
@@ -304,6 +316,7 @@ fn d5_profile_1000_objects_3000_relations_and_long_text() {
     let project = project("d5_profile", &source);
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Relation {
             values: vec![worldline_core::queries::RelationCondition {
                 relation_type: Some("links".into()),
@@ -392,6 +405,7 @@ fn compound_query_ors_within_a_dimension_and_ands_across_dimensions() {
     );
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![
             CatalogQueryFilter::Kind {
                 values: vec!["entity".into(), "character".into()],

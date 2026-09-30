@@ -100,6 +100,8 @@ fn temp_markdown_import_source(name: &str) -> std::path::PathBuf {
 mod authoring_imports;
 #[path = "protocol/catalog_exports.rs"]
 mod catalog_exports;
+#[path = "protocol/catalog_sort.rs"]
+mod catalog_sort;
 #[path = "protocol/project_mutations.rs"]
 mod project_mutations;
 #[path = "protocol/relation_queries.rs"]
@@ -187,3 +189,6 @@ impl BufRead for MapMutatingReader {
         self.buffer.drain(..amount.min(self.buffer.len()));
     }
 }
+
+#[path = "protocol/condition_evidence.rs"]
+mod condition_evidence;
