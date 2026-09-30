@@ -83,6 +83,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -264,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "wl"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde_json",
  "worldline-core",
@@ -273,7 +282,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-agent"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -283,8 +292,9 @@ dependencies = [
 
 [[package]]
 name = "worldline-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "quick-xml",
  "same-file",
  "serde",
  "serde_json",
@@ -293,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-runtime"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",

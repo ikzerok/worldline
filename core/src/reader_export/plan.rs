@@ -267,6 +267,8 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         }
     }
 
+    super::maps::append_maps(project, selection, &routes, &mut pages, &mut included)?;
+
     let selected_asset_paths: BTreeSet<_> = attachments
         .iter()
         .map(|attachment| attachment.source_path.clone())
@@ -282,7 +284,13 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         project,
     });
     let content_baseline = project.content_baseline();
-    let plan_digest = digest_plan(selection, &content_baseline, &attachments);
+    let mut plan_digest = digest_plan(selection, &content_baseline, &attachments);
+    // Bind rendered map content too, including unsaved presentation changes.
+    let mut map_hash = 0xcbf29ce484222325u64;
+    for page in &pages {
+        mix(&mut map_hash, page.body_html.as_bytes());
+    }
+    plan_digest.push_str(&format!("-{map_hash:016x}"));
     let preview = ReaderExportPreview {
         schema_version: READER_EXPORT_SCHEMA_VERSION,
         plan_digest,
