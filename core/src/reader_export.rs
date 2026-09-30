@@ -1,5 +1,6 @@
 //! 显式授权的静态阅读包；与完整工程备份保持独立。
 
+mod maps;
 mod plan;
 mod render;
 mod site;
@@ -28,6 +29,14 @@ pub struct ReaderManuscriptSelection {
     pub chapters: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReaderMapSelection {
+    pub id: String,
+    pub placements: Vec<String>,
+    pub raster_layers: Vec<String>,
+}
+
 /// 阅读包的唯一公开边界。引用不会自动扩大选择范围。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,6 +46,8 @@ pub struct ReaderExportSelection {
     pub objects: Vec<TargetRef>,
     pub manuscripts: Vec<ReaderManuscriptSelection>,
     pub attachments: Vec<String>,
+    #[serde(default)]
+    pub maps: Vec<ReaderMapSelection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

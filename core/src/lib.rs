@@ -44,6 +44,7 @@ pub mod relations;
 pub mod source_config;
 pub mod states;
 mod storage;
+pub mod svg_import;
 pub mod timeline;
 mod topic_projection;
 pub mod wiki;

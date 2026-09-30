@@ -104,6 +104,11 @@ pub(super) fn render_package(
         .iter()
         .filter(|page| page.output_path.starts_with("manuscripts"))
         .collect();
+    let map_pages: Vec<_> = prepared
+        .pages
+        .iter()
+        .filter(|page| page.output_path.starts_with("maps"))
+        .collect();
     let attachments_html = prepared
         .attachments
         .iter()
@@ -125,7 +130,21 @@ pub(super) fn render_package(
         page_links(&manuscript_pages, "index.html"),
         attachments_html
     );
+    let index_html = format!(
+        "{index_html}<h2>地图</h2>{}",
+        page_links(&map_pages, "index.html")
+    );
     insert_output(&mut files, "index.html", page_end(index_html).into_bytes())?;
+    insert_output(
+        &mut files,
+        "maps/index.html",
+        page_end(format!(
+            "{}<h1>地图</h1>{}",
+            page_start(&prepared.site_title, "maps/index.html", true),
+            page_links(&map_pages, "maps/index.html")
+        ))
+        .into_bytes(),
+    )?;
     insert_output(
         &mut files,
         "objects/index.html",

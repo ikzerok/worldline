@@ -62,6 +62,7 @@ attach event public_event with public_art, private_art
 
 fn selection() -> ReaderExportSelection {
     ReaderExportSelection {
+        maps: Vec::new(),
         schema_version: 1,
         site_title: "Public Site".into(),
         objects: vec![
@@ -342,6 +343,7 @@ fn pure_content_projects_export_and_arbitrary_file_targets_are_rejected() {
     .unwrap();
     let project = Project::open(&root.join("world.wl")).unwrap();
     let request = ReaderExportSelection {
+        maps: Vec::new(),
         schema_version: 1,
         site_title: "Pure Site".into(),
         objects: vec![TargetRef::new("event", "setting")],
@@ -357,5 +359,105 @@ fn pure_content_projects_export_and_arbitrary_file_targets_are_rejected() {
     let mut invalid = request;
     invalid.objects = vec![TargetRef::new("file", "C:/private/source.wl")];
     assert!(project.preview_reader_export(&invalid).is_err());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn maps_export_only_explicit_geometry_and_safe_links() {
+    use worldline_core::reader_export::ReaderMapSelection;
+    let root = project_root("maps-explicit");
+    let manifest_path = root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["maps"] = serde_json::json!({"atlas":".world/atlas.json"});
+    manifest["required_features"]
+        .as_array_mut()
+        .unwrap()
+        .extend([
+            serde_json::json!("presentation.maps.v1"),
+            serde_json::json!("presentation.geometry.line_area.v1"),
+        ]);
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let map = serde_json::json!({
+        "schema_version":1, "id":"atlas", "title":"Atlas <safe>",
+        "canvas":{"width":1000,"height":500,"unit":"normalized"},
+        "raster_layers":[{"id":"base","asset":{"kind":"asset","id":"public_art"},"rect":[0.25,0.25,0.75,0.75]}],
+        "layer_order":["top","places"],
+        "layers":{"places":{"title":"PRIVATE_LAYER_TITLE","visible_default":false,"locked":false},"top":{"title":"TOP_PRIVATE_LAYER","visible_default":true,"locked":false}},
+        "placements":{
+            "public":{"role":"note","layer_id":"top","geometry":{"kind":"polygon","points":[[0.1,0.1],[0.8,0.1],[0.4,0.8]]},"annotation":"<script>alert(1)</script>","label_override":"Public <label>","target_ref":{"kind":"entity","id":"beacon"},"style":{"stroke":"red\" onload=\"evil","fill":"#112233","fill_opacity":0.4,"stroke_opacity":0.7,"stroke_width":3}},
+            "hidden_target":{"role":"note","layer_id":"places","geometry":{"kind":"point","position":[0.2,0.3]},"annotation":"public note","style":{"stroke_width":0,"fill_opacity":0,"stroke_opacity":0.25},"target_ref":{"kind":"entity","id":"secret_archive"}},
+            "private":{"target_ref":null,"role":"note","layer_id":"places","geometry":{"kind":"point","position":[0.6,0.3]},"annotation":"UNSELECTED_MAP_SECRET"}
+        }
+    });
+    let map_path = root.join(".world/atlas.json");
+    fs::write(&map_path, serde_json::to_vec(&map).unwrap()).unwrap();
+    let mut project = Project::open(&root.join("world.wl")).unwrap();
+    let mut request = selection();
+    request.maps.push(ReaderMapSelection {
+        id: "atlas".into(),
+        placements: vec!["public".into(), "hidden_target".into()],
+        raster_layers: vec!["base".into()],
+    });
+    let plan = project
+        .preview_reader_export(&request)
+        .unwrap_or_else(|error| panic!("{error}: {:?}", project.map_index().diagnostics));
+    let files = project
+        .build_reader_export(&request, &plan.plan_digest)
+        .unwrap();
+    let html = String::from_utf8(files[Path::new("maps/m0001.html")].clone()).unwrap();
+    assert!(html.contains("<polygon"));
+    assert!(html.contains("fill-opacity=\"0.4\""));
+    assert!(html.contains("stroke-opacity=\"0.7\""));
+    let point = html
+        .split("<circle")
+        .nth(1)
+        .unwrap()
+        .split("/>")
+        .next()
+        .unwrap();
+    assert!(point.contains("stroke-width=\"0\""));
+    assert!(point.contains("fill-opacity=\"0\""));
+    assert!(point.contains("stroke-opacity=\"0.25\""));
+    assert!(html.find("<polygon").unwrap() < html.find("<circle").unwrap());
+    let mut reordered = request.clone();
+    reordered.maps[0].placements.reverse();
+    let reordered_plan = project.preview_reader_export(&reordered).unwrap();
+    let reordered_files = project
+        .build_reader_export(&reordered, &reordered_plan.plan_digest)
+        .unwrap();
+    assert_eq!(
+        files[Path::new("maps/m0001.html")],
+        reordered_files[Path::new("maps/m0001.html")]
+    );
+    assert!(html.contains("../assets/a0001.png"));
+    assert!(html.contains("x=\"250\" y=\"125\" width=\"500\" height=\"250\""));
+    assert!(html.contains("../objects/"));
+    assert!(html.contains("未公开内容"));
+    assert!(html.contains("&lt;script&gt;"));
+    assert!(!html.contains("onload="));
+    let all = String::from_utf8_lossy(&output_bytes(&files)).into_owned();
+    for secret in [
+        "UNSELECTED_MAP_SECRET",
+        "PRIVATE_LAYER_TITLE",
+        "secret_archive",
+        ".world/atlas.json",
+    ] {
+        assert!(!all.contains(secret), "leaked {secret}");
+    }
+    assert_local_html_links_resolve(&files);
+    let mut missing_asset = request.clone();
+    missing_asset.attachments.clear();
+    assert!(project.preview_reader_export(&missing_asset).is_err());
+    let mut duplicate = request.clone();
+    duplicate.maps[0].placements.push("public".into());
+    assert!(project.preview_reader_export(&duplicate).is_err());
+    let mut changed = map;
+    changed["title"] = "Changed".into();
+    fs::write(&map_path, serde_json::to_vec(&changed).unwrap()).unwrap();
+    project = Project::open(&root.join("world.wl")).unwrap();
+    assert!(project
+        .build_reader_export(&request, &plan.plan_digest)
+        .is_err());
     let _ = fs::remove_dir_all(root);
 }
