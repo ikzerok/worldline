@@ -121,7 +121,20 @@ pub(super) fn apply_placement(
             }
             let placement = placement_mut(object, placement_id)?;
             if let Some(geometry) = geometry {
-                placement.insert("geometry".into(), serde_json::to_value(geometry).unwrap());
+                let mut next = serde_json::to_value(geometry).unwrap();
+                if let (Some(old), Some(new)) = (
+                    placement.get("geometry").and_then(Value::as_object),
+                    next.as_object_mut(),
+                ) {
+                    for (key, value) in old {
+                        if !["kind", "position", "points", "text", "font_size", "color"]
+                            .contains(&key.as_str())
+                        {
+                            new.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+                placement.insert("geometry".into(), next);
             }
             if let Some(target_ref) = target_ref {
                 placement.insert(
@@ -250,9 +263,23 @@ fn parse_target_value(value: &Value) -> Option<TargetRef> {
 }
 
 fn validate_geometry(geometry: &MapGeometry) -> Result<(), EditError> {
+    if let MapGeometry::Text {
+        text,
+        font_size,
+        color,
+        ..
+    } = geometry
+    {
+        if !crate::presentation::valid_map_text(text, *font_size, color) {
+            return Err(EditError::InvalidGeometry {
+                message: "文字标签必须为非空纯文本（最多160字、4行），字号12–64，颜色#RRGGBB"
+                    .into(),
+            });
+        }
+    }
     let points = geometry.points();
     let minimum = match geometry {
-        MapGeometry::Point { .. } => 1,
+        MapGeometry::Point { .. } | MapGeometry::Text { .. } => 1,
         MapGeometry::Polyline { .. } => 2,
         MapGeometry::Polygon { .. } => 3,
     };
@@ -289,13 +316,13 @@ fn ensure_geometry_feature(
     object: &mut Map<String, Value>,
     geometry: &MapGeometry,
 ) -> Result<(), EditError> {
-    let needs_feature = matches!(
-        geometry,
-        MapGeometry::Polyline { .. } | MapGeometry::Polygon { .. }
-    );
-    if !needs_feature {
-        return Ok(());
-    }
+    let feature = match geometry {
+        MapGeometry::Text { .. } => crate::presentation::TEXT_GEOMETRY_FEATURE,
+        MapGeometry::Polyline { .. } | MapGeometry::Polygon { .. } => {
+            "presentation.geometry.line_area.v1"
+        }
+        MapGeometry::Point { .. } => return Ok(()),
+    };
     let features = object
         .entry("required_features")
         .or_insert_with(|| Value::Array(Vec::new()));
@@ -304,13 +331,10 @@ fn ensure_geometry_feature(
         .ok_or_else(|| EditError::InvalidSchema {
             message: "地图 required_features 必须是数组".into(),
         })?;
-    if values
-        .iter()
-        .any(|feature| feature.as_str() == Some("presentation.geometry.line_area.v1"))
-    {
+    if values.iter().any(|value| value.as_str() == Some(feature)) {
         return Ok(());
     }
-    values.push(Value::String("presentation.geometry.line_area.v1".into()));
+    values.push(Value::String(feature.into()));
     Ok(())
 }
 

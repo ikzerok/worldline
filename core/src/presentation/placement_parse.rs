@@ -287,6 +287,32 @@ fn parse_geometry(
             let position = parse_point(object.get("position"), file, path, diagnostics)?;
             Some(MapGeometry::Point { position })
         }
+        Some("text") => {
+            let position = parse_point(object.get("position"), file, path, diagnostics)?;
+            let text = object.get("text").and_then(Value::as_str);
+            let font_size = object.get("font_size").and_then(Value::as_f64);
+            let color = object.get("color").and_then(Value::as_str);
+            match (text, font_size, color) {
+                (Some(text), Some(font_size), Some(color))
+                    if super::valid_map_text(text, font_size, color) =>
+                {
+                    Some(MapGeometry::Text {
+                        position,
+                        text: text.into(),
+                        font_size,
+                        color: color.into(),
+                    })
+                }
+                _ => {
+                    diagnostics.push(map_error(
+                        file,
+                        "MAP006",
+                        format!("{path} 文字标签内容、字号或颜色无效"),
+                    ));
+                    None
+                }
+            }
+        }
         Some("polyline") => {
             let points = parse_points(object.get("points"), 2, file, path, diagnostics)?;
             Some(MapGeometry::Polyline { points })
