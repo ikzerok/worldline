@@ -3,6 +3,8 @@
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::lexer;
+mod quoted;
+pub use quoted::parse_quoted_interpolations_with_options;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Tok {

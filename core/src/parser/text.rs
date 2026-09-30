@@ -1,7 +1,7 @@
 use super::*;
 /// 从原始文本行提取 (正文, 是否粘接~, 标签列表)。
 /// 顺序:先剥行尾标签,再判粘接;正文中的转义交给 parse_interpolations。
-pub(super) fn split_text_decorations(raw: &str) -> (String, bool, Vec<String>) {
+pub(crate) fn split_text_decorations(raw: &str) -> (String, bool, Vec<String>) {
     let chars: Vec<char> = raw.chars().collect();
     // 1. 标签:未转义的 `#` 且前一字符是空白或行首
     let mut text_end = chars.len();

@@ -1,5 +1,6 @@
 //! 显式授权的静态阅读包；与完整工程备份保持独立。
 
+mod fields;
 mod maps;
 mod plan;
 mod render;
@@ -13,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 pub const READER_EXPORT_SCHEMA_VERSION: u32 = 1;
+pub const READER_FIELDS_SCHEMA_VERSION: u32 = 2;
+pub const READER_FIELDS_FEATURE: &str = "reader.fields.v1";
 const MAX_OBJECTS: usize = 500;
 const MAX_MANUSCRIPTS: usize = 100;
 const MAX_CHAPTERS: usize = 5_000;
@@ -37,10 +40,36 @@ pub struct ReaderMapSelection {
     pub raster_layers: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReaderFieldSelection {
+    pub target: TargetRef,
+    pub keys: Vec<String>,
+}
+
+/// 作者专用候选值，不代表已授权公开。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReaderFieldCandidate {
+    pub key: String,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReaderContentPreview {
+    pub title: String,
+    pub output_path: String,
+    pub text: String,
+    pub empty_content: bool,
+}
+
 /// 阅读包的唯一公开边界。引用不会自动扩大选择范围。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReaderExportSelection {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_features: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<ReaderFieldSelection>,
     pub schema_version: u32,
     pub site_title: String,
     pub objects: Vec<TargetRef>,
@@ -71,6 +100,8 @@ pub struct ReaderExportExclusion {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReaderExportPreview {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<ReaderContentPreview>,
     pub schema_version: u32,
     pub plan_digest: String,
     pub content_baseline: String,

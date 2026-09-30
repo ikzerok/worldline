@@ -1,7 +1,6 @@
 use super::{
     fingerprint_program, Analysis, CharacterInfo, NodePath, Stats, StorylineInfo, Symbols, VarInfo,
 };
-use crate::analysis_helpers::expr_kind_static;
 use crate::ast::*;
 use crate::diagnostic::{sort_diagnostics, Diagnostic, Span};
 use crate::graph::{AnchorDecl, EdgeKind, GraphEdge, GraphNode, RelationGraph};
@@ -9,6 +8,9 @@ use std::collections::{BTreeMap, HashMap};
 
 mod expressions;
 mod flow;
+mod fragment_flow;
+mod language;
+mod variables;
 mod walk;
 struct Ctx<'a> {
     program: &'a Program,
@@ -19,6 +21,10 @@ struct Ctx<'a> {
     graph_edges: Vec<GraphEdge>,
     anchors: Vec<AnchorDecl>,
     cur_file: String,
+    locals: HashMap<String, ValueKind>,
+    in_fragment: bool,
+    in_rule: bool,
+    expression_fallback: Loc,
 }
 
 /// 节点执行上下文(引用解析与诊断归属)。
@@ -40,22 +46,36 @@ pub(super) fn analyze(
         graph_nodes: Vec::new(),
         graph_edges: Vec::new(),
         anchors: Vec::new(),
+        locals: HashMap::new(),
+        in_fragment: false,
+        in_rule: false,
+        expression_fallback: Loc::new(0, 1),
         cur_file: program.files.first().cloned().unwrap_or_default(),
     };
 
     ctx.collect_decl_symbols();
     ctx.collect_nodes();
+    ctx.collect_callable_symbols();
     ctx.collect_vars();
     ctx.walk_all();
+    ctx.walk_callables();
+    ctx.collect_fragment_transitions();
     ctx.flow_analysis();
     let world =
         crate::analysis_metadata::analyze_metadata(program, &mut ctx.symbols, &mut ctx.diags);
 
+    let fragment_stats: Vec<_> = program
+        .fragments
+        .iter()
+        .map(|f| count_choices_words(&f.body))
+        .collect();
     let stats = Stats {
         events: ctx.graph_nodes.iter().filter(|n| n.is_event).count() as u32,
         scenes: ctx.graph_nodes.iter().filter(|n| !n.is_event).count() as u32,
-        choices: ctx.graph_nodes.iter().map(|n| n.choice_count).sum(),
-        words: ctx.graph_nodes.iter().map(|n| n.word_count).sum(),
+        choices: ctx.graph_nodes.iter().map(|n| n.choice_count).sum::<u32>()
+            + fragment_stats.iter().map(|s| s.0).sum::<u32>(),
+        words: ctx.graph_nodes.iter().map(|n| n.word_count).sum::<u32>()
+            + fragment_stats.iter().map(|s| s.1).sum::<u32>(),
         storylines: ctx.symbols.storyline_order.len() as u32,
         characters: ctx.symbols.character_order.len() as u32,
         entities: program.entities.len() as u32,
@@ -335,38 +355,6 @@ impl<'a> Ctx<'a> {
             self.collect_scenes(event_idx, &full, &s.body, file, storyline);
         }
     }
-
-    /// 第二遍:收集全局变量(类型由初始化表达式静态推断)。
-    fn collect_vars(&mut self) {
-        for l in &self.program.lets {
-            if l.name.is_empty() {
-                continue;
-            }
-            if let Some(prev) = self.symbols.vars.get(&l.name) {
-                let (pf, ps) = (prev.decl_file.clone(), prev.decl_span);
-                self.diags.push(
-                    Diagnostic::error(
-                        "A104",
-                        &l.file,
-                        Span::new(l.loc.line, l.loc.column, l.name.chars().count() as u32),
-                        format!("变量 `{}` 重复定义", l.name),
-                    )
-                    .with_related(&pf, ps),
-                );
-                continue;
-            }
-            self.symbols.vars.insert(
-                l.name.clone(),
-                VarInfo {
-                    kind: expr_kind_static(&l.expr, &self.symbols),
-                    is_const: l.is_const,
-                    decl_file: l.file.clone(),
-                    decl_span: Span::new(l.loc.line, l.loc.column, l.name.chars().count() as u32),
-                    read: false,
-                },
-            );
-        }
-    }
 }
 fn count_choices_words(stmts: &[Stmt]) -> (u32, u32) {
     let mut choices = 0;
@@ -374,7 +362,7 @@ fn count_choices_words(stmts: &[Stmt]) -> (u32, u32) {
     fn rec(stmts: &[Stmt], choices: &mut u32, words: &mut u32) {
         for s in stmts {
             match s {
-                Stmt::Text(t) => {
+                Stmt::Text(t) | Stmt::Say(crate::language::SayStmt { text: t, .. }) => {
                     for p in &t.parts {
                         if let Some(l) = match p {
                             TextPart::Str(l) => Some(l),

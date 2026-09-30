@@ -200,7 +200,26 @@ fn collect_stmt_references(
                     references,
                 );
             }
-            Stmt::Divert(_) | Stmt::Change(_) | Stmt::Anchor(_) | Stmt::Effect(_) => {}
+            Stmt::Say(say) => {
+                collect_text_references(content, &say.text.parts, owner, file, target, references)
+            }
+            Stmt::Local(local) => {
+                collect_expr_references(content, &local.expr, owner, file, target, references)
+            }
+            Stmt::Call(call) => {
+                for arg in &call.args {
+                    collect_expr_references(content, arg, owner, file, target, references);
+                }
+            }
+            Stmt::DynamicChange(change) => {
+                collect_expr_references(content, &change.state, owner, file, target, references);
+                collect_expr_references(content, &change.tags, owner, file, target, references);
+            }
+            Stmt::Return(_)
+            | Stmt::Divert(_)
+            | Stmt::Change(_)
+            | Stmt::Anchor(_)
+            | Stmt::Effect(_) => {}
         }
     }
 }
@@ -381,9 +400,10 @@ pub(crate) fn affected_by_deletion(referenced: &TargetRef, target: &TargetRef) -
 }
 
 fn belongs_to_deleted_event(source: &TargetRef, target: &TargetRef) -> bool {
-    target.kind == "event"
-        && ((source.kind == "event" && source.id == target.id)
-            || (source.kind == "scene" && source.id.starts_with(&format!("{}.", target.id))))
+    (matches!(target.kind.as_str(), "rule" | "fragment") && source == target)
+        || target.kind == "event"
+            && ((source.kind == "event" && source.id == target.id)
+                || (source.kind == "scene" && source.id.starts_with(&format!("{}.", target.id))))
 }
 
 fn file_target(file: &str) -> TargetRef {

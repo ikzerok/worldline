@@ -18,6 +18,11 @@ pub struct Line {
 
 #[derive(Debug, Clone)]
 pub enum LineKind {
+    Language111 {
+        keyword: String,
+        source: String,
+        loc: Loc,
+    },
     Become(crate::ast::Change),
     Catalog(crate::catalog::CatalogDecl),
     Include {
@@ -210,6 +215,28 @@ pub fn parse_quoted(
     line: u32,
     diags: &mut Vec<Diagnostic>,
 ) -> Result<(String, usize), QuotedStringError> {
+    let (raw, end) = parse_quoted_raw(chars, start, file, line, diags)?;
+    let span = Span::new(line, (start + 1) as u32, (end - start - 1) as u32);
+    Ok((decode_escapes(&raw, file, span, diags), end))
+}
+
+/// 只扫描引号边界，保留正文转义供插值解析器解码一次。
+pub fn parse_quoted_raw(
+    chars: &[char],
+    start: usize,
+    file: &str,
+    line: u32,
+    diags: &mut Vec<Diagnostic>,
+) -> Result<(String, usize), QuotedStringError> {
+    if chars.get(start) != Some(&'"') {
+        diags.push(Diagnostic::error(
+            "P003",
+            file,
+            Span::new(line, (start + 1) as u32, 1),
+            "需要双引号字符串",
+        ));
+        return Err(QuotedStringError);
+    }
     let mut raw = String::new();
     let mut i = start + 1;
     while i < chars.len() {
@@ -221,9 +248,7 @@ pub fn parse_quoted(
             continue;
         }
         if c == '"' {
-            let span = Span::new(line, (start + 1) as u32, (i - start) as u32);
-            let decoded = decode_escapes(&raw, file, span, diags);
-            return Ok((decoded, i + 1));
+            return Ok((raw, i + 1));
         }
         if c == '\n' {
             break;
@@ -234,7 +259,7 @@ pub fn parse_quoted(
     let span = Span::new(
         line,
         (start + 1) as u32,
-        (chars.len() - start).max(1) as u32,
+        chars.len().saturating_sub(start).max(1) as u32,
     );
     diags.push(Diagnostic::error("P003", file, span, "字符串未闭合"));
     Err(QuotedStringError)

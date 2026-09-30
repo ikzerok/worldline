@@ -9,14 +9,32 @@ pub enum Value {
     Num(f64),
     Str(String),
     Bool(bool),
+    Tag(String),
+    TagSet(Vec<String>),
+    StateRef(String),
 }
 
 impl Value {
+    pub fn kind(&self) -> worldline_core::ast::ValueKind {
+        use worldline_core::ast::ValueKind;
+        match self {
+            Self::Num(_) => ValueKind::Num,
+            Self::Str(_) => ValueKind::Str,
+            Self::Bool(_) => ValueKind::Bool,
+            Self::Tag(_) => ValueKind::Tag,
+            Self::TagSet(_) => ValueKind::TagSet,
+            Self::StateRef(_) => ValueKind::StateRef,
+        }
+    }
+
     pub fn kind_label(&self) -> &'static str {
         match self {
             Value::Num(_) => "数值",
             Value::Str(_) => "字符串",
             Value::Bool(_) => "布尔",
+            Value::Tag(_) => "标签身份",
+            Value::TagSet(_) => "标签集合",
+            Value::StateRef(_) => "状态身份",
         }
     }
 
@@ -26,6 +44,8 @@ impl Value {
             Value::Num(number) => format_number(*number),
             Value::Str(text) => text.clone(),
             Value::Bool(value) => value.to_string(),
+            Value::Tag(id) | Value::StateRef(id) => id.clone(),
+            Value::TagSet(ids) => format!("[{}]", ids.join(", ")),
         }
     }
 }
@@ -45,6 +65,8 @@ fn format_number(number: f64) -> String {
 pub enum Output {
     /// 一行文本;`new_line=false` 表示粘接(不换行)。
     Text {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        speaker: Option<worldline_core::catalog::TargetRef>,
         content: String,
         new_line: bool,
         tags: Vec<String>,
@@ -103,14 +125,27 @@ impl std::error::Error for RunError {}
 /// 内联帧来源(存档重建用)。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub(super) enum FrameSrc {
+    FragmentCall {
+        stmt: usize,
+        fragment: usize,
+    },
     /// if 语句(块内语句下标,分支下标)。
-    IfBranch { stmt: usize, branch: usize },
+    IfBranch {
+        stmt: usize,
+        branch: usize,
+    },
     /// 选择体(组内选择语句下标)。
-    ChoiceBody { stmt: usize },
+    ChoiceBody {
+        stmt: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FrameSave {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fragment: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub locals: BTreeMap<String, Value>,
     pub node: Option<String>,
     pub idx: usize,
     pub src: Option<FrameSrc>,
@@ -183,6 +218,8 @@ fn default_change_kind() -> worldline_core::ast::ChangeKind {
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct SaveState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_features: Vec<String>,
     pub fingerprint: u64,
     pub vars: HashMap<String, Value>,
     pub visits: HashMap<String, u32>,

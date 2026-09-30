@@ -91,8 +91,7 @@ impl Project {
         values: &[String],
         attach: bool,
     ) -> Result<(), String> {
-        if target.kind == "entity" && self.language_version_kind() != crate::LanguageVersion::V1_10
-        {
+        if target.kind == "entity" && !self.language_version_kind().supports_entities() {
             return Err("entity 需要工程显式启用语言 1.10".into());
         }
         for value in values {

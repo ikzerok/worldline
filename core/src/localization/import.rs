@@ -184,6 +184,16 @@ fn prepare_import(
         }
     }
 
+    if !compiled.has_errors() {
+        for fragment in &compiled.program.fragments {
+            collect_units(
+                &fragment.body,
+                Path::new(&fragment.file),
+                &project.root,
+                &mut current_units,
+            )?;
+        }
+    }
     if exchange.source_baseline != source_baseline {
         diagnostic(
             &mut diagnostics,

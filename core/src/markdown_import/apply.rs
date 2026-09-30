@@ -346,11 +346,12 @@ fn update_import_manifest(project: &mut Project, import_source: &Path) -> Result
         .as_object_mut()
         .ok_or("工作区清单顶层必须是 JSON 对象")?;
     let mut changed = !exists;
-    if object
-        .get("language_version")
-        .and_then(serde_json::Value::as_str)
-        != Some("1.10")
-    {
+    if !matches!(
+        object
+            .get("language_version")
+            .and_then(serde_json::Value::as_str),
+        Some("1.10" | "1.11")
+    ) {
         object.insert(
             "language_version".into(),
             serde_json::Value::String("1.10".into()),

@@ -4,10 +4,12 @@ use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::expression::{parse_expr_src, parse_interpolations_with_options};
 use crate::lexer::{Line, LineKind};
+mod language;
 mod metadata;
 mod program;
 mod statements;
 mod text;
+pub(crate) use text::split_text_decorations;
 
 fn relation_target(file: &str, kind: &str, id: &str) -> crate::catalog::TargetRef {
     if kind == "file" {
@@ -119,7 +121,7 @@ pub struct Parser<'a> {
     diags: &'a mut Vec<Diagnostic>,
     /// 当前 storyline 块归属(块外为 None → main)。
     cur_storyline: Option<String>,
-    allow_entities: bool,
+    language_version: crate::compiler::LanguageVersion,
     allow_object_refs: bool,
     allow_localization_ids: bool,
 }
@@ -139,7 +141,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             diags,
             cur_storyline: None,
-            allow_entities: options.language_version.supports_entities(),
+            language_version: options.language_version,
             allow_object_refs: options.object_refs,
             allow_localization_ids: options.localization_ids,
         }
@@ -162,12 +164,8 @@ impl<'a> Parser<'a> {
     }
 
     fn options(&self) -> crate::compiler::CompileOptions {
-        crate::compiler::CompileOptions::new(if self.allow_entities {
-            crate::compiler::LanguageVersion::V1_10
-        } else {
-            crate::compiler::LanguageVersion::V1_9
-        })
-        .with_object_refs(self.allow_object_refs)
-        .with_localization_ids(self.allow_localization_ids)
+        crate::compiler::CompileOptions::new(self.language_version)
+            .with_object_refs(self.allow_object_refs)
+            .with_localization_ids(self.allow_localization_ids)
     }
 }

@@ -132,6 +132,7 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
             return Err(format!("公开选择中有未知对象：{}", target.kind));
         }
     }
+    super::fields::validate_fields(&compiled, selection)?;
     let selected_asset_ids: BTreeSet<_> = selection.attachments.iter().cloned().collect();
     let mut attachment_bytes = 0usize;
     let mut attachments = Vec::new();
@@ -198,7 +199,7 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
             .object(&target)
             .expect("selection was validated");
         let (body_html, searchable_text) =
-            render_object_body(&compiled, &target, &routes, &file_routes)?;
+            render_object_body(&compiled, &target, &routes, &file_routes, selection)?;
         pages.push(PublicPage {
             title: object.display.clone(),
             output_path: PathBuf::from(&route),
@@ -292,7 +293,20 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
     }
     plan_digest.push_str(&format!("-{map_hash:016x}"));
     let preview = ReaderExportPreview {
-        schema_version: READER_EXPORT_SCHEMA_VERSION,
+        content: if selection.schema_version == READER_FIELDS_SCHEMA_VERSION {
+            pages
+                .iter()
+                .map(|page| ReaderContentPreview {
+                    title: page.title.clone(),
+                    output_path: page.output_path.to_string_lossy().into_owned(),
+                    text: page.searchable_text.clone(),
+                    empty_content: page.searchable_text.trim().is_empty(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        schema_version: selection.schema_version,
         plan_digest,
         content_baseline,
         included,
@@ -307,9 +321,13 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
 }
 
 fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
-    if selection.schema_version != READER_EXPORT_SCHEMA_VERSION {
+    if !matches!(
+        selection.schema_version,
+        READER_EXPORT_SCHEMA_VERSION | READER_FIELDS_SCHEMA_VERSION
+    ) {
         return Err("不支持的阅读包选择版本".into());
     }
+    super::fields::validate_version(selection)?;
     if selection.site_title.trim().is_empty() || selection.site_title.chars().count() > 160 {
         return Err("站点标题必须为 1 至 160 个字符".into());
     }
@@ -355,6 +373,8 @@ fn public_object_kind(kind: &str) -> bool {
     matches!(
         kind,
         "event"
+            | "fragment"
+            | "rule"
             | "scene"
             | "character"
             | "entity"

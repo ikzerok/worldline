@@ -33,6 +33,14 @@ impl Project {
             collect_units(&event.body, Path::new(file), &self.root, &mut all)?;
         }
 
+        for fragment in &compiled.program.fragments {
+            collect_units(
+                &fragment.body,
+                Path::new(&fragment.file),
+                &self.root,
+                &mut all,
+            )?;
+        }
         let source_baseline = source_baseline(self)?;
         let mut diagnostics = Vec::new();
         let mut entries = Vec::with_capacity(selection.string_ids.len());
@@ -187,6 +195,16 @@ pub(super) fn collect_units(
                         source,
                         parts: source_parts(&text.parts),
                         source_revision: source_revision("text", &text.parts, text.glue),
+                    });
+                }
+            }
+            Stmt::Say(say) => {
+                if let Some(id) = &say.text.localization_id {
+                    let source = source_reference(root, file, say.loc.line, "say")?;
+                    out.entry(id.clone()).or_default().push(SourceUnit {
+                        source,
+                        parts: source_parts(&say.text.parts),
+                        source_revision: source_revision("say", &say.text.parts, say.text.glue),
                     });
                 }
             }

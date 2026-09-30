@@ -130,6 +130,9 @@ pub enum ValueKind {
     Num,
     Str,
     Bool,
+    Tag,
+    TagSet,
+    StateRef,
 }
 
 impl ValueKind {
@@ -138,6 +141,9 @@ impl ValueKind {
             ValueKind::Num => "数值",
             ValueKind::Str => "字符串",
             ValueKind::Bool => "布尔",
+            ValueKind::Tag => "标签身份",
+            ValueKind::TagSet => "标签集合",
+            ValueKind::StateRef => "状态身份",
         }
     }
 }
@@ -402,6 +408,11 @@ pub struct SceneStmt {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
+    Local(crate::language::LocalStmt),
+    Call(crate::language::CallStmt),
+    Return(Loc),
+    Say(crate::language::SayStmt),
+    DynamicChange(crate::language::DynamicChangeStmt),
     Text(TextStmt),
     Choice(ChoiceStmt),
     If(IfStmt),
@@ -444,12 +455,15 @@ pub struct Event {
 /// 编译产物:程序结构(include 已在源文本级合并)。
 #[derive(Debug, Clone, Default)]
 pub struct Program {
+    pub language_version: crate::compiler::LanguageVersion,
+    pub rules: Vec<crate::language::RuleDecl>,
+    pub fragments: Vec<crate::language::FragmentDecl>,
     /// 旧权限与身份状态的兼容映射；不保存运行状态。
     pub permission_migration: Option<crate::migration::PermissionMigration>,
     pub catalog: Vec<crate::catalog::CatalogDecl>,
     /// 参与编译的文件路径,0 为主文件。
     pub files: Vec<String>,
-    /// 全局 let/const 声明(顶层与块内,均为全局)。
+    /// 启动时初始化的顶层全局 let/const；块内声明保留在各自语句体中。
     pub lets: Vec<LetStmt>,
     /// 故事线声明(同名多块按声明序重复出现,分析期合并)。
     pub storylines: Vec<StorylineDecl>,

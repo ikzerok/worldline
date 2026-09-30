@@ -11,11 +11,16 @@ mod effects;
 mod evidence;
 mod execution;
 mod expression;
+mod language;
+mod language_expression;
+mod language_persistence;
 mod model;
 mod persistence;
+mod random;
 mod replay;
 mod replay_runner;
 mod util;
+mod variable_validation;
 
 pub use evidence::{ConditionEvidence, EvidenceNode, EvidenceOutcome};
 use model::FrameSrc;
@@ -33,6 +38,8 @@ use util::{expression_source, initial_states, normalize_seed, seed_now};
 // ---------------------------------------------------------------------------
 
 struct Frame<'p> {
+    fragment: Option<String>,
+    locals: BTreeMap<String, Value>,
     stmts: &'p [Stmt],
     idx: usize,
     /// Some = 节点帧(事件或场景全名)。
@@ -170,6 +177,8 @@ impl<'p> Story<'p> {
             idx: 0,
             node: Some(event.name.clone()),
             src: None,
+            fragment: None,
+            locals: BTreeMap::new(),
         }];
         let mut body: &[Stmt] = &event.body;
         let mut prefix = event.name.clone();
@@ -190,6 +199,8 @@ impl<'p> Story<'p> {
                 idx: 0,
                 node: Some(prefix.clone()),
                 src: None,
+                fragment: None,
+                locals: BTreeMap::new(),
             });
             body = &sc.body;
         }
@@ -227,7 +238,12 @@ impl<'p> Story<'p> {
 
     /// 当前节点名(最内层节点帧)。
     pub fn current_node(&self) -> Option<String> {
-        self.frames.iter().rev().find_map(|f| f.node.clone())
+        self.frames.iter().rev().find_map(|f| {
+            f.fragment
+                .as_ref()
+                .map(|n| format!("fragment:{n}"))
+                .or_else(|| f.node.clone())
+        })
     }
 
     /// 主角当前故事线。
@@ -279,7 +295,7 @@ impl<'p> Story<'p> {
     /// 全量状态视图(规范 agent-protocol.md §2.5):
     /// CLI `play --json` 与 `wl-agent` 共用的机器快照,不含选项列表。
     pub fn state_view(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut view = serde_json::json!({
             "turns": self.turns,
             "storyline": self.storyline,
             "current_node": self.current_node(),
@@ -293,7 +309,11 @@ impl<'p> Story<'p> {
             "coverage": self.access_coverage(),
             "paused": self.is_paused(),
             "ended": self.is_ended(),
-        })
+        });
+        if worldline_core::language::uses_new_features(self.program) {
+            view["calls"] = serde_json::json!(self.call_view());
+        }
+        view
     }
 
     /// 已实际访问节点与选择的覆盖投影；未访问项目不表示不可达。

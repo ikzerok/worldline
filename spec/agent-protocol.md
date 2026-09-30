@@ -60,7 +60,7 @@ catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
 属于协议版本 1 的向后兼容扩展。详见 [catalog.md](catalog.md)。
 
 人类模式输出保持不变;`--json` 切换机器输出。标志:`--load=<存档.json>`、
-`--save=<存档.json>`、`--language-version=1.10`、`--json`。未指定
+`--save=<存档.json>`、`--language-version=1.9|1.10|1.11`、`--json`。未指定
 `--language-version` 时,目录或入口若位于带 `language_version` 的工程清单中,
 由清单选择语言版本;没有清单的旧调用仍固定使用 1.9。直接 source API 和旧
 CLI 调用不会因出现 `entity` 文本而隐式升级。
@@ -536,3 +536,32 @@ core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没
 ### 资料查询排序版本
 
 `catalog.query` 与 `wl catalog-query` 共用 CatalogQuery：v1 为既有默认顺序，v2 必须包含 `sort:{field:"name"|"kind",direction:"ascending"|"descending"}`。排序语义、缺值与并列规则见 catalog.md §7.1。page/cursor 版本保持 1；排序改变后旧游标返回 STALE_CURSOR。命中添加同快照 display 字段，接口不得在分页后自行重排。未知 sort 字段或方向属于无效 DTO；版本与有效 sort 不匹配属于 INVALID_QUERY。
+
+
+## 显式语言 1.11
+
+CLI 的 `--language-version=1.11`、工程清单 `language_version:"1.11"` 和 RPC compile 的同名参数选择同一 core 编译契约。缺省仍为1.9；未知版本拒绝，不按源码猜测升级。新规则、片段、集合和强角色台词的语义见 [language-1.11.md](language-1.11.md)。check/compile 报同一定位诊断，catalog/analyze 投影规则与片段身份；不增加CLI私有解析器。
+
+say 仍输出 `type:"text"`，content只含台词正文，附可选 `speaker:{kind:"character",id}`。普通正文省略speaker。CLI纯文本模式只显示content，JSON和RPC保留结构化speaker；作者演出备注不出现在运行输出或本地化交换中。session.save/load完整携带片段帧及类型值，未知required_features或损坏帧返回既有运行失败载荷，不跳过运行指纹。
+
+读者选择DTO新增schema_version 2及`reader.fields.v1`明确能力，字段、speaker的公开白名单与旧schema1兼容见 [reader-export.md](reader-export.md)。CLI reader-export与RPC reader.export仍原样把同一core预览/摘要验证结果交给调用方。
+
+### 完整源码草稿事务
+
+语言1.11规则/片段等结构可通过通用完整源码接口创作，使用与编辑器相同的core WritingBuffer，不把新节点降成jump或丢弃未知正文。
+
+`wl source-edit preview|apply <工程目录> --request-json '<DTO>' --json`，apply另需`--plan-digest`。
+RPC `source.edit.preview`接受`{path|project_id,request}`；`source.edit.apply`另需`plan_digest`。
+request为严格DTO：`{schema_version:1,path:"world.wl",expected_baseline:"当前内容基线",source:"完整目标源码"}`。path只能指向已加载工作区内的相对.wl路径，不新建目录、不接受越界或不明文件。以当前workspace check/project.analyze取得基线。
+
+preview只生成`{schema_version,path,changed,plan_digest,diagnostics}`，不改缓冲或磁盘。apply重建候选并比对摘要及原工程/磁盘基线，然后整体应用、使用既有可恢复保存；失败不静默覆盖。该接口明确允许有编译诊断的源码草稿，诊断不等于文件丢失。正常正文/结构表单仍要求候选通过编译。调用方必须传完整源文而非正文片段，未提及的源内容会按明确请求替换。
+
+DTO格式/参数错属于协议错误；只读、过期、路径、保存冲突等业务拒绝返回`ok:false,error.code:"SOURCE_EDIT_REJECTED"`。清单未知必需能力保持只读，不因完整源码入口而绕过。
+
+读者preview v2的`content`按实际页面顺序返回`{title,output_path,text,empty_content}`，其text与生成search-index的正文一致；schema1不新增此字段。`fields`仅选择已有property键，引用目标不因字段选择而自动公开。站点本身manifest格式仍为1，不能拿作者预览DTO冒充发布内容。
+
+### 1.11类型值与执行位置
+
+运行Value继续使用既有外部标记枚举JSON；新增`{"Tag":"id"}`、`{"TagSet":["id",...]}`、`{"StateRef":"id"}`。TagSet按ID排序并去重，无普通字符串隐式身份转换。只在实际采用新增能力的作品中，state视图增加calls，逐层提供`fragment,statement,line,file,caller,call_statement,locals`。这些是作者/调试接口，不自动进入读者包。
+
+规则真实求值EvidenceNode可选file/line，其他节点省略，不把未执行分支编造为已满足。状态变更索引的StateChangeSite可选source完整TargetRef及state_expression/tags_expression；片段定义的event为空、node为fragment:ID。Catalog.dynamic_state_changes列出参数化动作，空时省略；只有运行state_history是已发生记录，静态参数目标不会被猜成某个具体state。

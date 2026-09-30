@@ -8,6 +8,20 @@ impl Project {
         draft: &CharacterDraft,
     ) -> Result<(), String> {
         identifier(&draft.id)?;
+        if let Some(original) = original
+            .filter(|id| *id != draft.id && self.language_version_kind().supports_language_111())
+        {
+            let mut candidate = self.clone();
+            let plan = candidate.plan_rename_target(
+                &crate::catalog::TargetRef::new("character", original),
+                &draft.id,
+            )?;
+            candidate.apply_rename_plan(&plan)?;
+            candidate.write_character(path, Some(&draft.id), draft)?;
+            *self = candidate;
+            return Ok(());
+        }
+
         let mut out = format!(
             "character {} as {}\n{}",
             draft.id,
@@ -50,7 +64,7 @@ impl Project {
         original: Option<&str>,
         draft: &EntityDraft,
     ) -> Result<(), String> {
-        if self.language_version_kind() != crate::LanguageVersion::V1_10 {
+        if !self.language_version_kind().supports_entities() {
             return Err("entity 需要工程显式启用语言 1.10".into());
         }
         identifier(&draft.id)?;
@@ -85,7 +99,7 @@ impl Project {
 
     /// 删除实体前重新生成影响计划，引用或地图标记未解除时拒绝写入。
     pub fn remove_entity(&mut self, id: &str) -> Result<(), String> {
-        if self.language_version_kind() != crate::LanguageVersion::V1_10 {
+        if !self.language_version_kind().supports_entities() {
             return Err("entity 需要工程显式启用语言 1.10".into());
         }
         let target = crate::catalog::TargetRef::new("entity", id);

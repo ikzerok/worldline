@@ -100,6 +100,23 @@ pub fn fingerprint_program(program: &Program) -> u64 {
         }
         walk_stmts(&mut hash, &event.body);
     }
+    if crate::language::uses_new_features(program) {
+        mix(&mut hash, "Language1.11");
+        for rule in &program.rules {
+            mix(&mut hash, &format!("Rule{}{:?}", rule.name, rule.result));
+            for p in &rule.parameters {
+                mix(&mut hash, &format!("{}{:?}", p.name, p.kind));
+            }
+            walk_expr(&mut hash, &rule.expr);
+        }
+        for fragment in &program.fragments {
+            mix(&mut hash, &format!("Fragment{}", fragment.name));
+            for p in &fragment.parameters {
+                mix(&mut hash, &format!("{}{:?}", p.name, p.kind));
+            }
+            walk_stmts(&mut hash, &fragment.body);
+        }
+    }
     // 兼容映射影响旧档注入和准入求值顺序，也必须绑定内容；不混入指纹自身。
     if let Some(m) = &program.permission_migration {
         mix(&mut hash, &format!("PermissionState{}", m.state));
@@ -181,6 +198,27 @@ fn walk_parts(hash: &mut u64, parts: &[TextPart]) {
 fn walk_stmts(hash: &mut u64, statements: &[Stmt]) {
     for statement in statements {
         match statement {
+            Stmt::Local(l) => {
+                mix(hash, &format!("Local{}{:?}", l.name, l.kind));
+                walk_expr(hash, &l.expr);
+            }
+            Stmt::Call(c) => {
+                mix(hash, &format!("Call{}", c.name));
+                for a in &c.args {
+                    walk_expr(hash, a);
+                }
+            }
+            Stmt::Return(_) => mix(hash, "Return"),
+            Stmt::Say(s) => {
+                mix(hash, &format!("Say{}", s.speaker));
+                walk_parts(hash, &s.text.parts);
+            }
+            Stmt::DynamicChange(c) => {
+                mix(hash, &format!("Dynamic{:?}", c.kind));
+                walk_expr(hash, &c.state);
+                walk_expr(hash, &c.tags);
+            }
+
             Stmt::Text(text) => {
                 mix(hash, "T");
                 walk_parts(hash, &text.parts);

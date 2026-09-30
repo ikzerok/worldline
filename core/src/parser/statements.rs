@@ -59,6 +59,16 @@ impl<'a> Parser<'a> {
         let line = self.next().expect("parse_stmt 调用前已确认存在");
         let file = self.file_of(line);
         match line.kind.clone() {
+            LineKind::Language111 {
+                keyword,
+                source,
+                loc,
+            } => self.parse_language_statement(
+                &keyword,
+                &source,
+                Loc::new(loc.line, loc.column + indent),
+                &file,
+            ),
             LineKind::Text { content, loc } => {
                 let (text_part, glue, tags) = split_text_decorations(&content);
                 let options = self.options();

@@ -50,6 +50,8 @@ mod relation_queries;
 mod relation_types;
 #[path = "lib/sessions.rs"]
 mod sessions;
+#[path = "lib/source_edit.rs"]
+mod source_edit;
 
 /// 协议版本:方法表或错误语义发生不兼容变更时递增。
 pub const PROTOCOL: u64 = 1;
@@ -319,6 +321,8 @@ impl Server {
             "project.analyze" => self.project_analyze(params),
             "workspace.check" => self.workspace_check(params),
             "maps.list" => self.maps_list(params),
+            "source.edit.preview" => self.source_edit(params, false),
+            "source.edit.apply" => self.source_edit(params, true),
             "authoring.intent.preview" => self.authoring_intent(params, false),
             "authoring.intent.apply" => self.authoring_intent(params, true),
             "markdown.import.preview" => self.markdown_import(params, false),

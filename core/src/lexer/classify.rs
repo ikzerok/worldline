@@ -93,6 +93,18 @@ pub(super) fn classify(
     let (word, rest) = split_word(&content);
     let rest_trim = rest.trim();
     let word_col = (content.len() - rest.len() - word.len()) as u32 + 1;
+    if options.language_version.supports_language_111()
+        && (matches!(
+            word,
+            "rule" | "fragment" | "local" | "call" | "return" | "say"
+        ) || (word == "become" && crate::language::dynamic_change_parts(rest_trim).is_some()))
+    {
+        return LineKind::Language111 {
+            keyword: word.into(),
+            source: rest_trim.into(),
+            loc: Loc::new(no, word_col),
+        };
+    }
     match word {
         "tag" | "asset" | "mark" | "attach" | "anchor_def" | "anchor_link" | "alias"
         | "property" | "description" | "relation" => {

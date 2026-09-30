@@ -211,6 +211,8 @@ fn save_reopen_export_and_fingerprint_boundaries() {
         bytes(&p)
     );
     let selection = ReaderExportSelection {
+        required_features: Vec::new(),
+        fields: Vec::new(),
         schema_version: 1,
         site_title: "公开地图".into(),
         objects: Vec::new(),

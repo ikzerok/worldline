@@ -14,6 +14,11 @@ impl<'p> Story<'p> {
     /// 序列化当前状态为 JSON(规范 semantics.md §7)。
     pub fn save(&self) -> Result<String, RunError> {
         let state = SaveState {
+            required_features: if worldline_core::language::uses_new_features(self.program) {
+                vec!["runtime.language_1_11.v1".into()]
+            } else {
+                Vec::new()
+            },
             fingerprint: self.fingerprint,
             vars: self.vars.clone(),
             visits: self.visits.clone(),
@@ -23,6 +28,8 @@ impl<'p> Story<'p> {
                 .frames
                 .iter()
                 .map(|f| FrameSave {
+                    fragment: f.fragment.clone(),
+                    locals: f.locals.clone(),
                     node: f.node.clone(),
                     idx: f.idx,
                     src: f.src,
@@ -53,8 +60,23 @@ impl<'p> Story<'p> {
         if program.events.is_empty() {
             return Err(RunError::new("工程没有可运行入口"));
         }
-        let mut state: SaveState =
-            serde_json::from_str(json).map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
+        let value = worldline_core::parse_unique_json(json.as_bytes())
+            .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
+        let mut state: SaveState = serde_json::from_value(value)
+            .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
+        let required = worldline_core::language::uses_new_features(program);
+        if state
+            .required_features
+            .iter()
+            .any(|f| f != "runtime.language_1_11.v1")
+            || required
+                != state
+                    .required_features
+                    .iter()
+                    .any(|f| f == "runtime.language_1_11.v1")
+        {
+            return Err(RunError::new("存档必需语言能力缺失或不受支持"));
+        }
         let legacy = state.fingerprint != analysis.fingerprint;
         if legacy
             && !program
@@ -66,6 +88,7 @@ impl<'p> Story<'p> {
                 "程序内容已变化,存档不兼容(改稿后旧档不保证可续玩)",
             ));
         }
+        super::variable_validation::validate_saved_vars(program, analysis, &state.vars)?;
         // 旧档权限注入身份状态；新档的 perms 只是派生快照，冲突必须显式拒绝。
         if let Some(m) = &program.permission_migration {
             let tags: Vec<_> = state
@@ -104,7 +127,16 @@ impl<'p> Story<'p> {
         } else if state.perms.as_ref().is_some_and(|p| !p.is_empty()) {
             return Err(RunError::new("存档含有旧权限，但程序没有身份状态映射"));
         }
-        for id in state.states.keys() {
+        for (id, tags) in &state.states {
+            if tags.iter().collect::<std::collections::HashSet<_>>().len() != tags.len() {
+                return Err(RunError::new(format!("存档状态 `{id}` 含重复标签")));
+            }
+            if tags
+                .iter()
+                .any(|tag| !analysis.catalog.tags.get(tag).is_some_and(|t| t.declared))
+            {
+                return Err(RunError::new(format!("存档状态 `{id}` 含未知标签身份")));
+            }
             if !analysis.catalog.states.contains_key(id) {
                 return Err(RunError::new(format!("存档包含未定义状态 `{id}`")));
             }
@@ -112,6 +144,27 @@ impl<'p> Story<'p> {
         for id in analysis.catalog.states.keys() {
             if !state.states.contains_key(id) {
                 return Err(RunError::new(format!("存档缺少状态 `{id}`，拒绝静默重置")));
+            }
+        }
+        for record in &state.state_history {
+            if !analysis.catalog.states.contains_key(&record.state)
+                || !matches!(
+                    record.kind,
+                    worldline_core::ast::ChangeKind::Become
+                        | worldline_core::ast::ChangeKind::AddTags
+                        | worldline_core::ast::ChangeKind::RemoveTags
+                )
+            {
+                return Err(RunError::new("存档状态历史包含未知状态或非法操作"));
+            }
+            for tags in [&record.before, &record.after] {
+                if tags
+                    .iter()
+                    .any(|id| !analysis.catalog.tags.get(id).is_some_and(|t| t.declared))
+                    || tags.iter().collect::<std::collections::HashSet<_>>().len() != tags.len()
+                {
+                    return Err(RunError::new("存档状态历史包含未知或重复标签"));
+                }
             }
         }
         let entry_idx = analysis
@@ -168,7 +221,7 @@ impl<'p> Story<'p> {
             trace: ReplayTrace::checkpoint(checkpoint),
             failed_explanations: None,
         };
-        story.frames = story.rebuild_frames(&saved_frames)?;
+        story.frames = story.rebuild_frames(&saved_frames, analysis)?;
         if restore_pause {
             let _ = story.continue_story()?;
             if !story.is_paused() {
@@ -178,16 +231,36 @@ impl<'p> Story<'p> {
         Ok(story)
     }
 
-    fn rebuild_frames(&self, saves: &[FrameSave]) -> Result<Vec<Frame<'p>>, RunError> {
+    fn rebuild_frames(
+        &self,
+        saves: &[FrameSave],
+        analysis: &Analysis,
+    ) -> Result<Vec<Frame<'p>>, RunError> {
         let mut frames: Vec<Frame<'p>> = Vec::new();
+        if worldline_core::language::uses_new_features(self.program) && saves.len() > 1024 {
+            return Err(RunError::new("存档帧栈超过1024层"));
+        }
         for sv in saves {
+            if let Some(frame) = self.rebuild_fragment_frame(sv, &frames, analysis)? {
+                frames.push(frame);
+                continue;
+            }
+            if !sv.locals.is_empty() {
+                return Err(RunError::new("非片段帧不能携带局部值"));
+            }
             match &sv.node {
                 Some(name) => {
+                    if sv.src.is_some() {
+                        return Err(RunError::new("节点帧不能携带内联调用来源"));
+                    }
                     if frames.is_empty() {
                         // 根帧:名字解析出完整链
                         let Some(path) = self.symbols.resolve_node(name) else {
                             return Err(RunError::new(format!("存档引用的节点 `{name}` 不存在")));
                         };
+                        if !path.scenes.is_empty() {
+                            return Err(RunError::new("存档根帧必须是事件"));
+                        }
                         let mut chain = self.node_frames(path.event, &path.scenes);
                         if let Some(last) = chain.last_mut() {
                             last.idx = sv.idx;
@@ -196,6 +269,14 @@ impl<'p> Story<'p> {
                     } else {
                         // 深一层场景帧:父帧 stmts 中定位 Scene 语句
                         let leaf = name.rsplit('.').next().unwrap_or(name);
+                        let parent_node = frames
+                            .iter()
+                            .rev()
+                            .find_map(|f| f.node.as_deref())
+                            .unwrap_or("");
+                        if name != &format!("{parent_node}.{leaf}") {
+                            return Err(RunError::new("存档场景身份与父节点不符"));
+                        }
                         let parent_stmts = frames.last().expect("父帧存在").stmts;
                         let Some(pos) = frames
                             .last()
@@ -213,6 +294,8 @@ impl<'p> Story<'p> {
                             idx: sv.idx,
                             node: Some(name.clone()),
                             src: None,
+                            fragment: None,
+                            locals: Default::default(),
                         });
                     }
                 }
@@ -226,6 +309,9 @@ impl<'p> Story<'p> {
                     let parent_stmts = parent.stmts;
                     let stmt_idx = match src {
                         FrameSrc::IfBranch { stmt, .. } | FrameSrc::ChoiceBody { stmt } => *stmt,
+                        FrameSrc::FragmentCall { .. } => {
+                            return Err(RunError::new("片段帧缺少片段身份"))
+                        }
                     };
                     let Some(source_stmt) = parent_stmts.get(stmt_idx) else {
                         return Err(RunError::new("存档与程序结构不符(内联帧来源越界)"));
@@ -259,7 +345,26 @@ impl<'p> Story<'p> {
                         idx: sv.idx,
                         node: None,
                         src: Some(*src),
+                        fragment: None,
+                        locals: Default::default(),
                     });
+                }
+            }
+        }
+        if frames.iter().any(|f| f.idx > f.stmts.len()) {
+            return Err(RunError::new("存档语句位置越界"));
+        }
+        for (i, frame) in frames.iter().enumerate() {
+            if let Some(root) = frames[..=i].iter().rev().find(|f| f.fragment.is_some()) {
+                for stmt in &frame.stmts[..frame.idx] {
+                    if let Stmt::Local(local) = stmt {
+                        if !root.locals.contains_key(&local.name) {
+                            return Err(RunError::new(format!(
+                                "存档缺少已执行的local `{}`",
+                                local.name
+                            )));
+                        }
+                    }
                 }
             }
         }

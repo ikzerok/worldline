@@ -1,6 +1,6 @@
 # worldline 语法规范
 
-**版本:** 1.9（1.10 扩展见 §1.1、§7）
+**默认版本:** 1.9（显式1.10扩展见 §1.1、§7；显式1.11扩展见 [language-1.11.md](language-1.11.md)）
 **真源:** 本文档 + `worldline/core` 参考实现
 **扩展名:** `.wl`
 
@@ -250,8 +250,7 @@ primary := NUMBER | STRING | 'true' | 'false' | IDENT
   - `seen(name)` — 主角是否曾到访该节点(布尔;`after` 前置条件的谓词)
   - `has(state, tag)` — 状态当前是否包含标签；两个参数为静态标识符或字符串
   - `perm(id)` — 旧权限查询输入，编译时归一为世界“叙事身份”状态的 `has` 查询（见 [states.md](states.md)）
-  - `rnd(a, b)` — 含两端的整数随机数(**不可**用于影响存档一致性的
-    判定,语义规范 §6)
+  - `rnd(a, b)` — 有符号闭区间整数随机数，先取 ceil(a)/floor(b)，拒绝反向、空区间、非有限值和超出安全整数范围的端点；随机状态与兼容边界见语义规范 §6
 
 ## 6. 注释
 
@@ -291,7 +290,9 @@ relation_def rel_keepers_lighthouse type maintains from entity keepers to entity
 作为显示投影，不会另存一条反向关系。省略 `direction` 默认为 `directed`；
 `undirected` 允许从两端读取同一条边，但仍只保存一个 `relation_def`。
 `from`/`to` 约束是可选的单个 `TargetRef.kind`，用于检查关系定义两端，
-不是新的对象身份。
+不是新的对象身份。`from_kind`/`to_kind` 是同义字段；值必须完整为一个端点类型，
+额外标识符、数字或表达式（包括 `entity kind organization`）报 P004，不截断接受。
+统一词法处理的合法注释不算尾项；空字段拒绝，同义字段重复仍报 A220。
 
 `relation_def` 的 ID、类型 ID、from/to 端点均为稳定引用。端点使用完整的
 `targetKind IDENT`，允许 `character`、`entity`、`relation`、`tag`、`world`、
@@ -565,3 +566,5 @@ storyline harbor
 ## 16. 别名、正文对象链接与人物资料
 
 顶层新增 `alias KIND TARGET as "别名"`；正文和选择文案新增 `[[KIND:TARGET|显示文字]]`。详细语法限制、转义、诊断、静态资料与运行边界见 [catalog.md](catalog.md) §5。`alias` 是声明关键字，普通叙述请避免以该关键字开头。
+
+语言 1.11 的显式扩展与兼容边界见 [language-1.11.md](language-1.11.md)。

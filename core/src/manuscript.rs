@@ -5,13 +5,19 @@
 
 mod commands;
 mod index;
+mod organization;
 mod source;
+mod writing;
+
+#[cfg(test)]
+mod writing_tests;
 use crate::catalog::TargetRef;
 use crate::presentation_commands::Revision;
 use crate::Diagnostic;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
+pub use writing::{WritingBlock, WritingBlockKind, WritingBuffer, WritingProjection};
 
 pub use index::build_manuscript_index;
 
@@ -127,7 +133,7 @@ pub struct ManuscriptIndex {
     chapter_order: Vec<(usize, Vec<String>)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManuscriptEntryDraft {
     pub id: String,
     pub kind: ManuscriptEntryKind,
@@ -140,7 +146,7 @@ pub struct ManuscriptEntryDraft {
     pub target_ref: Option<TargetRef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManuscriptDraft {
     pub id: String,
     pub title: String,

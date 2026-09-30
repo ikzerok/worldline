@@ -12,6 +12,8 @@ pub enum LanguageVersion {
     V1_9,
     #[serde(rename = "1.10")]
     V1_10,
+    #[serde(rename = "1.11")]
+    V1_11,
 }
 
 impl LanguageVersion {
@@ -19,16 +21,21 @@ impl LanguageVersion {
         match self {
             Self::V1_9 => "1.9",
             Self::V1_10 => "1.10",
+            Self::V1_11 => "1.11",
         }
     }
 
     pub const fn supports_entities(self) -> bool {
-        matches!(self, Self::V1_10)
+        matches!(self, Self::V1_10 | Self::V1_11)
+    }
+
+    pub const fn supports_language_111(self) -> bool {
+        matches!(self, Self::V1_11)
     }
 
     /// 语义关系与通用实体一起在语言 1.10 显式启用。
     pub const fn supports_relations(self) -> bool {
-        matches!(self, Self::V1_10)
+        matches!(self, Self::V1_10 | Self::V1_11)
     }
 }
 
@@ -65,6 +72,10 @@ impl CompileOptions {
 
     pub const fn v1_9() -> Self {
         Self::new(LanguageVersion::V1_9)
+    }
+
+    pub const fn v1_11() -> Self {
+        Self::new(LanguageVersion::V1_11)
     }
 
     pub const fn v1_10() -> Self {

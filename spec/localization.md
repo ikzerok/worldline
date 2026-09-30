@@ -88,3 +88,10 @@ Core sole source of extraction and validation. Public Project operations are:
 - `apply_localization_import(selection, exchange, plan_digest)`：重新验证并将一个 locale sidecar 应用到 Project。
 
 CLI 与 JSON-RPC 只解码、传入同一 core DTO、序列化 core plan/result，不重新解析 `.wl` 或自行校验 placeholders。机器失败返回稳定错误码和中文 message；不把翻译错误伪装成 JSON-RPC 参数错误。精确机器参数和结果见 [agent-protocol.md](agent-protocol.md)。
+
+## 语言 1.11 台词与片段
+
+稳定字符串白名单也覆盖所有已声明 fragment 内正文/选项和 say 正文，不沿 call 展开而重复提取。
+台词 source.kind 为 say，翻译只含 spoken text 及原有占位/链接 token；speaker 身份、显示名和 direction
+不会自动进入交换包。正文修订与占位表达式绑定；演出备注不属于翻译内容。导入仍复用完整源码基线、
+计划重建、只读保护和 locale sidecar 原子应用，旧稳定 ID 不随正文移动自动改变。

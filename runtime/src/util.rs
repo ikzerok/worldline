@@ -154,6 +154,11 @@ pub(super) fn cmp_op(
 
 pub(super) fn stmt_line(s: &Stmt) -> u32 {
     match s {
+        Stmt::Call(v) => v.loc.line,
+        Stmt::Local(v) => v.loc.line,
+        Stmt::Say(v) => v.loc.line,
+        Stmt::DynamicChange(v) => v.loc.line,
+        Stmt::Return(v) => v.line,
         Stmt::Text(t) => t.loc.line,
         Stmt::Choice(c) => c.loc.line,
         Stmt::If(i) => i.loc.line,

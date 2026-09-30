@@ -24,7 +24,7 @@
       "additionalProperties": true,
       "required": ["kind", "id"],
       "properties": {
-        "kind": { "enum": ["event", "scene", "entity"] },
+        "kind": { "enum": ["event", "scene", "entity", "fragment"] },
         "id": { "type": "string", "minLength": 1 }
       }
     },
@@ -60,7 +60,7 @@
               "additionalProperties": true,
               "required": ["kind", "id"],
               "properties": {
-                "kind": { "enum": ["event", "scene", "entity"] },
+                "kind": { "enum": ["event", "scene", "entity", "fragment"] },
                 "id": { "type": "string", "minLength": 1 }
               }
             },

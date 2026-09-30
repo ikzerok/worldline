@@ -31,8 +31,7 @@ pub(super) fn cmd_catalog(args: &CatalogArgs, out: &mut impl Write) -> Result<i3
             "workspace_diagnostics": snapshot.workspace_diagnostics,
             "read_only": snapshot.read_only,
         });
-        if result.options.language_version == LanguageVersion::V1_10 || !catalog.entities.is_empty()
-        {
+        if result.options.language_version.supports_entities() || !catalog.entities.is_empty() {
             payload["language_version"] = json!(result.options.language_version.as_str());
         }
         writeln!(out, "{payload}").map_err(|e| e.to_string())?;

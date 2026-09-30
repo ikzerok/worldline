@@ -7,7 +7,10 @@ pub(super) fn resolve_source(
     content: &CompileResult,
     index: &mut ManuscriptIndex,
 ) -> ManuscriptSource {
-    if !matches!(target.kind.as_str(), "event" | "scene" | "entity") {
+    if !matches!(
+        target.kind.as_str(),
+        "event" | "scene" | "entity" | "fragment"
+    ) {
         index.error(
             "MAN008",
             format!("书稿正文目标类型 `{}` 不受支持", target.kind),
@@ -18,10 +21,15 @@ pub(super) fn resolve_source(
             stats: None,
         };
     }
-    if target.kind == "entity" && !content.options.language_version.supports_entities() {
+    if (target.kind == "entity" && !content.options.language_version.supports_entities())
+        || (target.kind == "fragment" && !content.options.language_version.supports_language_111())
+    {
         index.error(
             "MAN004",
-            format!("当前语言版本无法确认实体 `{}`", target.id),
+            format!(
+                "当前语言版本无法确认正文目标 `{}:{}`",
+                target.kind, target.id
+            ),
         );
         return ManuscriptSource {
             status: ManuscriptReferenceStatus::Unresolved,
@@ -59,6 +67,12 @@ pub(super) fn resolve_source(
             })
             .and_then(|(event, path)| scene_body(&event.body, &path.scenes))
             .map(narrative_text),
+        "fragment" => content
+            .program
+            .fragments
+            .iter()
+            .find(|fragment| fragment.name == target.id)
+            .map(|fragment| narrative_text(&fragment.body)),
         "entity" => content
             .analysis
             .catalog
@@ -159,6 +173,10 @@ fn narrative_text(statements: &[Stmt]) -> String {
     fn append(statements: &[Stmt], output: &mut String) {
         for statement in statements {
             match statement {
+                Stmt::Say(say) => {
+                    append_parts(&say.text.parts, output);
+                    output.push('\n');
+                }
                 Stmt::Text(text) => {
                     append_parts(&text.parts, output);
                     if !text.glue {
@@ -179,7 +197,11 @@ fn narrative_text(statements: &[Stmt]) -> String {
                 }
                 Stmt::Scene(scene) => append(&scene.body, output),
                 // 声明、表达式、跳转、效果和其他控制语法不属于静态阅读文本。
-                Stmt::Divert(_)
+                Stmt::Local(_)
+                | Stmt::Call(_)
+                | Stmt::Return(_)
+                | Stmt::DynamicChange(_)
+                | Stmt::Divert(_)
                 | Stmt::Let(_)
                 | Stmt::Set(_)
                 | Stmt::Change(_)

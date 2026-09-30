@@ -1,6 +1,6 @@
 # worldline 创作手册
 
-本手册解释从建立工作区到交付作品的完整用法。精确语法以 [语法规范](../spec/syntax.md) 为准；运行细节查 [语义规范](../spec/semantics.md)，机器字段查 [协议](../spec/agent-protocol.md)。语言当前为 v1.9，程序包版本为 0.2.0，这两个版本号不是同一概念。
+本手册解释从建立工作区到交付作品的完整用法。精确语法以 [语法规范](../spec/syntax.md) 为准；运行细节查 [语义规范](../spec/semantics.md)，机器字段查 [协议](../spec/agent-protocol.md)。默认语言为1.9，可显式选择1.10或1.11；程序包版本为0.8.0。这两个版本号不是同一概念，打开旧作品不会自动升级。
 
 ## 阅读路线
 
@@ -357,3 +357,35 @@ worldedit 试玩到选择组后，点击“解释当前条件（只读）”。�
 改稿未重启时仍是旧运行，面板明确标明版本。失败试玩停止自动推进，可用“重新开始”重试。
 证据不修改源码、撤销历史、存档或公开读者发布。RPC 的 `session.explain_choices`
 只有显式传入 `include_evidence:true` 才包含这类实际证据，默认响应维持原字段。
+
+
+## 15. 用1.11复用规则、段落与台词
+
+新建作品清单显式设为`"language_version":"1.11"`，或给CLI传`--language-version=1.11`。完整示例在[潮岸救援](../examples/tide-rescue/README.md)。旧1.9/1.10正文中写过的call、return、say不会突然变成命令。
+
+```wl
+rule fare(people: num) -> num = people * 2
+rule can_pay(people: num) -> bool = when(people > 0, fuel >= fare(people), false)
+fragment ask(place: str, item: tag)
+  local cost: num = fare(2)
+  say doctor "{place}需要{cost}罐油。" direction "低声"
+  choice "交出证物"
+    become state(evidence) remove from tags(item)
+  return
+```
+
+规则每次调用读取当前全局值，不会像let一样保留旧快照；零参数规则也要写括号。参数类型用num、str、bool、tag、tagset、state。规则可调用规则但不能递归、抽随机数、写变量或暂停；when只求所选分支，旧and/or仍急切求值。
+
+在事件里写`call ask("医院", tag(map))`，片段完成或return后继续调用后正文。片段可嵌套并在选择处暂停；存读档保留每层参数、局部和返回点。local仅属于当前片段调用，不能被另一个片段读取；参数和local不可set。同名全局不会被悄悄改写。片段内let仍是旧的全局声明，通常应优先使用local。片段内跨事件跃迁或END清除返回链。
+
+`members(state(evidence))`读取当前集合，`count`计数，`contains`查询，`union/intersect/difference`计算并/交/差。`tags()`为空集合，`tags(tag(map),tag(log))`去重。动态动作必须写明确的from形式；旧`has(evidence, selected)`和`become evidence remove selected`仍把selected看作标签ID。
+
+say的角色必须存在，正文支持插值/链接与既有本地化ID。CLI纯文本只输出台词正文，JSON/RPC同时保留speaker身份；演出备注不进入运行输出或默认交换包。角色重命名走core引用操作，不用全局替换普通文字。
+
+### 全局声明、随机与存档边界
+
+块内let/const词法可见，但只有实际走到才初始化。提前读取或set明确失败；同名不同声明即使在不同分支也拒绝。let重入重新求值，const仅首次求值。存档保留未初始化事实，不补默认值。rnd支持负数与跨零区间，先取上整下界与下整上界，反向或空整数区间失败；端点限于±9007199254740991。有效非负范围保留旧seed序列，旧负数错误结果不承诺重放相同。
+
+### 逐字段公开资料
+
+阅读包schema1继续只公开原来选择的内容。schema2需声明`reader.fields.v1`，逐对象选property键，未选择等于不公开。预览展示实际页面文本，空正文明确提示；改字段、改正文或改选择后必须重建预览。ref值只有目标也被明确公开时才可链接，否则只显示通用未公开提示，不带目标ID、名字或来源路径。完整源码备份与读者包用途不同，备份仍包含私有资料。

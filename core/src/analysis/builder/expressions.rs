@@ -12,7 +12,10 @@ impl<'a> Ctx<'a> {
         let kind = self.infer_expr(e);
         if let (Some(k), Some(exp)) = (kind, expected) {
             if k != exp {
-                let loc = expr_loc(e);
+                let loc = match expr_loc(e) {
+                    Loc { line: 0, .. } => self.expression_fallback,
+                    loc => loc,
+                };
                 self.diags.push(Diagnostic::error(
                     "A103",
                     &self.cur_file,
@@ -24,11 +27,14 @@ impl<'a> Ctx<'a> {
         kind
     }
 
-    fn infer_expr(&mut self, e: &Expr) -> Option<ValueKind> {
+    pub(super) fn infer_expr(&mut self, e: &Expr) -> Option<ValueKind> {
         match e {
             Expr::Num(_) => Some(ValueKind::Num),
             Expr::Str(_) => Some(ValueKind::Str),
             Expr::Bool(_) => Some(ValueKind::Bool),
+            Expr::Var { name, .. } if self.locals.contains_key(name) => {
+                self.locals.get(name).copied()
+            }
             Expr::Var { name, loc } => match self.symbols.vars.get_mut(name) {
                 Some(v) => {
                     v.read = true;
@@ -53,7 +59,10 @@ impl<'a> Ctx<'a> {
                 match k {
                     Some(k) if k == need => Some(need),
                     Some(other) => {
-                        let loc = expr_loc(e);
+                        let loc = match expr_loc(e) {
+                            Loc { line: 0, .. } => self.expression_fallback,
+                            loc => loc,
+                        };
                         self.diags.push(Diagnostic::error(
                             "A103",
                             &self.cur_file,
@@ -81,7 +90,10 @@ impl<'a> Ctx<'a> {
                     BinOp::And | BinOp::Or => l == ValueKind::Bool && r == ValueKind::Bool,
                 };
                 if !ok {
-                    let loc = expr_loc(e);
+                    let loc = match expr_loc(e) {
+                        Loc { line: 0, .. } => self.expression_fallback,
+                        loc => loc,
+                    };
                     self.diags.push(Diagnostic::error(
                         "A103",
                         &self.cur_file,
@@ -106,6 +118,12 @@ impl<'a> Ctx<'a> {
                     | BinOp::Or => ValueKind::Bool,
                     _ => l,
                 })
+            }
+            Expr::Call { name, args, loc }
+                if crate::language::is_new_builtin(name)
+                    || self.program.rules.iter().any(|r| &r.name == name) =>
+            {
+                self.check_language_call(name, args, *loc)
             }
             Expr::Call { name, args, loc } => match name.as_str() {
                 "has" => {
@@ -180,6 +198,9 @@ impl<'a> Ctx<'a> {
                     Some(ValueKind::Num)
                 }
                 "rnd" => {
+                    if self.in_rule {
+                        self.language_error("A230", *loc, "纯规则内部禁止 rnd");
+                    }
                     if args.len() != 2 {
                         self.diags.push(Diagnostic::error(
                             "A103",
@@ -191,6 +212,24 @@ impl<'a> Ctx<'a> {
                     }
                     for a in args {
                         self.check_expr(a, Some(ValueKind::Num));
+                    }
+                    if let (Some(a), Some(b)) =
+                        (constant_number(&args[0]), constant_number(&args[1]))
+                    {
+                        let max = 9_007_199_254_740_991.0;
+                        if !a.is_finite()
+                            || !b.is_finite()
+                            || a.ceil() < -max
+                            || b.floor() > max
+                            || a > b
+                            || a.ceil() > b.floor()
+                        {
+                            self.language_error(
+                                "A103",
+                                *loc,
+                                "rnd 边界必须有限、在安全整数范围内且包含非空正向整数区间",
+                            );
+                        }
                     }
                     Some(ValueKind::Num)
                 }
@@ -205,5 +244,16 @@ impl<'a> Ctx<'a> {
                 }
             },
         }
+    }
+}
+
+fn constant_number(e: &Expr) -> Option<f64> {
+    match e {
+        Expr::Num(n) => Some(*n),
+        Expr::Unary {
+            op: UnOp::Neg,
+            expr,
+        } => constant_number(expr).map(|n| -n),
+        _ => None,
     }
 }

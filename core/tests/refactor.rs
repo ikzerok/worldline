@@ -234,3 +234,29 @@ fn broken_registered_view_blocks_rename_instead_of_hiding_references() {
     assert!(error.contains("引用检查不完整") || error.contains("JSON"));
     assert_eq!(project.content_baseline(), before);
 }
+
+#[test]
+fn registered_known_reference_paths_rename_without_touching_unknown_extensions() {
+    let mut project = project();
+    let path = project.root.join(".world/maps/m.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&path).unwrap().bytes()).unwrap();
+    let unknown =
+        serde_json::json!({"kind":"entity","id":"a","entity:a":{"kind":"entity","id":"a"}});
+    value["future"] = unknown.clone();
+    value["placements"]["a"]["extensions"] = unknown.clone();
+    value["placements"]["a"]["target_ref"]["future"] = unknown.clone();
+    project
+        .set_authoring_document(&path, serde_json::to_vec(&value).unwrap())
+        .unwrap();
+    let plan = project
+        .plan_rename_target(&TargetRef::new("entity", "a"), "alpha")
+        .unwrap();
+    project.apply_rename_plan(&plan).unwrap();
+    let value: serde_json::Value =
+        serde_json::from_slice(project.authoring_document(&path).unwrap().bytes()).unwrap();
+    assert_eq!(value["placements"]["a"]["target_ref"]["id"], "alpha");
+    assert_eq!(value["future"], unknown);
+    assert_eq!(value["placements"]["a"]["extensions"], unknown);
+    assert_eq!(value["placements"]["a"]["target_ref"]["future"], unknown);
+}

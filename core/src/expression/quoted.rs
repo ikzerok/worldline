@@ -1,0 +1,143 @@
+//! 带外层引号的台词：字面正文只解码一次；表达式的引号解码有明确层次。
+use super::*;
+
+pub fn parse_quoted_interpolations_with_options(
+    raw: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
+    options: crate::CompileOptions,
+) -> Vec<TextPart> {
+    let chars: Vec<char> = raw.chars().collect();
+    let mut normalized = String::new();
+    let mut positions = Vec::new();
+    let mut i = 0;
+    let mut inside = false;
+    let mut quoted = false;
+    let mut expression_escape = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if !inside {
+            if c == '[' && chars.get(i + 1) == Some(&'[') {
+                if let Some(end) = (i + 2..chars.len().saturating_sub(1))
+                    .find(|&j| chars[j] == ']' && chars[j + 1] == ']')
+                {
+                    while i < end + 2 {
+                        if chars[i] == '\\' && i + 1 < end {
+                            let pair: String = chars[i..i + 2].iter().collect();
+                            let decoded = lexer::decode_escapes(
+                                &pair,
+                                file,
+                                Span::new(line, base_col + i as u32 + 1, 2),
+                                diags,
+                            );
+                            for (offset, c) in decoded.chars().enumerate() {
+                                normalized.push(c);
+                                positions.push(i + offset.min(1));
+                            }
+                            i += 2;
+                        } else {
+                            normalized.push(chars[i]);
+                            positions.push(i);
+                            i += 1;
+                        }
+                    }
+                    continue;
+                }
+            }
+            normalized.push(c);
+            positions.push(i);
+            if c == '\\' && i + 1 < chars.len() {
+                i += 1;
+                normalized.push(chars[i]);
+                positions.push(i);
+            } else if c == '{' {
+                inside = true;
+                quoted = false;
+                expression_escape = false;
+            }
+            i += 1;
+            continue;
+        }
+        let (value, consumed) = if c == '\\' && i + 1 < chars.len() {
+            let pair: String = chars[i..i + 2].iter().collect();
+            (
+                lexer::decode_escapes(
+                    &pair,
+                    file,
+                    Span::new(line, base_col + i as u32 + 1, 2),
+                    diags,
+                ),
+                2,
+            )
+        } else {
+            (c.to_string(), 1)
+        };
+        for (offset, c) in value.chars().enumerate() {
+            normalized.push(c);
+            positions.push(i + offset.min(consumed - 1));
+            if expression_escape {
+                expression_escape = false;
+            } else if quoted && c == '\\' {
+                expression_escape = true;
+            } else if c == '"' {
+                quoted = !quoted;
+            } else if !quoted && c == '}' {
+                inside = false;
+            }
+        }
+        i += consumed;
+    }
+    positions.push(chars.len());
+    let diagnostics_start = diags.len();
+    let mut parts =
+        super::parse_interpolations_with_options(&normalized, file, line, base_col, diags, options);
+    for part in &mut parts {
+        match part {
+            TextPart::Expr(expr) => remap_expr(expr, base_col, &positions),
+            TextPart::Link(link) => {
+                link.start = positions.get(link.start).copied().unwrap_or(chars.len());
+                link.end = positions.get(link.end).copied().unwrap_or(chars.len());
+                link.column = base_col + link.start as u32;
+            }
+            _ => {}
+        }
+    }
+    for diagnostic in &mut diags[diagnostics_start..] {
+        if diagnostic.span.line == line && diagnostic.span.column > base_col {
+            let offset = (diagnostic.span.column - base_col - 1) as usize;
+            diagnostic.span.column =
+                base_col + positions.get(offset).copied().unwrap_or(chars.len()) as u32 + 1;
+        }
+    }
+    parts
+}
+fn remap_expr(expr: &mut Expr, base: u32, positions: &[usize]) {
+    match expr {
+        Expr::Var { loc, .. } => remap_loc(loc, base, positions),
+        Expr::Call { loc, args, .. } => {
+            remap_loc(loc, base, positions);
+            for arg in args {
+                remap_expr(arg, base, positions);
+            }
+        }
+        Expr::Unary { expr, .. } => remap_expr(expr, base, positions),
+        Expr::Binary { lhs, rhs, .. } => {
+            remap_expr(lhs, base, positions);
+            remap_expr(rhs, base, positions);
+        }
+        _ => {}
+    }
+}
+fn remap_loc(loc: &mut Loc, base: u32, positions: &[usize]) {
+    if loc.column > base {
+        let offset = (loc.column - base - 1) as usize;
+        loc.column = base
+            + positions
+                .get(offset)
+                .copied()
+                .unwrap_or_else(|| *positions.last().unwrap_or(&0)) as u32
+            + 1;
+    }
+}

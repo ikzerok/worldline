@@ -171,6 +171,17 @@ fn visit_body(
     for stmt in body {
         match stmt {
             Stmt::Text(t) => visit_parts(&mut t.parts, expr),
+            Stmt::Say(s) => visit_parts(&mut s.text.parts, expr),
+            Stmt::Local(l) => visit_expr(&mut l.expr, expr),
+            Stmt::Call(c) => {
+                for a in &mut c.args {
+                    visit_expr(a, expr);
+                }
+            }
+            Stmt::DynamicChange(c) => {
+                visit_expr(&mut c.state, expr);
+                visit_expr(&mut c.tags, expr);
+            }
             Stmt::Choice(c) => {
                 visit_parts(&mut c.label, expr);
                 if let Some(e) = &mut c.cond {
@@ -202,6 +213,12 @@ fn visit(
 ) {
     for l in &mut program.lets {
         visit_expr(&mut l.expr, expr);
+    }
+    for rule in &mut program.rules {
+        visit_expr(&mut rule.expr, expr);
+    }
+    for fragment in &mut program.fragments {
+        visit_body(&mut fragment.body, expr, change);
     }
     for event in &mut program.events {
         if let Some(e) = &mut event.after {

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "language_version": "1.11",
+  "entry": "world.wl",
+  "required_features": [
+    "content.localization.v1"
+  ],
+  "project_id": "tide-rescue",
+  "maps": {},
+  "graph_views": {}
+}
