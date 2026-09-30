@@ -244,22 +244,60 @@ fn legacy_permission_inputs_inside_rules_and_fragments_are_normalized() {
 }
 #[test]
 fn nested_fragment_file_links_resolve_from_definition_and_manifest_accepts_111() {
-    use std::{collections::BTreeMap, path::Path};
-    let root = std::env::temp_dir().join(format!("language111-links-{}", std::process::id()));
+    use std::{fs, path::Path, time::SystemTime};
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root =
+        std::env::temp_dir().join(format!("language111-links-{}-{nonce}", std::process::id()));
     let entry = root.join("world.wl");
-    let fragment = root.join("chapters/fragment.wl");
-    let sources = BTreeMap::from([
-        (entry.clone(), "event start\n  call f()\n  -> END\n".into()),
+    let entry_text = "event start\n  call bridge()\n  -> END\n";
+    for (file, source) in [
+        ("world.wl", entry_text),
         (
-            fragment,
-            "fragment f()\n  [[file:../world.wl|入口]]\n  return\n".into(),
+            ".world/project.json",
+            r#"{"schema_version":1,"language_version":"1.11","required_features":[]}"#,
         ),
-    ]);
-    let c = worldline_core::compile_sources_with_options(&entry, &sources, CompileOptions::v1_11());
+        (
+            "chapters/caller.wl",
+            "fragment bridge()\n  call f()\n  return\n",
+        ),
+        (
+            "fragments/deep/fragment.wl",
+            "fragment f()\n  [[file:../../world.wl|入口]]\n  return\n",
+        ),
+    ] {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, source).unwrap();
+    }
+    let mut project = worldline_core::project::Project::open(&root).unwrap();
+    let c = project.compile();
+    assert_eq!(
+        c.options.language_version,
+        worldline_core::LanguageVersion::V1_11
+    );
     assert!(!c.has_errors(), "{:?}", c.diagnostics);
     let mut s = Story::new_with_seed(&c.program, &c.analysis, 31).unwrap();
     let out = s.continue_story().unwrap();
-    assert!(matches!(&out[0],Output::Text{links,..} if Path::new(&links[0].target.id)==entry));
+    let [Output::Text { content, links, .. }, Output::Ended] = out.as_slice() else {
+        panic!("expected linked text followed by END, got {out:?}");
+    };
+    assert_eq!(content, "入口");
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target.kind, "file");
+    let actual = Path::new(&links[0].target.id);
+    assert!(actual.is_file(), "target={actual:?}, entry={entry:?}");
+    // Windows 临时目录可能含短路径/设备前缀，文件身份不能按原始路径比较。
+    assert_eq!(
+        actual.canonicalize().unwrap(),
+        entry.canonicalize().unwrap(),
+        "target={actual:?}, entry={entry:?}"
+    );
+    assert_eq!(fs::read_to_string(actual).unwrap(), entry_text);
+    assert!(s.is_ended());
+    fs::remove_dir_all(root).unwrap();
 }
 #[test]
 fn old_static_become_note_is_not_mistaken_for_dynamic_operation() {
