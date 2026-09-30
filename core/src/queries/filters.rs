@@ -1,4 +1,7 @@
-use super::{CATALOG_QUERY_SCHEMA_VERSION, MAX_CATALOG_QUERY_VALUES};
+use super::{
+    CatalogQuerySort, CATALOG_QUERY_SCHEMA_VERSION, MAX_CATALOG_QUERY_VALUES,
+    SORTED_CATALOG_QUERY_SCHEMA_VERSION,
+};
 use crate::catalog::{TargetRef, TARGET_KINDS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -90,6 +93,8 @@ pub struct CatalogQuery {
     pub schema_version: u32,
     #[serde(default)]
     pub filters: Vec<CatalogQueryFilter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<CatalogQuerySort>,
 }
 
 impl Default for CatalogQuery {
@@ -97,15 +102,28 @@ impl Default for CatalogQuery {
         Self {
             schema_version: CATALOG_QUERY_SCHEMA_VERSION,
             filters: Vec::new(),
+            sort: None,
         }
     }
 }
 
 impl CatalogQuery {
+    pub fn set_sort(&mut self, sort: Option<CatalogQuerySort>) {
+        self.schema_version = if sort.is_some() {
+            SORTED_CATALOG_QUERY_SCHEMA_VERSION
+        } else {
+            CATALOG_QUERY_SCHEMA_VERSION
+        };
+        self.sort = sort;
+    }
+
     pub fn validate(&self, root: &Path) -> Result<(), QueryError> {
-        if self.schema_version != CATALOG_QUERY_SCHEMA_VERSION {
+        if !matches!(
+            (self.schema_version, self.sort),
+            (CATALOG_QUERY_SCHEMA_VERSION, None) | (SORTED_CATALOG_QUERY_SCHEMA_VERSION, Some(_))
+        ) {
             return Err(QueryError::InvalidQuery(format!(
-                "不支持的查询 schema_version:{}",
+                "不支持的查询版本或排序组合 schema_version:{}；默认查询使用 v1，显式排序使用 v2",
                 self.schema_version
             )));
         }

@@ -11,6 +11,10 @@ use worldline_core::queries::{
 mod filters;
 #[path = "catalog_queries/saved.rs"]
 mod saved;
+#[path = "catalog_queries/schema_contract.rs"]
+mod schema_contract;
+#[path = "catalog_queries/sorting.rs"]
+mod sorting;
 #[path = "catalog_queries/todos.rs"]
 mod todos;
 

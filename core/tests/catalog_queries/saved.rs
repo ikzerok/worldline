@@ -22,6 +22,7 @@ fn saved_query_registration_preserves_legacy_19_and_runtime_fingerprint() {
         name: "草稿人物".into(),
         query: CatalogQuery {
             schema_version: 1,
+            sort: None,
             filters: vec![CatalogQueryFilter::Kind {
                 values: vec!["character".into()],
                 negate: false,
@@ -129,6 +130,7 @@ fn saved_query_edits_preserve_unknown_fields_and_refuse_unknown_versions() {
     );
     let query = CatalogQuery {
         schema_version: 1,
+        sort: None,
         filters: vec![CatalogQueryFilter::Kind {
             values: vec!["entity".into()],
             negate: false,
@@ -213,6 +215,7 @@ fn saved_query_filter_extensions_follow_their_dimension_when_reordered() {
         name: "筛选器".into(),
         query: CatalogQuery {
             schema_version: 1,
+            sort: None,
             filters: vec![
                 CatalogQueryFilter::Kind {
                     values: vec!["entity".into()],
@@ -243,6 +246,7 @@ fn saved_query_filter_extensions_follow_their_dimension_when_reordered() {
                 name: "筛选器已调整".into(),
                 query: CatalogQuery {
                     schema_version: 1,
+                    sort: None,
                     filters: vec![
                         CatalogQueryFilter::Name {
                             values: vec!["新名称".into()],

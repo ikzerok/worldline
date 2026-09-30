@@ -532,3 +532,7 @@ core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没
 传入目录时，`compile.path` 与所有 CLI 分析命令读取根目录 `world.wl` 并递归载入所有 `.wl`。传入文件时维持入口及 include 的语言工具模式；只允许访问入口父目录范围。目录模式和编辑器分析结果一致。引用越界为 A109 故事诊断。目录读取失败仍按原 IO 契约处理。
 
 `wl-agent` 的 `export` 只导出 Mermaid 文本，不是工程目录导出。现有协议没有连接运行中 worldedit 的通道，也没有修改缓冲、切换视图、撤销重做、窗口控制、图布局、系统文件对话框的方法。AI 可以修改磁盘工作区文件并用 CLI 校验；桌面自动刷新后显示修改。不能声称 CLI 已完整控制编辑器。
+
+### 资料查询排序版本
+
+`catalog.query` 与 `wl catalog-query` 共用 CatalogQuery：v1 为既有默认顺序，v2 必须包含 `sort:{field:"name"|"kind",direction:"ascending"|"descending"}`。排序语义、缺值与并列规则见 catalog.md §7.1。page/cursor 版本保持 1；排序改变后旧游标返回 STALE_CURSOR。命中添加同快照 display 字段，接口不得在分页后自行重排。未知 sort 字段或方向属于无效 DTO；版本与有效 sort 不匹配属于 INVALID_QUERY。

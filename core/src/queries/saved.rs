@@ -1,4 +1,7 @@
-use super::{CatalogQuery, SAVED_QUERY_REQUIRED_FEATURE, SAVED_QUERY_SCHEMA_VERSION};
+use super::{
+    CatalogQuery, CATALOG_QUERY_SORT_REQUIRED_FEATURE, SAVED_QUERY_REQUIRED_FEATURE,
+    SAVED_QUERY_SCHEMA_VERSION,
+};
 use crate::project::Project;
 use crate::workspace_documents::{manifest_path, parse_registry, parse_unique_json};
 use crate::Diagnostic;
@@ -56,6 +59,7 @@ impl Project {
                 let draft: SavedQueryDraft = serde_json::from_value(source.clone())
                     .map_err(|error| format!("已保存查询结构无效:{error}"))?;
                 validate_saved_query(&self.root, &draft)?;
+                validate_sort_capability(&draft, &source)?;
                 if draft.id != registered_id {
                     return Err("已保存查询 ID 与清单注册 ID 不一致".into());
                 }
@@ -143,6 +147,7 @@ impl Project {
                 .map_err(|error| format!("现有查询文档结构无效，只读保留原文：{error}"))?;
             validate_saved_query(&self.root, &existing_draft)
                 .map_err(|error| format!("现有查询无效，只读保留原文：{error}"))?;
+            validate_sort_capability(&existing_draft, &source)?;
             if existing_draft.id != draft.id {
                 return Err("已保存查询 ID 与请求或清单注册 ID 不一致，保留原文档".into());
             }
@@ -199,6 +204,7 @@ impl Project {
             .map_err(|error| format!("已保存查询 JSON 无法解析：{error}"))?
             .unwrap_or_else(|| json!({}));
         merge_json_preserving_unknown(&mut saved, &fresh);
+        update_sort_metadata(&mut saved, &draft)?;
         saved["schema_version"] = json!(SAVED_QUERY_SCHEMA_VERSION);
         let bytes = serde_json::to_vec_pretty(&saved).map_err(|error| error.to_string())?;
         if existing.is_some() {
@@ -210,6 +216,50 @@ impl Project {
         *self = candidate;
         Ok(changed)
     }
+}
+
+fn validate_sort_capability(draft: &SavedQueryDraft, source: &Value) -> Result<(), String> {
+    if draft.query.sort.is_some()
+        && !source
+            .get("required_features")
+            .and_then(Value::as_array)
+            .is_some_and(|features| {
+                features
+                    .iter()
+                    .any(|feature| feature.as_str() == Some(CATALOG_QUERY_SORT_REQUIRED_FEATURE))
+            })
+    {
+        return Err(
+            "排序查询缺少文档级 required_features catalog.query_sort.v1，只读保留原文".into(),
+        );
+    }
+    Ok(())
+}
+
+fn update_sort_metadata(saved: &mut Value, draft: &SavedQueryDraft) -> Result<(), String> {
+    if draft.query.sort.is_none() {
+        saved
+            .get_mut("query")
+            .and_then(Value::as_object_mut)
+            .ok_or("查询必须是对象")?
+            .remove("sort");
+    }
+    let object = saved.as_object_mut().ok_or("查询展示文档必须是对象")?;
+    if draft.query.sort.is_some() || object.contains_key("required_features") {
+        let features = object
+            .entry("required_features")
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or("查询 required_features 必须是数组")?;
+        features.retain(|feature| feature.as_str() != Some(CATALOG_QUERY_SORT_REQUIRED_FEATURE));
+        if draft.query.sort.is_some() {
+            features.push(json!(CATALOG_QUERY_SORT_REQUIRED_FEATURE));
+        }
+        if features.is_empty() {
+            object.remove("required_features");
+        }
+    }
+    Ok(())
 }
 
 fn validate_saved_query(root: &Path, draft: &SavedQueryDraft) -> Result<(), String> {

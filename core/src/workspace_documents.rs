@@ -521,6 +521,7 @@ fn supported_feature(feature: &str) -> bool {
             | "collaboration.comments.v1"
             | "collaboration.proposals.v1"
             | "catalog.saved_queries.v1"
+            | "catalog.query_sort.v1"
             | "workspace.source_sets.v1"
             | "content.localization.v1"
     )

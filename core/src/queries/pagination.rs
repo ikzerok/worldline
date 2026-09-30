@@ -38,6 +38,7 @@ pub struct QuerySource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CatalogQueryMatch {
     pub target: TargetRef,
+    pub display: String,
     pub source: QuerySource,
     pub reasons: Vec<String>,
 }
@@ -132,6 +133,7 @@ impl Project {
             if let Some(reasons) = reasons {
                 matches.push(CatalogQueryMatch {
                     target: object.target.clone(),
+                    display: object.display.clone(),
                     source: QuerySource {
                         file: object.file.clone(),
                         line: object.line,
@@ -140,13 +142,13 @@ impl Project {
                 });
             }
         }
-        matches.sort_by(|a, b| {
-            (&a.target, &a.source.file, a.source.line).cmp(&(
-                &b.target,
-                &b.source.file,
-                b.source.line,
-            ))
-        });
+        if cancelled() {
+            return Err(QueryError::Cancelled);
+        }
+        super::sorting::sort_matches(&mut matches, query.sort);
+        if cancelled() {
+            return Err(QueryError::Cancelled);
+        }
         let total = matches.len();
         let page_end = options.offset.saturating_add(options.page_size).min(total);
         let items = if options.offset >= total {
