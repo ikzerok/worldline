@@ -38,6 +38,7 @@ pub(super) fn parse(
     tag: &str,
     a: &BTreeMap<String, String>,
     b: [f64; 4],
+    transform: super::transform::Transform,
 ) -> Result<MapGeometry, String> {
     let (mut points, closed) = match tag {
         "rect" => {
@@ -86,7 +87,7 @@ pub(super) fn parse(
             }
             (v.as_chunks::<2>().0.to_vec(), tag == "polygon")
         }
-        "path" => path(a.get("d").ok_or("缺少路径 d")?)?,
+        "path" => return super::path::parse(a.get("d").ok_or("缺少路径 d")?, b, transform),
         _ => return Err("不支持图形".into()),
     };
     if closed && points.first() == points.last() {
@@ -98,6 +99,7 @@ pub(super) fn parse(
     let points = points
         .into_iter()
         .map(|p| {
+            let p = transform.point(p);
             let p = [(p[0] - b[0]) / b[2], (p[1] - b[1]) / b[3]];
             if p.iter()
                 .any(|n| !n.is_finite() || *n < -1e-9 || *n > 1. + 1e-9)
@@ -113,106 +115,4 @@ pub(super) fn parse(
     } else {
         MapGeometry::Polyline { points }
     })
-}
-fn path(source: &str) -> Result<(Vec<[f64; 2]>, bool), String> {
-    // 命令和数值分词支持紧凑写法及指数；曲线/多子路径明确拒绝。
-    let mut tokens = Vec::new();
-    let bytes = source.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
-        if c.is_ascii_whitespace() || c == ',' {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        if c.is_ascii_alphabetic() {
-            i += 1;
-        } else {
-            if matches!(c, '+' | '-') {
-                i += 1;
-            }
-            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
-                i += 1;
-            }
-            if i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
-                i += 1;
-                if i < bytes.len() && matches!(bytes[i], b'+' | b'-') {
-                    i += 1;
-                }
-                while i < bytes.len() && bytes[i].is_ascii_digit() {
-                    i += 1;
-                }
-            }
-        }
-        if start == i {
-            return Err("SVG 路径包含无效字符".into());
-        }
-        tokens.push(&source[start..i]);
-        if tokens.len() > 16384 {
-            return Err("SVG 路径过长".into());
-        }
-    }
-    let mut points = Vec::new();
-    let mut current = [0., 0.];
-    let mut command = ' ';
-    let mut i = 0;
-    let mut closed = false;
-    while i < tokens.len() {
-        if tokens[i].len() == 1 && tokens[i].as_bytes()[0].is_ascii_alphabetic() {
-            command = tokens[i].chars().next().unwrap();
-            i += 1;
-            if !matches!(
-                command,
-                'M' | 'm' | 'L' | 'l' | 'H' | 'h' | 'V' | 'v' | 'Z' | 'z'
-            ) {
-                return Err(format!("暂不支持 SVG 路径命令 {command}（曲线请先转折线）"));
-            }
-            if matches!(command, 'Z' | 'z') {
-                closed = true;
-                if i != tokens.len() {
-                    return Err("暂不支持多个 SVG 子路径".into());
-                }
-                break;
-            }
-        }
-        if points.is_empty() && !matches!(command, 'M' | 'm') {
-            return Err("SVG 路径须以 M 开始".into());
-        }
-        if !points.is_empty() && matches!(command, 'M' | 'm') {
-            return Err("暂不支持多个 SVG 子路径".into());
-        }
-        let count = if matches!(command, 'H' | 'h' | 'V' | 'v') {
-            1
-        } else {
-            2
-        };
-        if i + count > tokens.len() {
-            return Err("SVG 路径坐标不完整".into());
-        }
-        let x = number(tokens[i])?;
-        let y = if count == 2 {
-            number(tokens[i + 1])?
-        } else {
-            0.
-        };
-        i += count;
-        current = match command {
-            'M' | 'L' => [x, y],
-            'm' | 'l' => [current[0] + x, current[1] + y],
-            'H' => [x, current[1]],
-            'h' => [current[0] + x, current[1]],
-            'V' => [current[0], x],
-            'v' => [current[0], current[1] + x],
-            _ => return Err("SVG 路径命令缺失".into()),
-        };
-        points.push(current);
-        if command == 'M' {
-            command = 'L';
-        }
-        if command == 'm' {
-            command = 'l';
-        }
-    }
-    Ok((points, closed))
 }
