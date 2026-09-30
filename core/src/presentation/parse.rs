@@ -100,10 +100,34 @@ pub(crate) fn parse_map_document(
         diagnostics.push(map_error(&file, "MAP001", "地图 title 不能为空"));
     }
     let canvas = parse_canvas(object.get("canvas"), &file, &mut diagnostics);
+    let measurement =
+        super::measurement::parse_measurement(object.get("measurement"), canvas.as_ref());
+    let measurement_valid = measurement.is_ok();
+    if let Err(message) = &measurement {
+        diagnostics.push(map_error(&file, "MAP013", message));
+    }
+    let measurement = measurement.ok().flatten();
+    let measurement_declared = object
+        .get("required_features")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.as_str() == Some(super::MEASUREMENT_FEATURE))
+        });
+    if object.contains_key("measurement") && !measurement_declared {
+        diagnostics.push(map_error(
+            &file,
+            "MAP002",
+            "地图校准缺少 presentation.measurement.v1 必需能力声明",
+        ));
+    }
     let layers = parse_layers(object.get("layers"), &file, &mut diagnostics);
     let layer_order = parse_layer_order(object.get("layer_order"), &file, &mut diagnostics);
     let mut structural_error =
         !id.is_empty() && id != registered_id || id.is_empty() || !title_valid;
+    structural_error |=
+        !measurement_valid || (object.contains_key("measurement") && !measurement_declared);
     structural_error |= canvas.is_none() || layers.is_none() || layer_order.is_none();
     let layers = layers.unwrap_or_default();
     let layer_order = layer_order.unwrap_or_default();
@@ -174,6 +198,7 @@ pub(crate) fn parse_map_document(
         "background",
         "raster_layers",
         "canvas",
+        "measurement",
         "layer_order",
         "layers",
         "placements",
@@ -193,6 +218,7 @@ pub(crate) fn parse_map_document(
             unit: "normalized".into(),
             extra: Map::new(),
         }),
+        measurement,
         layer_order,
         layers,
         placements: placements.unwrap_or_default(),

@@ -4,7 +4,11 @@
 //! `Project` 注册的地图，使用内容分析得到的 1.9 `TargetRef` 与素材目录做
 //! 引用校验，不把地图内容并入 `Program` 或运行指纹。
 
+mod measurement;
 mod parse;
+pub use measurement::{
+    measurement_distance, validate_measurement, MapMeasurement, MEASUREMENT_FEATURE,
+};
 mod placement_parse;
 
 use crate::catalog::{AssetInfo, Catalog, TargetRef};
@@ -137,6 +141,7 @@ pub struct MapDocument {
     pub title: String,
     pub raster_layers: Vec<MapRasterLayer>,
     pub canvas: MapCanvas,
+    pub measurement: Option<MapMeasurement>,
     pub layer_order: Vec<String>,
     pub layers: BTreeMap<String, MapLayer>,
     pub placements: BTreeMap<String, MapPlacement>,

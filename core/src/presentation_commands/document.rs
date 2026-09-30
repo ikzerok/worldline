@@ -40,6 +40,9 @@ pub(super) fn apply_to_document(
     let catalog = &content.analysis.catalog;
     let mut affected = BTreeSet::new();
     match command {
+        Command::SetMapMeasurement { measurement, .. } => {
+            measurement::apply_measurement(object, measurement)?;
+        }
         Command::CreatePlacement { .. }
         | Command::UpdatePlacement { .. }
         | Command::DeletePlacement { .. } => {

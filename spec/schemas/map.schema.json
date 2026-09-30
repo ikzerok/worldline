@@ -440,6 +440,42 @@
     },
     "extensions": {
       "type": "object"
+    },
+    "measurement": {
+      "type": "object",
+      "required": [
+        "points",
+        "distance",
+        "unit"
+      ],
+      "properties": {
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "distance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "description": "非空纯文本，不含控制字符；不自动换算"
+        }
+      },
+      "additionalProperties": true
     }
   }
 }

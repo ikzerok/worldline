@@ -112,6 +112,7 @@ Diagnostic {
 | MAP010 | warning | asset 未声明、不是 image、缺失或不可用；地图仍可读 |
 | MAP011 | warning | TargetRef 对象尚未在内容目录中解析；地图仍可读 |
 | MAP012 | warning | 导航目标尚未注册；地图仍可读 |
+| MAP013 | error | 地图平面校准的端点、距离或单位无效 |
 
 ### GRAPH00x — 共享网络视图
 

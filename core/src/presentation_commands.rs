@@ -7,6 +7,7 @@
 
 mod document;
 mod layers;
+mod measurement;
 mod placements;
 mod transaction;
 
@@ -51,6 +52,10 @@ pub struct CommandEnvelope {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Command {
+    SetMapMeasurement {
+        map_id: String,
+        measurement: crate::presentation::MapMeasurement,
+    },
     CreatePlacement {
         map_id: String,
         placement_id: String,
@@ -306,7 +311,8 @@ pub fn undo(
 impl Command {
     fn map_id(&self) -> &str {
         match self {
-            Self::CreatePlacement { map_id, .. }
+            Self::SetMapMeasurement { map_id, .. }
+            | Self::CreatePlacement { map_id, .. }
             | Self::UpdatePlacement { map_id, .. }
             | Self::DeletePlacement { map_id, .. }
             | Self::CreateLayer { map_id, .. }
