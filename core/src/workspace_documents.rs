@@ -512,6 +512,7 @@ fn supported_feature(feature: &str) -> bool {
             | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.geometry.text.v1"
+            | "presentation.measurement.v1"
             | "presentation.graph_views.v1"
             | "presentation.manuscripts.v1"
             | "content.templates.v1"
