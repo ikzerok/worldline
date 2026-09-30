@@ -161,9 +161,10 @@ fn compile_options(params: &Value) -> Result<CompileOptions, ProtoError> {
     match version {
         "1.9" => Ok(CompileOptions::new(LanguageVersion::V1_9)),
         "1.10" => Ok(CompileOptions::new(LanguageVersion::V1_10)),
+        "1.11" => Ok(CompileOptions::new(LanguageVersion::V1_11)),
         _ => Err(ProtoError::new(
             -32602,
-            format!("不支持的语言版本 `{version}`(可用: 1.9 / 1.10)"),
+            format!("不支持的语言版本 `{version}`(可用: 1.9 / 1.10 / 1.11)"),
         )),
     }
 }

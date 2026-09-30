@@ -453,7 +453,7 @@ pub(super) fn prepare_preview_from_pages(
     });
 
     let current_version = current.options.language_version;
-    let requires_language_upgrade = current_version != crate::LanguageVersion::V1_10;
+    let requires_language_upgrade = !current_version.supports_entities();
     let pages_view: Vec<MarkdownPageMapping> = pages
         .iter()
         .map(|page| MarkdownPageMapping {

@@ -392,7 +392,7 @@ fn validate_manuscript_candidate(
     Ok(())
 }
 
-fn ensure_disk_matches_saved_baselines(project: &Project) -> Result<(), String> {
+pub(super) fn ensure_disk_matches_saved_baselines(project: &Project) -> Result<(), String> {
     for path in project
         .documents
         .keys()

@@ -63,7 +63,7 @@ CLI 的 `relation-type update` 可用 `--clear-inverse-display`、`--clear-from-
 
 `compile_source(file, text)`、`compile_path(path)` 和 `compile_sources(entry, ...)` 保持
 1.9 默认；需要解析 entity 时使用对应的 `*_with_options` 入口并传入
-`CompileOptions::v1_10()`。CLI 目录若有 `.world/project.json` 会读取清单版本，
+`CompileOptions::v1_10()`；规则/片段/类型化集合/台词使用`CompileOptions::v1_11()`。CLI 目录若有 `.world/project.json` 会读取清单版本，
 也可传 `--language-version=1.10`。`CompileResult.options` 记录最终选择的版本。
 
 `compile_source(file, text)` 处理单源，不读取 include；`compile_path(path)` 读取磁盘，目录路径递归载入工作区；`compile_sources(entry, &BTreeMap<PathBuf,String>)` 优先使用内存覆盖并加载工作区内 include，同时分析提供的其他内存源码。外部路径不进入编译结果。
@@ -150,3 +150,7 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 语言层的删除反查由 `deletion_content_references::content_deletion_references(content, target)` 提供；它读取同一 `CompileResult`，覆盖目录引用、别名、顶层标记/附件以及 `seen`/`visits`、`has` 和变量条件，并排除随事件块一同删除的内部来源。调用方应把返回结果与展示层地图引用合并后再作删除判断；当前结构删除命令是事件删除，其他对象类型仍需由对应编辑命令声明删除范围。
 
 `remove_event` 在修改前重新生成计划；旧查询结果不授权后续写入。引用未解除或损坏内容/地图使检查不完整时拒绝删除，不隐式删除标记或其他资料。调用方可取消操作，或先显式修复、重新绑定/解除引用，再发起新的删除。
+
+## 0.8 完整源码草稿
+
+`Project::preview_source_edit(&SourceEditRequest)`生成只读预览，`apply_source_edit(&request,plan_digest)`重验基线后仅提交内存；显式`save()`保存。DTO包含相对源码路径、完整源文与当前content_baseline，返回诊断和plan_digest。允许保留编译失败的稿件；只读、越界、旧基线与外部冲突仍拒绝。CLI/RPC已接同一入口，详见agent-protocol“完整源码草稿事务”。

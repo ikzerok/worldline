@@ -111,6 +111,13 @@ impl<'p> Story<'p> {
             // 借用当前语句;修改帧前先放弃借用
             let stmt_loc_line = stmt_line(&self.frames[fi].stmts[self.frames[fi].idx]);
             match &self.frames[fi].stmts[self.frames[fi].idx] {
+                Stmt::Local(_)
+                | Stmt::Call(_)
+                | Stmt::Return(_)
+                | Stmt::Say(_)
+                | Stmt::DynamicChange(_) => {
+                    self.execute_language(fi, &mut out)?;
+                }
                 Stmt::Text(t) => {
                     let (content, links) = self.render_parts(&t.parts)?;
                     let tags = t.tags.clone();
@@ -118,6 +125,7 @@ impl<'p> Story<'p> {
                     self.glue_pending = false;
                     if !content.is_empty() {
                         out.push(Output::Text {
+                            speaker: None,
                             content,
                             new_line,
                             tags,
@@ -130,11 +138,20 @@ impl<'p> Story<'p> {
                     self.frames[fi].idx += 1;
                 }
                 Stmt::Let(l) => {
-                    let v = self.eval(&l.expr)?;
-                    self.vars.insert(l.name.clone(), v);
+                    if !l.is_const || !self.vars.contains_key(&l.name) {
+                        let v = self.eval(&l.expr)?;
+                        self.vars.insert(l.name.clone(), v);
+                    }
                     self.frames[fi].idx += 1;
                 }
                 Stmt::Set(s) => {
+                    if !self.vars.contains_key(&s.name) {
+                        return Err(RunError {
+                            message: format!("变量 `{}` 已声明但尚未初始化，不能 set", s.name),
+                            node: self.current_node(),
+                            line: Some(s.loc.line),
+                        });
+                    }
                     let v = self.eval(&s.expr)?;
                     self.vars.insert(s.name.clone(), v);
                     self.frames[fi].idx += 1;
@@ -159,6 +176,8 @@ impl<'p> Story<'p> {
                                 stmts: &i.branches[k].1,
                                 idx: 0,
                                 node: None,
+                                fragment: None,
+                                locals: Default::default(),
                                 src: Some(FrameSrc::IfBranch {
                                     stmt: stmt_idx,
                                     branch: k,
@@ -183,6 +202,8 @@ impl<'p> Story<'p> {
                         idx: 0,
                         node: Some(full),
                         src: None,
+                        fragment: None,
+                        locals: Default::default(),
                     });
                 }
                 Stmt::Divert(d) => {
@@ -433,6 +454,8 @@ impl<'p> Story<'p> {
             idx: 0,
             node: None,
             src: Some(src),
+            fragment: None,
+            locals: Default::default(),
         });
         let coverage = self
             .choice_coverage
@@ -479,6 +502,9 @@ impl<'p> Story<'p> {
     }
 
     pub(super) fn choice_id(&self, frame_depth: usize, start: usize, offset: usize) -> String {
+        if let Some(id) = self.fragment_choice_id(frame_depth, start, offset) {
+            return id;
+        }
         let node = self.frames[frame_depth]
             .node
             .clone()
@@ -518,10 +544,15 @@ impl<'p> Story<'p> {
             })
             .count();
         ChoiceIdentity {
-            id: format!(
-                "{node}:{:016x}:{occurrence}",
-                stable_hash(signature.as_bytes())
-            ),
+            id: self
+                .fragment_choice_id(frame_depth, start, offset)
+                .map(|path| format!("{path}:{:016x}", stable_hash(signature.as_bytes())))
+                .unwrap_or_else(|| {
+                    format!(
+                        "{node}:{:016x}:{occurrence}",
+                        stable_hash(signature.as_bytes())
+                    )
+                }),
             node,
             line: choice.loc.line,
             offset,

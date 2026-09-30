@@ -123,6 +123,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         Some(Value::String(version)) => match version.as_str() {
             "1.9" => LanguageVersion::V1_9,
             "1.10" => LanguageVersion::V1_10,
+            "1.11" => LanguageVersion::V1_11,
             _ => {
                 manifest_read_only = true;
                 registry.report(
@@ -138,7 +139,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             registry.report(
                 root,
                 "WS003",
-                "清单 language_version 必须是 \"1.9\" 或 \"1.10\"，按只读处理",
+                "清单 language_version 必须是 \"1.9\"、\"1.10\" 或 \"1.11\"，按只读处理",
             );
             LanguageVersion::V1_9
         }
@@ -487,9 +488,9 @@ fn manifest_capability_is_read_only(bytes: &[u8]) -> bool {
         .get("schema_version")
         .and_then(Value::as_u64)
         .is_some_and(|version| version == 1);
-    let language_ok = object
-        .get("language_version")
-        .is_none_or(|version| matches!(version.as_str(), Some("1.9") | Some("1.10")));
+    let language_ok = object.get("language_version").is_none_or(|version| {
+        matches!(version.as_str(), Some("1.9") | Some("1.10") | Some("1.11"))
+    });
     let features_ok = object
         .get("required_features")
         .is_none_or(features_supported);

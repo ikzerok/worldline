@@ -10,6 +10,7 @@ pub(super) fn render_object_body(
     target: &TargetRef,
     routes: &BTreeMap<TargetRef, String>,
     file_routes: &BTreeMap<String, String>,
+    selection: &super::ReaderExportSelection,
 ) -> Result<(String, String), String> {
     let mut html = String::new();
     let mut plain = String::new();
@@ -24,6 +25,54 @@ pub(super) fn render_object_body(
             let (body_html, body_text) = render_statements(
                 &event.body,
                 &event.name,
+                &routes[target],
+                compiled,
+                routes,
+                file_routes,
+            );
+            html.push_str(&body_html);
+            plain.push_str(&body_text);
+        }
+        "rule" => {
+            let rule = compiled
+                .program
+                .rules
+                .iter()
+                .find(|rule| rule.name == target.id)
+                .ok_or("选中的规则无法读取")?;
+            let signature = format!(
+                "{}({}) → {}",
+                rule.name,
+                rule.parameters
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name, p.kind.label()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                rule.result.label()
+            );
+            append_description(&mut html, &mut plain, &signature);
+        }
+        "fragment" => {
+            let fragment = compiled
+                .program
+                .fragments
+                .iter()
+                .find(|fragment| fragment.name == target.id)
+                .ok_or("选中的片段无法读取")?;
+            let signature = format!(
+                "{}({})",
+                fragment.name,
+                fragment
+                    .parameters
+                    .iter()
+                    .map(|p| format!("{}: {}", p.name, p.kind.label()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            append_description(&mut html, &mut plain, &signature);
+            let (body_html, body_text) = render_statements(
+                &fragment.body,
+                "",
                 &routes[target],
                 compiled,
                 routes,
@@ -78,6 +127,7 @@ pub(super) fn render_object_body(
         }
         _ => {}
     }
+    super::fields::append_fields(compiled, target, routes, selection, &mut html, &mut plain)?;
     if html.is_empty() {
         html.push_str("<p>该对象没有静态阅读正文。</p>");
     }
@@ -135,6 +185,26 @@ fn render_statements(
                     html.push_str(&format!("<p>{text_html}</p>"));
                     plain.push_str(&text_plain);
                     plain.push('\n');
+                }
+            }
+            Stmt::Say(say) => {
+                let (text_html, text_plain) =
+                    render_parts(&say.text.parts, current_path, routes, file_routes);
+                // Speaker identity and author direction are never inferred as public.
+                html.push_str(&format!("<p>{text_html}</p>"));
+                plain.push_str(&text_plain);
+                plain.push('\n');
+            }
+            Stmt::Call(call) => {
+                if let Some(destination) = routes.get(&TargetRef::new("fragment", &call.name)) {
+                    html.push_str(&format!(
+                        "<p><a href=\"{}\">阅读已公开的片段</a></p>",
+                        html_escape(&relative_url(current_path, destination))
+                    ));
+                    plain.push_str("阅读已公开的片段\n");
+                } else {
+                    html.push_str("<p class=\"unavailable\">未公开内容</p>");
+                    plain.push_str("未公开内容\n");
                 }
             }
             Stmt::Choice(choice) => {
@@ -214,7 +284,14 @@ fn render_statements(
                 html.push_str(&body_html);
                 plain.push_str(&body_text);
             }
-            Stmt::Let(_) | Stmt::Set(_) | Stmt::Change(_) | Stmt::Anchor(_) | Stmt::Effect(_) => {}
+            Stmt::Let(_)
+            | Stmt::Set(_)
+            | Stmt::Change(_)
+            | Stmt::Anchor(_)
+            | Stmt::Effect(_)
+            | Stmt::Local(_)
+            | Stmt::Return(_)
+            | Stmt::DynamicChange(_) => {}
         }
     }
     (html, plain)

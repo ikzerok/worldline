@@ -3,7 +3,10 @@ use super::*;
 impl<'a> Parser<'a> {
     /// 顶层解析。include 已在驱动层展开;入口 = 主文件第一个事件。
     pub fn parse_program(&mut self) -> Program {
-        let mut program = Program::default();
+        let mut program = Program {
+            language_version: self.language_version,
+            ..Program::default()
+        };
         let main_file = self
             .lines
             .first()
@@ -20,6 +23,21 @@ impl<'a> Parser<'a> {
                 ));
             }
             match &line.kind {
+                LineKind::Language111 {
+                    keyword,
+                    source,
+                    loc,
+                } => {
+                    self.next();
+                    self.parse_language_declaration(
+                        &mut program,
+                        keyword,
+                        source,
+                        *loc,
+                        line.indent,
+                        &file,
+                    );
+                }
                 LineKind::Catalog(item) => {
                     let mut item = item.clone();
                     self.next();

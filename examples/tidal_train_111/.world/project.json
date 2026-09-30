@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "language_version": "1.11",
+  "required_features": [
+    "content.localization.v1"
+  ],
+  "project_id": "tidal_train_111",
+  "entry": "world.wl",
+  "maps": {},
+  "graph_views": {}
+}

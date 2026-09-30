@@ -334,12 +334,12 @@ pub(super) fn relation_common_checks(
         );
         return Err(1);
     }
-    if project.language_version_kind() != LanguageVersion::V1_10 {
+    if !project.language_version_kind().supports_entities() {
         let _ = relation_failure(
             json_mode,
             out,
             "LANGUAGE_VERSION_REQUIRED",
-            "关系编辑要求工程清单明确选择语言版本 1.10".into(),
+            "关系编辑要求工程清单明确选择语言版本 1.10 或 1.11".into(),
             Some(result),
             baseline.to_string(),
             workspace_diagnostics,

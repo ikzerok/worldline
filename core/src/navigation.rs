@@ -1,6 +1,6 @@
 //! 完整对象别名、正文链接与只读文字导航；不执行叙事。
 use crate::ast::{Stmt, TextPart};
-use crate::catalog::{Catalog, CatalogDecl, CatalogObject, ReferenceInfo, TargetRef, TARGET_KINDS};
+use crate::catalog::{Catalog, CatalogDecl, CatalogObject, ReferenceInfo, TargetRef};
 use crate::lexer::{lex_source, LineKind};
 use crate::{Diagnostic, Program, Span};
 use serde::Serialize;
@@ -46,7 +46,7 @@ pub(crate) fn parse_link_with_options(
 ) -> Option<(TargetRef, String)> {
     let (destination, label) = inner.split_once('|')?;
     let (kind, id) = destination.split_once(':')?;
-    if (!TARGET_KINDS.contains(&kind)
+    if (!crate::catalog::is_target_kind(kind, options)
         || ((kind == "entity" || kind == "relation")
             && !options.language_version.supports_relations()))
         || id.is_empty()
@@ -82,7 +82,9 @@ pub fn link_source(target: &TargetRef, label: &str, file: &str) -> Result<String
         target.id.clone()
     };
     let inner = format!("{}:{id}|{label}", target.kind);
-    let options = if target.kind == "entity" || target.kind == "relation" {
+    let options = if matches!(target.kind.as_str(), "rule" | "fragment") {
+        crate::compiler::CompileOptions::v1_11()
+    } else if target.kind == "entity" || target.kind == "relation" {
         crate::compiler::CompileOptions::v1_10()
     } else {
         crate::compiler::CompileOptions::default()
@@ -132,6 +134,15 @@ pub(crate) fn collect(program: &Program, catalog: &mut Catalog, diags: &mut Vec<
             &event.body,
             &TargetRef::new("event", &event.name),
             file,
+            catalog,
+            diags,
+        );
+    }
+    for fragment in &program.fragments {
+        collect_body(
+            &fragment.body,
+            &TargetRef::new("fragment", &fragment.name),
+            &fragment.file,
             catalog,
             diags,
         );
@@ -196,6 +207,9 @@ fn collect_body(
 ) {
     for stmt in body {
         match stmt {
+            Stmt::Say(say) => {
+                collect_parts(&say.text.parts, source, file, say.loc.line, catalog, diags)
+            }
             Stmt::Text(text) => {
                 collect_parts(&text.parts, source, file, text.loc.line, catalog, diags)
             }

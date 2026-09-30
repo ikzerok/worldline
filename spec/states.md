@@ -53,3 +53,9 @@ event arrival with lin after has(mood, calm)
 ## 独立锚点如何引用变化
 
 锚点关联状态 ID 与事件 ID 后，`Catalog::anchor_changes` 从既有状态出处中选取两类关联的交集，返回借用；不复制状态内容、不保存易随编辑漂移的行号身份。未同时关联状态和事件时没有变化出处。详见 [catalog.md](catalog.md) §4。
+
+## 语言1.11片段与动态集合变更出处
+
+片段中的旧静态become仍检查所有状态/标签身份，按定义位置进入同一状态变更索引。StateChangeSite的可选source是完整fragment身份；event为空表示调用前无法确定实际执行事件，不把片段当事件。运行后state_history仍记录真实调用者事件和片段节点。
+
+动态动作保留state_expression与tags_expression，Catalog.dynamic_state_changes列出所有定义位置和选择/条件上下文。仅state(id)等直接可确定目标同时挂入该状态的changes；参数或运行表达式目标不猜实例。静态tags构造可列出已知标签，表达式字段始终保留，空tags不意味着清空结果。索引不求值、不改变状态、不自动展开调用。1.11锚点可明确关联rule/fragment，状态与fragment关联的交集查询使用source身份。

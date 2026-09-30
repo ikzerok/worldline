@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 mod collect;
+mod language;
 pub(crate) use collect::analyze;
 
 #[derive(
@@ -37,6 +38,8 @@ pub const TARGET_KINDS: &[&str] = &[
     "asset",
     "file",
     "relation",
+    "rule",
+    "fragment",
 ];
 
 /// Explicit property references currently target kinds supported by the core rename plan.
@@ -44,6 +47,8 @@ pub const OBJECT_REFERENCE_TARGET_KINDS: &[&str] = &["entity", "relation"];
 
 pub fn is_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
     TARGET_KINDS.contains(&kind)
+        && (!matches!(kind, "rule" | "fragment")
+            || options.language_version.supports_language_111())
         && ((kind != "entity" && kind != "relation")
             || options.language_version.supports_relations())
 }
@@ -132,6 +137,8 @@ pub struct AssetInfo {
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Catalog {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dynamic_state_changes: Vec<crate::states::StateChangeSite>,
     pub aliases: Vec<crate::navigation::AliasInfo>,
     pub text_links: Vec<crate::navigation::TextLinkInfo>,
     pub anchors: BTreeMap<String, crate::anchors::AnchorInfo>,

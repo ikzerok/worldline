@@ -249,7 +249,7 @@ fn self_loop_respects_step_budget_and_pre_cancelled_replay_stops_immediately() {
 #[test]
 fn cooperative_replay_yields_resumes_exactly_and_cancellation_keeps_partial_coverage() {
     let result = compile(
-        "let count = 0\nevent start\n  let count = count + 1\n  值:{rnd(1, 100)}\n  choice \"再来\"\n    -> start\n",
+        "let count = 0\nevent start\n  set count = count + 1\n  值:{rnd(1, 100)}\n  choice \"再来\"\n    -> start\n",
     );
     let mut story = Story::new_with_seed(&result.program, &result.analysis, 1).unwrap();
     story.continue_story().unwrap();

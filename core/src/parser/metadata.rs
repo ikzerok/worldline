@@ -127,26 +127,28 @@ impl<'a> Parser<'a> {
                         )),
                     },
                     "from" | "from_kind" => {
-                        let kind = value.split_whitespace().next().unwrap_or("");
-                        if kind.is_empty() {
+                        let mut tokens = value.split_whitespace();
+                        let kind = tokens.next().unwrap_or("");
+                        if kind.is_empty() || tokens.next().is_some() {
                             self.diags.push(Diagnostic::error(
                                 "P004",
                                 file,
                                 Span::new(loc.line, loc.column, 4),
-                                "关系类型 from 后需要端点类型",
+                                "关系类型 from 后必须且只能有一个端点类型",
                             ));
                         } else {
                             *from_kind = Some(kind.into());
                         }
                     }
                     "to" | "to_kind" => {
-                        let kind = value.split_whitespace().next().unwrap_or("");
-                        if kind.is_empty() {
+                        let mut tokens = value.split_whitespace();
+                        let kind = tokens.next().unwrap_or("");
+                        if kind.is_empty() || tokens.next().is_some() {
                             self.diags.push(Diagnostic::error(
                                 "P004",
                                 file,
                                 Span::new(loc.line, loc.column, 2),
-                                "关系类型 to 后需要端点类型",
+                                "关系类型 to 后必须且只能有一个端点类型",
                             ));
                         } else {
                             *to_kind = Some(kind.into());

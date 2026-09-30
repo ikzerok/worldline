@@ -8,6 +8,30 @@ use crate::ast::*;
 pub(crate) fn expr_kind_static(e: &Expr, symbols: &Symbols) -> Option<ValueKind> {
     match e {
         Expr::Var { name, .. } => symbols.vars.get(name).and_then(|v| v.kind),
+        Expr::Call { name, args, .. } => match name.as_str() {
+            "tag" => Some(ValueKind::Tag),
+            "state" => Some(ValueKind::StateRef),
+            "tags" | "members" | "union" | "intersect" | "difference" => Some(ValueKind::TagSet),
+            "count" | "rnd" | "visits" | "turns" => Some(ValueKind::Num),
+            "contains" | "has" | "seen" | "perm" => Some(ValueKind::Bool),
+            "when" => args.get(1).and_then(|e| expr_kind_static(e, symbols)),
+            _ => symbols.rule_results.get(name).copied(),
+        },
+        Expr::Unary { op, .. } => Some(match op {
+            UnOp::Neg => ValueKind::Num,
+            UnOp::Not => ValueKind::Bool,
+        }),
+        Expr::Binary { op, lhs, .. } => match op {
+            BinOp::Eq
+            | BinOp::Neq
+            | BinOp::Lt
+            | BinOp::Le
+            | BinOp::Gt
+            | BinOp::Ge
+            | BinOp::And
+            | BinOp::Or => Some(ValueKind::Bool),
+            _ => expr_kind_static(lhs, symbols),
+        },
         _ => e.static_kind(),
     }
 }
@@ -54,7 +78,7 @@ pub(crate) fn terminates(stmts: &[Stmt]) -> bool {
     let mut i = 0;
     while i < stmts.len() {
         match &stmts[i] {
-            Stmt::Divert(_) => return true,
+            Stmt::Divert(_) | Stmt::Return(_) => return true,
             Stmt::If(s) => {
                 let has_else = s.branches.last().map(|(c, _)| c.is_none()).unwrap_or(false);
                 let all = s.branches.iter().all(|(_, b)| terminates(b));
@@ -91,7 +115,11 @@ pub(crate) fn terminates(stmts: &[Stmt]) -> bool {
                 i += 1;
                 continue;
             }
-            Stmt::Text(_)
+            Stmt::Local(_)
+            | Stmt::Call(_)
+            | Stmt::Say(_)
+            | Stmt::DynamicChange(_)
+            | Stmt::Text(_)
             | Stmt::Let(_)
             | Stmt::Set(_)
             | Stmt::Change(_)

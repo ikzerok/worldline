@@ -40,7 +40,24 @@ fn expression_edits(
             start + ts[1].end,
             format!("{}, ", m.state),
         );
-        edit(edits, start + ts[2].start, start + ts[2].end, tag);
+        let argument_start = start + ts[2].start;
+        let argument_end = if chars.get(argument_start) == Some(&'\\')
+            && chars.get(argument_start + 1) == Some(&'"')
+        {
+            let Some(end) = (argument_start + 2..chars.len()).find(|&i| {
+                if chars[i] != '"' {
+                    return false;
+                }
+                let backslashes = chars[..i].iter().rev().take_while(|&&c| c == '\\').count();
+                backslashes % 4 == 1
+            }) else {
+                return;
+            };
+            end + 1
+        } else {
+            start + ts[2].end
+        };
+        edit(edits, argument_start, argument_end, tag);
     });
 }
 
@@ -56,7 +73,12 @@ pub(crate) fn rewrite_sources(
         let cleaned = lexer::strip_comments(source);
         let clean_lines: Vec<_> = cleaned.lines().collect();
         let mut raw_lines: Vec<_> = source.split_inclusive('\n').map(str::to_string).collect();
-        for line in lexer::lex_source(&path.to_string_lossy(), source, &mut Vec::new()) {
+        for line in lexer::lex_source_with_options(
+            &path.to_string_lossy(),
+            source,
+            &mut Vec::new(),
+            result.options,
+        ) {
             let index = line.no as usize - 1;
             let clean = clean_lines[index];
             let chars: Vec<_> = clean.chars().collect();
@@ -64,7 +86,43 @@ pub(crate) fn rewrite_sources(
             let mut edits = Vec::new();
             let mut expressions = Vec::new();
             let mut interpolation = None;
+            let mut interpolation_quoted = false;
             match &line.kind {
+                LineKind::Language111 {
+                    keyword, source, ..
+                } => match keyword.as_str() {
+                    "rule" | "local" => {
+                        if let Some((_, expr)) = source.split_once('=') {
+                            expressions.push(expr.trim());
+                        }
+                    }
+                    "call" => expressions.push(source.as_str()),
+                    "say" => {
+                        if let Some(token) = ts.iter().find(|t| t.quoted) {
+                            let a = clean
+                                .char_indices()
+                                .nth(token.start + 1)
+                                .map(|(i, _)| i)
+                                .unwrap_or(clean.len());
+                            let b = clean
+                                .char_indices()
+                                .nth(token.end - 1)
+                                .map(|(i, _)| i)
+                                .unwrap_or(clean.len());
+                            interpolation = Some(&clean[a..b]);
+                            interpolation_quoted = true;
+                        }
+                    }
+                    "become" => {
+                        if let Some((state, tags, _)) =
+                            crate::language::dynamic_change_parts(source)
+                        {
+                            expressions.push(state);
+                            expressions.push(tags);
+                        }
+                    }
+                    _ => {}
+                },
                 LineKind::ChangeLine { kind, id, .. }
                     if matches!(kind, ChangeKind::Grant | ChangeKind::Revoke) =>
                 {
@@ -208,13 +266,24 @@ pub(crate) fn rewrite_sources(
             if let Some(raw) = interpolation {
                 let base = clean.find(raw).ok_or("无法定位文本插值")?;
                 let mut diagnostics = Vec::new();
-                let mut parts = crate::expression::parse_interpolations(
-                    raw,
-                    &line.file,
-                    line.no,
-                    clean[..base].chars().count() as u32,
-                    &mut diagnostics,
-                );
+                let mut parts = if interpolation_quoted {
+                    crate::expression::parse_quoted_interpolations_with_options(
+                        raw,
+                        &line.file,
+                        line.no,
+                        clean[..base].chars().count() as u32,
+                        &mut diagnostics,
+                        result.options,
+                    )
+                } else {
+                    crate::expression::parse_interpolations(
+                        raw,
+                        &line.file,
+                        line.no,
+                        clean[..base].chars().count() as u32,
+                        &mut diagnostics,
+                    )
+                };
                 if !diagnostics.is_empty() {
                     return Err("文本插值有语法错误，无法安全迁移权限".into());
                 }

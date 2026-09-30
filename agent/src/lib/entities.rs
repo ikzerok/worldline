@@ -109,12 +109,12 @@ fn mutate_entity_project(
             &workspace_diagnostics,
         ));
     }
-    if before.options.language_version != LanguageVersion::V1_10
-        || project.language_version_kind() != LanguageVersion::V1_10
+    if !before.options.language_version.supports_entities()
+        || !project.language_version_kind().supports_entities()
     {
         return Ok(project_failure_with_workspace(
             "LANGUAGE_VERSION_REQUIRED",
-            "实体编辑要求工程清单明确选择语言版本 1.10".into(),
+            "实体编辑要求工程清单明确选择语言版本 1.10 或 1.11".into(),
             Some(&before.diagnostics),
             Some(baseline),
             Some(before.options.language_version.as_str()),

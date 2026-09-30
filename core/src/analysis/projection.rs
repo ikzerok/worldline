@@ -73,6 +73,8 @@ impl NodePath {
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Symbols {
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub rule_results: HashMap<String, ValueKind>,
     /// 事件名 → 路径。
     pub events: HashMap<String, NodePath>,
     /// 场景全名("event.scene[.scene]") → 路径。
@@ -89,21 +91,14 @@ pub struct Symbols {
 }
 
 impl Symbols {
-    /// 跃迁目标解析:当前事件内的场景(叶名或全名)优先,其次全局事件。
+    /// 跃迁目标解析:场景全名、事件内完整相对路径、全局事件依次精确匹配。
     pub fn resolve_target(&self, target: &str, current_event: Option<&str>) -> Option<NodePath> {
+        if let Some(path) = self.scenes.get(target) {
+            return Some(path.clone());
+        }
         if let Some(ev) = current_event {
-            if let Some(p) = self.scenes.get(target) {
-                if p.event == self.events.get(ev).map(|e| e.event).unwrap_or(usize::MAX) {
-                    return Some(p.clone());
-                }
-            }
-            let prefix = format!("{ev}.");
-            for (name, path) in &self.scenes {
-                if let Some(rest) = name.strip_prefix(&prefix) {
-                    if rest == target || rest.split('.').next() == Some(target) {
-                        return Some(path.clone());
-                    }
-                }
+            if let Some(path) = self.scenes.get(&format!("{ev}.{target}")) {
+                return Some(path.clone());
             }
         }
         self.events.get(target).cloned()

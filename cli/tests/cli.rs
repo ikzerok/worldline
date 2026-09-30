@@ -24,3 +24,9 @@ mod relations;
 mod story;
 #[path = "cli/workspace.rs"]
 mod workspace;
+
+#[path = "cli/language_111.rs"]
+mod language_111;
+
+#[path = "cli/source_edit.rs"]
+mod source_edit;

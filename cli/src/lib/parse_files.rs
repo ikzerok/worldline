@@ -82,6 +82,9 @@ pub(super) fn parse_language_version(value: &str) -> Result<LanguageVersion, Str
     match value {
         "1.9" => Ok(LanguageVersion::V1_9),
         "1.10" => Ok(LanguageVersion::V1_10),
-        _ => Err(format!("不支持的语言版本 `{value}`(可用: 1.9 / 1.10)")),
+        "1.11" => Ok(LanguageVersion::V1_11),
+        _ => Err(format!(
+            "不支持的语言版本 `{value}`(可用: 1.9 / 1.10 / 1.11)"
+        )),
     }
 }

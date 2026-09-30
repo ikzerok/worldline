@@ -1,7 +1,7 @@
 use worldline_core::ast::{BinOp, Expr, TextPart, UnOp};
 
 use super::evidence::{EvidenceBudget, EvidenceRecorder};
-use super::util::{cmp_op, expr_loc_line, next_rnd, num_op};
+use super::util::{cmp_op, expr_loc_line, num_op};
 use super::ConditionEvidence;
 use super::{RunError, Story, Value};
 
@@ -22,15 +22,7 @@ impl<'p> Story<'p> {
                     out.push_str(&link.label);
                     let mut target = link.target.clone();
                     if target.kind == "file" {
-                        if let Some(file) = self
-                            .current_node()
-                            .and_then(|node| {
-                                self.symbols
-                                    .events
-                                    .get(node.split('.').next().unwrap_or(&node))
-                            })
-                            .and_then(|node| self.program.event_files.get(node.event))
-                        {
+                        if let Some(file) = self.current_source_file() {
                             target.id = worldline_core::catalog::resolved_asset(file, &target.id)
                                 .to_string_lossy()
                                 .into_owned();
@@ -80,17 +72,44 @@ impl<'p> Story<'p> {
         rng: &mut u64,
         recorder: &mut Option<EvidenceRecorder>,
     ) -> Result<Value, RunError> {
+        let (scope, declared) = self.active_scope();
+        self.eval_in(e, rng, recorder, &scope, &declared, 0)
+    }
+
+    pub(super) fn eval_in(
+        &self,
+        e: &Expr,
+        rng: &mut u64,
+        recorder: &mut Option<EvidenceRecorder>,
+        scope: &std::collections::BTreeMap<String, Value>,
+        declared: &std::collections::HashSet<String>,
+        depth: usize,
+    ) -> Result<Value, RunError> {
+        if depth > 128 {
+            return Err(RunError::new("规则调用深度超过128层"));
+        }
         let result = (|| match e {
             Expr::Num(n) => Ok(Value::Num(*n)),
             Expr::Str(s) => Ok(Value::Str(s.clone())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
+            Expr::Var { name, loc } if declared.contains(name) => {
+                scope.get(name).cloned().ok_or_else(|| RunError {
+                    message: format!("局部 `{name}` 尚未初始化"),
+                    node: self.current_node(),
+                    line: Some(loc.line),
+                })
+            }
             Expr::Var { name, loc } => self.vars.get(name).cloned().ok_or_else(|| RunError {
-                message: format!("变量 `{name}` 未定义"),
+                message: if self.symbols.vars.contains_key(name) {
+                    format!("变量 `{name}` 已声明但尚未初始化")
+                } else {
+                    format!("变量 `{name}` 未定义")
+                },
                 node: self.current_node(),
                 line: Some(loc.line),
             }),
             Expr::Unary { op, expr } => {
-                let v = self.eval_recorded(expr, rng, recorder)?;
+                let v = self.eval_in(expr, rng, recorder, scope, declared, depth)?;
                 match (op, v) {
                     (UnOp::Neg, Value::Num(n)) => Ok(Value::Num(-n)),
                     (UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
@@ -102,8 +121,8 @@ impl<'p> Story<'p> {
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
-                let l = self.eval_recorded(lhs, rng, recorder)?;
-                let r = self.eval_recorded(rhs, rng, recorder)?;
+                let l = self.eval_in(lhs, rng, recorder, scope, declared, depth)?;
+                let r = self.eval_in(rhs, rng, recorder, scope, declared, depth)?;
                 let line = expr_loc_line(e);
                 let type_err = || RunError {
                     message: format!(
@@ -164,6 +183,12 @@ impl<'p> Story<'p> {
                         _ => Err(type_err()),
                     },
                 }
+            }
+            Expr::Call { name, args, loc }
+                if worldline_core::language::is_new_builtin(name)
+                    || self.program.rules.iter().any(|r| &r.name == name) =>
+            {
+                self.eval_language_call(e, name, args, *loc, rng, recorder, scope, declared, depth)
             }
             Expr::Call { name, args, loc } => match name.as_str() {
                 "has" => {
@@ -239,8 +264,8 @@ impl<'p> Story<'p> {
                         });
                     };
                     let (Value::Num(lo), Value::Num(hi)) = (
-                        self.eval_recorded(a, rng, recorder)?,
-                        self.eval_recorded(b, rng, recorder)?,
+                        self.eval_in(a, rng, recorder, scope, declared, depth)?,
+                        self.eval_in(b, rng, recorder, scope, declared, depth)?,
                     ) else {
                         return Err(RunError {
                             message: "rnd 的参数必须是数值".into(),
@@ -248,17 +273,13 @@ impl<'p> Story<'p> {
                             line: Some(loc.line),
                         });
                     };
-                    let lo = lo.ceil() as u64;
-                    let hi = hi.floor() as u64;
-                    if hi < lo {
-                        return Err(RunError {
-                            message: format!("rnd 的上界({hi})小于下界({lo})"),
+                    super::random::integer(rng, lo, hi)
+                        .map(Value::Num)
+                        .map_err(|message| RunError {
+                            message,
                             node: self.current_node(),
                             line: Some(loc.line),
-                        });
-                    }
-                    let span = hi - lo + 1;
-                    Ok(Value::Num((lo + next_rnd(rng) % span) as f64))
+                        })
                 }
                 other => Err(RunError {
                     message: format!("未知函数 `{other}`"),

@@ -22,6 +22,7 @@ impl<'a> Ctx<'a> {
                 event: idx,
                 node_name: name.clone(),
             };
+            self.expression_fallback = self.program.events[idx].loc;
             // after 前置条件类型检查
             if let Some(after) = &self.program.events[idx].after {
                 self.check_expr(after, Some(ValueKind::Bool));
@@ -73,10 +74,16 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn walk_block(&mut self, stmts: &[Stmt], node: &NodeCtx, depth: u32) {
+    pub(super) fn walk_block(&mut self, stmts: &[Stmt], node: &NodeCtx, depth: u32) {
         let mut i = 0;
         while i < stmts.len() {
+            self.expression_fallback = crate::language::statement_loc(&stmts[i]);
             match &stmts[i] {
+                Stmt::Local(_)
+                | Stmt::Call(_)
+                | Stmt::Return(_)
+                | Stmt::Say(_)
+                | Stmt::DynamicChange(_) => self.check_language_statement(&stmts[i]),
                 Stmt::Text(t) => {
                     for p in &t.parts {
                         if let TextPart::Expr(e) = p {
@@ -143,9 +150,21 @@ impl<'a> Ctx<'a> {
                     }
                 }
                 Stmt::Let(l) => {
-                    self.check_expr(&l.expr, None);
+                    let kind = self.check_expr(&l.expr, None);
+                    if let Some(v) = self.symbols.vars.get_mut(&l.name) {
+                        if v.kind.is_none() {
+                            v.kind = kind;
+                        }
+                    }
                 }
                 Stmt::Set(s) => {
+                    if self.locals.contains_key(&s.name) {
+                        self.language_error(
+                            "A106",
+                            s.loc,
+                            "参数与local绑定不可赋值，不能借set写同名全局",
+                        );
+                    }
                     let expected = match self.symbols.vars.get(&s.name) {
                         Some(v) => {
                             if v.is_const {
@@ -175,6 +194,9 @@ impl<'a> Ctx<'a> {
                     self.check_expr(&s.expr, expected);
                 }
                 Stmt::Scene(s) => {
+                    if self.in_fragment {
+                        self.language_error("A230", s.loc, "片段内部禁止 scene");
+                    }
                     let inner = NodeCtx {
                         event: node.event,
                         node_name: format!("{}.{}", node.node_name, s.name),
@@ -198,7 +220,11 @@ impl<'a> Ctx<'a> {
                         line: a.loc.line,
                     });
                 }
-                Stmt::Effect(_) => {} // 已在事件顶层提取;残留由解析器报错
+                Stmt::Effect(f) => {
+                    if self.in_fragment {
+                        self.language_error("A230", f.loc, "片段内禁止effect");
+                    }
+                } // 事件顶层已提取
             }
             i += 1;
         }
@@ -230,7 +256,7 @@ impl<'a> Ctx<'a> {
             ));
         }
         // 漂流语义:A209 同线漂流提示
-        if d.drift {
+        if d.drift && node.event < self.program.events.len() {
             let cur_sl = self.program.events[node.event].storyline.clone();
             let tgt_sl = self.program.events[path.event].storyline.clone();
             if cur_sl == tgt_sl {

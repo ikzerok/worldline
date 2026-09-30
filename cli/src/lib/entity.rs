@@ -40,12 +40,12 @@ pub(super) fn cmd_entity(args: &EntityArgs, out: &mut impl Write) -> Result<i32,
             &workspace_diagnostics,
         );
     }
-    if project.language_version_kind() != LanguageVersion::V1_10 {
+    if !project.language_version_kind().supports_entities() {
         return entity_failure(
             args,
             out,
             "LANGUAGE_VERSION_REQUIRED",
-            "实体编辑要求工程清单明确选择语言版本 1.10".into(),
+            "实体编辑要求工程清单明确选择语言版本 1.10 或 1.11".into(),
             Some(&before),
             baseline,
             &workspace_diagnostics,

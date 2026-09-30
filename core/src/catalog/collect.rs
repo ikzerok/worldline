@@ -225,6 +225,7 @@ pub(crate) fn analyze(
         }
     }
     crate::anchors::collect_declarations(program, &mut catalog, diags);
+    super::language::collect(program, symbols, &mut catalog);
     crate::states::collect_declarations(program, &mut catalog, diags);
     // 关系对象必须先于 mark/attach、正文链接和地图引用进入统一目录；否则
     // 这些消费者会把合法的 relation TargetRef 误报为未知对象。关系端点和

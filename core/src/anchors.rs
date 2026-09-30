@@ -13,7 +13,17 @@ pub const ANCHOR_TARGET_KINDS: &[&str] = &["character", "event", "state", "ancho
 
 /// 当前语言版本允许的锚点目标类型，供验证与对象选择器共用。
 pub fn anchor_target_kinds(options: crate::CompileOptions) -> &'static [&'static str] {
-    if options.language_version.supports_entities() {
+    if options.language_version.supports_language_111() {
+        &[
+            "character",
+            "event",
+            "state",
+            "anchor",
+            "entity",
+            "rule",
+            "fragment",
+        ]
+    } else if options.language_version.supports_entities() {
         &["character", "event", "state", "anchor", "entity"]
     } else {
         ANCHOR_TARGET_KINDS
@@ -83,7 +93,12 @@ impl Catalog {
             .flat_map(|s| {
                 s.changes
                     .iter()
-                    .filter(|c| targets.contains(&TargetRef::new("event", &c.event)))
+                    .filter(|c| {
+                        c.source
+                            .as_ref()
+                            .is_some_and(|source| targets.contains(source))
+                            || targets.contains(&TargetRef::new("event", &c.event))
+                    })
                     .map(move |c| (s, c))
             })
             .collect()

@@ -42,7 +42,7 @@ impl<'p> Story<'p> {
             }
         }
         if let Some(cond) = &ev.after {
-            match self.eval(cond)? {
+            match self.eval_global(cond)? {
                 Value::Bool(true) => {}
                 Value::Bool(false) => {
                     return Err(RunError {
@@ -78,7 +78,7 @@ impl<'p> Story<'p> {
                 continue;
             }
             if let Some(cond) = &fx.cond {
-                if !matches!(self.eval(cond)?, Value::Bool(true)) {
+                if !matches!(self.eval_global(cond)?, Value::Bool(true)) {
                     continue;
                 }
             }

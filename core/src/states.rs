@@ -3,6 +3,7 @@ use crate::ast::{Change, ChangeKind, Expr, Loc, Stmt};
 use crate::catalog::{Catalog, CatalogDecl, ReferenceInfo, TargetRef};
 use crate::{Diagnostic, Program, Span};
 use serde::Serialize;
+mod language;
 
 #[derive(Debug, Clone)]
 pub struct StateDecl {
@@ -27,6 +28,12 @@ pub struct StateInfo {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StateChangeSite {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<TargetRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_expression: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags_expression: Option<String>,
     pub kind: ChangeKind,
     pub event: String,
     pub node: String,
@@ -283,14 +290,16 @@ fn add_change(
         .chain(change.tags.iter().map(|id| TargetRef::new("tag", id)))
     {
         catalog.references.push(ReferenceInfo {
-            source: TargetRef::new(
-                if site.node == site.event {
-                    "event"
-                } else {
-                    "scene"
-                },
-                &site.node,
-            ),
+            source: site.source.clone().unwrap_or_else(|| {
+                TargetRef::new(
+                    if site.node == site.event {
+                        "event"
+                    } else {
+                        "scene"
+                    },
+                    &site.node,
+                )
+            }),
             target,
             kind: "状态变更".into(),
             file: site.file.clone(),
@@ -313,6 +322,7 @@ pub(crate) fn collect_changes(
         for stmt in body {
             match stmt {
                 Stmt::Change(c) => add_change(&c.change, site.clone(), catalog, diags),
+                Stmt::DynamicChange(c) => language::add_dynamic(c, site.clone(), catalog),
                 Stmt::Scene(s) => {
                     let mut inner = site.clone();
                     inner.node = format!("{}.{}", site.node, s.name);
@@ -342,6 +352,9 @@ pub(crate) fn collect_changes(
     }
     for (event, file) in program.events.iter().zip(&program.event_files) {
         let site = StateChangeSite {
+            source: None,
+            state_expression: None,
+            tags_expression: None,
             kind: ChangeKind::Become,
             event: event.name.clone(),
             node: event.name.clone(),
@@ -369,6 +382,23 @@ pub(crate) fn collect_changes(
                 add_change(action, site.clone(), catalog, diags);
             }
         }
+    }
+    for fragment in &program.fragments {
+        let site = StateChangeSite {
+            source: Some(TargetRef::new("fragment", &fragment.name)),
+            state_expression: None,
+            tags_expression: None,
+            kind: ChangeKind::Become,
+            event: String::new(),
+            node: format!("fragment:{}", fragment.name),
+            timing: "during".into(),
+            tags: Vec::new(),
+            note: None,
+            contexts: Vec::new(),
+            file: fragment.file.clone(),
+            line: fragment.loc.line,
+        };
+        walk(&fragment.body, &site, catalog, diags);
     }
     for state in catalog.states.values_mut() {
         state

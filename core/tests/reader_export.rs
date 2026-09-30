@@ -62,6 +62,8 @@ attach event public_event with public_art, private_art
 
 fn selection() -> ReaderExportSelection {
     ReaderExportSelection {
+        fields: Vec::new(),
+        required_features: Vec::new(),
         maps: Vec::new(),
         schema_version: 1,
         site_title: "Public Site".into(),
@@ -343,6 +345,8 @@ fn pure_content_projects_export_and_arbitrary_file_targets_are_rejected() {
     .unwrap();
     let project = Project::open(&root.join("world.wl")).unwrap();
     let request = ReaderExportSelection {
+        fields: Vec::new(),
+        required_features: Vec::new(),
         maps: Vec::new(),
         schema_version: 1,
         site_title: "Pure Site".into(),

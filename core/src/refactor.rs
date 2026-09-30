@@ -1,9 +1,12 @@
 //! 跨源码与展示文档的稳定 TargetRef 重命名计划。
+mod documents;
+mod language;
+mod text;
 use crate::catalog::TargetRef;
 use crate::project::Project;
 use crate::{CompileResult, Severity};
+use documents::rewrite_registered;
 use serde::Serialize;
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -32,8 +35,17 @@ impl Project {
         target: &TargetRef,
         new_id: &str,
     ) -> Result<RenamePlan, String> {
-        if !matches!(target.kind.as_str(), "entity" | "relation") {
-            return Err("首版跨视图 ID 重命名只支持 entity / relation".into());
+        self.ensure_workspace_writable()?;
+        if !matches!(
+            target.kind.as_str(),
+            "entity" | "relation" | "rule" | "fragment" | "character" | "tag" | "state"
+        ) {
+            return Err("此对象类型暂不支持跨视图 ID 重命名".into());
+        }
+        if !matches!(target.kind.as_str(), "entity" | "relation")
+            && !self.language_version_kind().supports_language_111()
+        {
+            return Err("此类身份的统一重命名需要显式语言 1.11；旧作品不自动升级".into());
         }
         crate::authoring::identifier(new_id)?;
         if target.id == new_id {
@@ -108,20 +120,11 @@ impl Project {
             });
         }
         let manifest_path = crate::workspace_documents::manifest_path(&self.root);
-        let (manuscript_paths, template_paths): (BTreeSet<PathBuf>, BTreeSet<PathBuf>) = self
+        let registry = self
             .authoring_document(&manifest_path)
             .ok()
             .map(|document| {
-                let registry =
-                    crate::workspace_documents::parse_registry(&self.root, document.bytes());
-                if registry.diagnostics.is_empty() {
-                    (
-                        registry.manuscripts.into_values().collect(),
-                        registry.templates.into_values().collect(),
-                    )
-                } else {
-                    (BTreeSet::new(), BTreeSet::new())
-                }
+                crate::workspace_documents::parse_registry(&self.root, document.bytes())
             })
             .unwrap_or_default();
         for (path, document) in &self.authoring_documents {
@@ -139,13 +142,7 @@ impl Project {
                 crate::workspace_documents::parse_unique_json(&before).map_err(|error| {
                     format!("展示文档 JSON 无法安全读取：{}：{error}", path.display())
                 })?;
-            let count = if manuscript_paths.contains(path) {
-                rewrite_manuscript_json(&mut value, target, new_id)
-            } else if template_paths.contains(path) {
-                rewrite_template_json(&mut value, target, new_id)
-            } else {
-                rewrite_json(&mut value, target, new_id)
-            };
+            let count = rewrite_registered(&mut value, &registry, path, target, new_id);
             if count == 0 {
                 continue;
             }
@@ -174,6 +171,8 @@ impl Project {
     }
 
     pub fn apply_rename_plan(&mut self, plan: &RenamePlan) -> Result<(), String> {
+        self.ensure_workspace_writable()?;
+        self.checkpoint_disk_baselines_match()?;
         if self.content_baseline() != plan.content_baseline {
             return Err("重命名预览已过期，请重新生成影响计划".into());
         }
@@ -297,7 +296,9 @@ fn validate_candidate(
             return Err("重命名候选仍含有旧 ID 的书稿引用".into());
         }
     }
-    if before.analysis.fingerprint != compiled.analysis.fingerprint {
+    if matches!(old_target.kind.as_str(), "entity" | "relation")
+        && before.analysis.fingerprint != compiled.analysis.fingerprint
+    {
         return Err("entity / relation ID 重命名不应改变运行指纹".into());
     }
     Ok(())
@@ -332,6 +333,9 @@ fn rewrite_source(
 }
 
 fn rewrite_source_line(line: &str, target: &TargetRef, new_id: &str) -> (String, usize) {
+    if !matches!(target.kind.as_str(), "entity" | "relation") {
+        return language::rewrite(line, target, new_id);
+    }
     let mut text = line.to_string();
     let (rewritten, mut count) = rewrite_explicit_refs(&text, target, new_id);
     text = rewritten;
@@ -494,104 +498,4 @@ fn replace_structural_pair(text: &str, old: &str, new: &str) -> (String, usize) 
 
 fn is_ident_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')
-}
-
-fn rewrite_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
-    match value {
-        Value::Array(items) => items
-            .iter_mut()
-            .map(|item| rewrite_json(item, target, new_id))
-            .sum(),
-        Value::Object(object) => {
-            let mut count = 0usize;
-            if object.get("kind").and_then(Value::as_str) == Some(target.kind.as_str())
-                && object.get("id").and_then(Value::as_str) == Some(target.id.as_str())
-            {
-                object.insert("id".into(), Value::String(new_id.into()));
-                count += 1;
-            }
-            let old_key = format!("{}:{}", target.kind, target.id);
-            if let Some(position) = object.remove(&old_key) {
-                object.insert(format!("{}:{new_id}", target.kind), position);
-                count += 1;
-            }
-            for (key, child) in object.iter_mut() {
-                if target.kind == "relation" && key == "hidden_relation_ids" {
-                    if let Some(items) = child.as_array_mut() {
-                        for item in items {
-                            if item.as_str() == Some(target.id.as_str()) {
-                                *item = Value::String(new_id.into());
-                                count += 1;
-                            }
-                        }
-                    }
-                } else {
-                    count += rewrite_json(child, target, new_id);
-                }
-            }
-            count
-        }
-        _ => 0,
-    }
-}
-
-fn rewrite_manuscript_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
-    let Some(entries) = value
-        .as_object_mut()
-        .and_then(|object| object.get_mut("entries"))
-        .and_then(Value::as_array_mut)
-    else {
-        return 0;
-    };
-    let mut count = 0;
-    for entry in entries.iter_mut().filter_map(Value::as_object_mut) {
-        let Some(reference) = entry.get_mut("target_ref").and_then(Value::as_object_mut) else {
-            continue;
-        };
-        if reference.get("kind").and_then(Value::as_str) == Some(target.kind.as_str())
-            && reference.get("id").and_then(Value::as_str) == Some(target.id.as_str())
-        {
-            reference.insert("id".into(), Value::String(new_id.into()));
-            count += 1;
-        }
-    }
-    count
-}
-
-fn rewrite_template_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
-    let Some(fields) = value
-        .as_object_mut()
-        .and_then(|object| object.get_mut("fields"))
-        .and_then(Value::as_array_mut)
-    else {
-        return 0;
-    };
-    fields
-        .iter_mut()
-        .map(|field| rewrite_template_field(field, target, new_id))
-        .sum()
-}
-
-fn rewrite_template_field(field: &mut Value, target: &TargetRef, new_id: &str) -> usize {
-    let Some(object) = field.as_object_mut() else {
-        return 0;
-    };
-    let mut count = 0;
-    if object.get("type").and_then(Value::as_str) == Some("object_ref") {
-        if let Some(default) = object.get_mut("default").and_then(Value::as_object_mut) {
-            if default.get("kind").and_then(Value::as_str) == Some(target.kind.as_str())
-                && default.get("id").and_then(Value::as_str) == Some(target.id.as_str())
-            {
-                default.insert("id".into(), Value::String(new_id.into()));
-                count += 1;
-            }
-        }
-    }
-    if let Some(children) = object.get_mut("fields").and_then(Value::as_array_mut) {
-        count += children
-            .iter_mut()
-            .map(|child| rewrite_template_field(child, target, new_id))
-            .sum::<usize>();
-    }
-    count
 }

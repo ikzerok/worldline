@@ -20,6 +20,10 @@ pub struct ConditionEvidence {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvidenceNode {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
     pub parent: Option<usize>,
     pub label: String,
     #[serde(flatten)]
@@ -118,6 +122,8 @@ impl EvidenceRecorder {
         let index = self.evidence.nodes.len();
         self.indices.insert(expression as *const Expr, index);
         self.evidence.nodes.push(EvidenceNode {
+            file: None,
+            line: None,
             parent,
             label,
             outcome: EvidenceOutcome::NotEvaluated,
@@ -129,12 +135,28 @@ impl EvidenceRecorder {
                 self.add(rhs, Some(index), depth + 1);
             }
             // Other built-ins consume static identifiers, not evaluated operands.
-            Expr::Call { name, args, .. } if name == "rnd" => {
-                for argument in args.iter().take(2) {
+            Expr::Call { name, args, .. }
+                if !matches!(
+                    name.as_str(),
+                    "has" | "tag" | "state" | "visits" | "seen" | "perm"
+                ) =>
+            {
+                for argument in args {
                     self.add(argument, Some(index), depth + 1);
                 }
             }
             _ => {}
+        }
+    }
+
+    pub fn enter_rule(&mut self, call: &Expr, body: &Expr, file: &str, line: u32) {
+        let parent = self.indices.get(&(call as *const Expr)).copied();
+        let start = self.evidence.nodes.len();
+        self.add(body, parent, 1);
+        for index in start..self.evidence.nodes.len() {
+            let file = self.text(file);
+            self.evidence.nodes[index].file = Some(file);
+            self.evidence.nodes[index].line = Some(line);
         }
     }
 
@@ -152,7 +174,31 @@ impl EvidenceRecorder {
                 self.evidence.omitted = true;
                 EvidenceOutcome::Omitted
             }
+            Ok(Value::Tag(id) | Value::StateRef(id))
+                if id.len() > self.bytes_left || id.len() > MAX_TEXT =>
+            {
+                self.evidence.omitted = true;
+                EvidenceOutcome::Omitted
+            }
+            Ok(Value::TagSet(ids))
+                if ids.iter().map(|s| s.len() + 3).sum::<usize>()
+                    > self.bytes_left.min(MAX_TEXT) =>
+            {
+                self.evidence.omitted = true;
+                EvidenceOutcome::Omitted
+            }
             Ok(value) => {
+                match value {
+                    Value::Tag(id) | Value::StateRef(id) => {
+                        self.bytes_left = self.bytes_left.saturating_sub(id.len())
+                    }
+                    Value::TagSet(ids) => {
+                        self.bytes_left = self
+                            .bytes_left
+                            .saturating_sub(ids.iter().map(|s| s.len() + 3).sum())
+                    }
+                    _ => {}
+                }
                 if let Value::Str(text) = value {
                     self.bytes_left -= text.len();
                 }
