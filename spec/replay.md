@@ -31,6 +31,33 @@ Trace 记录起点首次推进观察，以及每次实际选择后的观察。�
 
 条件解释失败仍报告故事/表达式运行错误；展示的表达式和原因不改写条件的真实执行语义。协议异常与故事失败保持不同错误域。
 
+### 实际求值证据（可选扩展）
+
+`ConditionExplanation.evidence` 是可选的作者调试数据；缺少时不表示 false。
+旧字段 `expression/result/error` 保持原形状；旧 JSON 可不含 evidence。
+`Story::choice_evidence` 只读取最近暂停组或该组失败尝试的缓存，不执行表达式。
+未暂停、尚未执行的预测解释不携带实际证据。选择成功、重启或新一次组求值会使旧缓存失效。
+
+证据包含 `display_expression`（保留 AST 括号的显示式）、`nodes` 和 `omitted`。
+节点按 AST 先序提供 `parent`、`label` 与带 `status` 的结果：
+`evaluated` 附带原类型的 `value`；`error` 附带原运行错误 `message`；
+`not_evaluated` 仅表示该节点因前序错误没有执行。静态函数参数不伪装成运行变量节点。
+布尔 false 是正常求值结果，不是错误。证据来自同一次真实求值，不另行执行子表达式。
+当前二元运算按左、右顺序急切求值，包括 and/or；左侧错误则右侧不执行。
+本扩展不引入短路、不改变 RNG 消费、错误顺序、稳定选择身份或返回值。
+
+证据每个条件最多记录 128 个节点、24 层、16 KiB 文本与字符串值，单段文本最多
+2 KiB；同一选择组总计最多 512 个节点、64 KiB 证据文本与字符串值。超额只设置 `omitted:true` 或节点 `omitted`，不停止真实求值；
+“证据已省略”和“未求值”不是同一状态。显示文本可截断，但不改写原表达式。
+缓存不写入 Project、存档、ReplayTrace、运行观察或读者发布。
+失败的编辑器试玩冻结该次尝试，明确显示原错误；作者可显式重新开始。
+编辑器显示证据绑定当前运行及选择组；旧运行版本必须标明，不能混用最新编辑稿。
+
+RPC 仅在 `session.explain_choices` 的 `include_evidence:true` 时返回实际缓存证据；
+默认调用仍返回旧字段、不输出 evidence，未产生缓存时显式返回空 choices。
+新增字段由宽容的 JSON 消费者按可选扩展读取；使用封闭外部 schema 的消费者需要
+在选择启用该参数前更新 schema，不宣称所有外部消费者都无需适配。
+
 ## CLI 与 agent RPC
 
 `wl play` 可指定 `--seed` 并将 trace 写至 `--trace-output`。`wl replay <入口> --trace-json '<DTO>'` 可指定 `--max-steps` 与 `--time-budget-ms`。RPC 的 `session.open` 可传 `seed`；`session.trace`、`session.checkpoint` 与 `session.explain_choices` 读取同一 runtime API；`trace.replay` 接收同一 trace/budget DTO。CLI/RPC 的参数或 DTO 结构错误属于调用错误，节点/选择不匹配、预算耗尽、取消或运行失败是结构化故事结果。

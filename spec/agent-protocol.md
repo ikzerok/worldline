@@ -375,7 +375,7 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 | `session.open` | `{story_id, save?, seed?}`(save 为存档 JSON 字符串；seed 为新会话的非负整数随机种子，不能与 save 同用) | `{session_id, state}` |
 | `session.trace` | `{session_id}` | `{trace}`；输出与 CLI 相同的 runtime ReplayTrace |
 | `session.checkpoint` | `{session_id}` | `{checkpoint}`；仅用于相同 runtime/schema/fingerprint |
-| `session.explain_choices` | `{session_id}` | `{choices}`；只读解释当前选择组的条件与阻断原因 |
+| `session.explain_choices` | `{session_id,include_evidence?:bool}` | `{choices}`；默认旧形状只读解释；显式 true 只返回已实际执行的暂停/失败组证据，没有缓存则空数组；证据契约见 replay.md |
 | `trace.replay` | `{story_id, trace, max_steps?, time_budget_ms?}` | `{ok, replay}`；选择/观察不匹配和预算停止为结构化故事结果，不是 JSON-RPC 错误 |
 | `session.continue` | `{session_id}` | `{outputs, choices, state, paused, ended}`;运行期错误 → `ok:false` |
 | `session.choose` | `{session_id, index}`(**0 起**) | `{state, paused, ended, choices}`;越界 → error `-32602` |

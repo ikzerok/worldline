@@ -187,3 +187,6 @@ impl BufRead for MapMutatingReader {
         self.buffer.drain(..amount.min(self.buffer.len()));
     }
 }
+
+#[path = "protocol/condition_evidence.rs"]
+mod condition_evidence;

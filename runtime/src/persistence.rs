@@ -166,6 +166,7 @@ impl<'p> Story<'p> {
             state_history: state.state_history,
             choice_coverage: state.choice_coverage,
             trace: ReplayTrace::checkpoint(checkpoint),
+            failed_explanations: None,
         };
         story.frames = story.rebuild_frames(&saved_frames)?;
         if restore_pause {

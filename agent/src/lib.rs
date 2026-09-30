@@ -281,7 +281,14 @@ impl Server {
                 }
             }
             "session.explain_choices" => {
+                let include_evidence = match params.get("include_evidence") {
+                    Some(_) => param_bool(params, "include_evidence")?,
+                    None => false,
+                };
                 let s = self.session(params)?;
+                if include_evidence {
+                    return Ok(json!({ "choices": s.story.choice_evidence().unwrap_or(&[]) }));
+                }
                 match s.story.explain_choices() {
                     Ok(choices) => Ok(json!({ "choices": choices })),
                     Err(error) => Ok(json!({ "ok": false, "run_error": error })),

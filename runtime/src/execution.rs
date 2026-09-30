@@ -265,13 +265,16 @@ impl<'p> Story<'p> {
                     }
                     let mut choices = Vec::new();
                     let mut explanations = Vec::with_capacity(group_len);
+                    let mut evidence_budget = super::evidence::EvidenceBudget::default();
+                    self.failed_explanations = None;
                     let mut offset = 0usize;
                     let rng_before = self.rng.get();
                     while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
                         let mut identity =
                             self.choice_identity(fi, start, offset, c.label_raw.clone());
                         let condition = if let Some(cond) = &c.cond {
-                            let value = self.eval(cond).map_err(|mut error| {
+                            let (value, evidence) = self.eval_condition(cond, &mut evidence_budget);
+                            let value = value.map_err(|mut error| {
                                 error
                                     .node
                                     .get_or_insert_with(|| self.current_node().unwrap_or_default());
@@ -279,12 +282,31 @@ impl<'p> Story<'p> {
                                     error.line = Some(c.loc.line);
                                 }
                                 error
-                            })?;
+                            });
+                            let value = match value {
+                                Ok(value) => value,
+                                Err(error) => {
+                                    explanations.push(ChoiceExplanation {
+                                        choice: identity,
+                                        available: false,
+                                        condition: Some(ConditionExplanation {
+                                            expression: expression_source(cond),
+                                            result: None,
+                                            error: Some(error.message.clone()),
+                                            evidence: Some(evidence),
+                                        }),
+                                        unavailable_reason: Some("条件求值失败".into()),
+                                    });
+                                    self.failed_explanations = Some(explanations);
+                                    return Err(error);
+                                }
+                            };
                             let result = matches!(value, Value::Bool(true));
                             Some(ConditionExplanation {
                                 expression: expression_source(cond),
                                 result: Some(result),
                                 error: None,
+                                evidence: Some(evidence),
                             })
                         } else {
                             None
@@ -315,7 +337,22 @@ impl<'p> Story<'p> {
                                 continue;
                             }
                         }
-                        let (label, links) = self.render_parts(&c.label)?;
+                        let (label, links) = match self.render_parts(&c.label) {
+                            Ok(rendered) => rendered,
+                            Err(error) => {
+                                explanations.push(ChoiceExplanation {
+                                    choice: identity,
+                                    available: false,
+                                    condition,
+                                    unavailable_reason: Some(format!(
+                                        "选择标签求值失败：{}",
+                                        error.message
+                                    )),
+                                });
+                                self.failed_explanations = Some(explanations);
+                                return Err(error);
+                            }
+                        };
                         identity.label = label.clone();
                         choices.push(ChoiceView {
                             id: identity.id.clone(),
@@ -417,6 +454,7 @@ impl<'p> Story<'p> {
 
     /// 从头开始(多周目)。
     pub fn restart(&mut self) -> Result<(), RunError> {
+        self.failed_explanations = None;
         self.vars.clear();
         self.visits.clear();
         self.turns = 0;
