@@ -90,7 +90,10 @@ pub(super) fn append_maps(
             })
         });
         for marker in markers {
-            let label = marker.label_override.as_deref().unwrap_or("地图标记");
+            let label = match &marker.geometry {
+                MapGeometry::Text { text, .. } => text.as_str(),
+                _ => marker.label_override.as_deref().unwrap_or("地图标记"),
+            };
             let label = html_escape(label);
             let object_route = marker
                 .target_ref
@@ -120,7 +123,10 @@ pub(super) fn append_maps(
                 "<li><strong>{label}</strong> {}",
                 html_escape(&marker.annotation)
             ));
-            text.push_str(marker.label_override.as_deref().unwrap_or("地图标记"));
+            text.push_str(match &marker.geometry {
+                MapGeometry::Text { text, .. } => text,
+                _ => marker.label_override.as_deref().unwrap_or("地图标记"),
+            });
             text.push(' ');
             text.push_str(&marker.annotation);
             text.push(' ');
@@ -202,6 +208,12 @@ fn geometry(marker: &MapPlacement, width: f64, height: f64) -> String {
     match &marker.geometry {
         MapGeometry::Point { position } => format!("<circle cx=\"{}\" cy=\"{}\" r=\"5\" {style}/>", position[0] * width, position[1] * height),
         MapGeometry::Polyline { .. } => format!("<polyline points=\"{points}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_width}\" stroke-opacity=\"{stroke_opacity}\"/>"),
+        MapGeometry::Text { position, text, font_size, color } => {
+            let x = position[0] * width;
+            let y = position[1] * height + font_size;
+            let lines = text.split('\n').enumerate().map(|(i, line)| format!("<tspan x=\"{x}\" y=\"{}\">{}</tspan>", y + i as f64 * font_size * 1.2, html_escape(line))).collect::<String>();
+            format!("<text xml:space=\"preserve\" font-family=\"sans-serif\" font-size=\"{font_size}\" fill=\"{color}\">{lines}</text>")
+        }
         MapGeometry::Polygon { .. } => format!("<polygon points=\"{points}\" {style}/>"),
     }
 }

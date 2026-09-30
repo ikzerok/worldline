@@ -144,6 +144,26 @@ pub(crate) fn parse_map_document(
         &mut diagnostics,
     );
     structural_error |= placements.is_none();
+    if placements.as_ref().is_some_and(|items| {
+        items
+            .values()
+            .any(|item| matches!(item.geometry, super::MapGeometry::Text { .. }))
+    }) && !object
+        .get("required_features")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.as_str() == Some(super::TEXT_GEOMETRY_FEATURE))
+        })
+    {
+        diagnostics.push(map_error(
+            &file,
+            "MAP002",
+            "文字标签地图缺少 presentation.geometry.text.v1 必需能力声明",
+        ));
+        structural_error = true;
+    }
     let extensions = parse_extensions(object.get("extensions"), &file, &mut diagnostics);
     structural_error |= extensions.is_none();
 

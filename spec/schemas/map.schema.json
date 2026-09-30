@@ -308,6 +308,54 @@
                   }
                 },
                 "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "position",
+                  "text",
+                  "font_size",
+                  "color"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "text"
+                  },
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "description": "最多4行LF；必须含非空白字符；不得含LF以外控制字符"
+                  },
+                  "font_size": {
+                    "type": "number",
+                    "minimum": 12,
+                    "maximum": 64
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  }
+                },
+                "additionalProperties": true
               }
             ]
           },

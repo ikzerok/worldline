@@ -21,12 +21,34 @@ use std::path::Path;
 /// MapDocument 当前支持的格式版本。
 pub const MAP_SCHEMA_VERSION: u64 = 1;
 
+pub const TEXT_GEOMETRY_FEATURE: &str = "presentation.geometry.text.v1";
+
+/// 独立标签的纯文本、字号与颜色约束；解析与结构命令共用。
+pub fn valid_map_text(text: &str, font_size: f64, color: &str) -> bool {
+    !text.trim().is_empty()
+        && text.chars().count() <= 160
+        && text.split('\n').count() <= 4
+        && !text.chars().any(|c| c.is_control() && c != '\n')
+        && font_size.is_finite()
+        && (12.0..=64.0).contains(&font_size)
+        && color.len() == 7
+        && color.starts_with('#')
+        && color[1..].bytes().all(|c| c.is_ascii_hexdigit())
+}
+
 /// 地图展示文档解析结果中的稳定几何类型。
 #[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind")]
 pub enum MapGeometry {
     #[serde(rename = "point")]
     Point { position: [f64; 2] },
+    #[serde(rename = "text")]
+    Text {
+        position: [f64; 2],
+        text: String,
+        font_size: f64,
+        color: String,
+    },
     #[serde(rename = "polyline")]
     Polyline { points: Vec<[f64; 2]> },
     #[serde(rename = "polygon")]
@@ -40,7 +62,9 @@ impl MapGeometry {
 
     pub fn points(&self) -> &[[f64; 2]] {
         match self {
-            Self::Point { position } => std::slice::from_ref(position),
+            Self::Point { position } | Self::Text { position, .. } => {
+                std::slice::from_ref(position)
+            }
             Self::Polyline { points } | Self::Polygon { points } => points,
         }
     }

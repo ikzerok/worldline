@@ -461,3 +461,40 @@ fn maps_export_only_explicit_geometry_and_safe_links() {
         .is_err());
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn text_labels_export_escaped_multiline_and_never_unselected_text() {
+    use worldline_core::reader_export::ReaderMapSelection;
+    let root = project_root("text-label-export");
+    let manifest_path = root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["maps"] = serde_json::json!({"atlas":".world/atlas.json"});
+    fs::write(manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let marker = |text: &str| serde_json::json!({"target_ref":null,"role":"文字标签","annotation":"公开文字", "layer_id":"labels", "geometry":{"kind":"text","position":[0.2,0.3],"text":text,"font_size":24,"color":"#123456"}});
+    let map = serde_json::json!({"schema_version":1,"id":"atlas","title":"文字地图", "required_features":["presentation.geometry.text.v1"],"canvas":{"width":1000,"height":600,"unit":"normalized"},"layer_order":["labels"],"layers":{"labels":{"title":"labels","visible_default":true,"locked":false}},"placements":{"public":marker("  雾港  灯塔\n\n<script>&标记 "),"secret":marker("PRIVATE_LABEL_SENTINEL")}});
+    fs::write(
+        root.join(".world/atlas.json"),
+        serde_json::to_vec(&map).unwrap(),
+    )
+    .unwrap();
+    let project = Project::open(&root.join("world.wl")).unwrap();
+    let mut request = selection();
+    request.maps.push(ReaderMapSelection {
+        id: "atlas".into(),
+        placements: vec!["public".into()],
+        raster_layers: vec![],
+    });
+    let plan = project.preview_reader_export(&request).unwrap();
+    let files = project
+        .build_reader_export(&request, &plan.plan_digest)
+        .unwrap();
+    let html = String::from_utf8(files[Path::new("maps/m0001.html")].clone()).unwrap();
+    assert!(html.contains("<text xml:space=\"preserve\" font-family=\"sans-serif\""));
+    assert!(html.contains("<tspan x=\"200\" y=\"204\">  雾港  灯塔</tspan>"));
+    assert!(html.contains("<tspan x=\"200\" y=\"232.8\"></tspan>"));
+    assert!(html.contains("&lt;script&gt;&amp;标记 </tspan>"));
+    assert!(!html.contains("<script>&标记"));
+    assert!(!String::from_utf8_lossy(&output_bytes(&files)).contains("PRIVATE_LABEL_SENTINEL"));
+    let _ = fs::remove_dir_all(root);
+}
