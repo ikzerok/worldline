@@ -1,6 +1,8 @@
 //! 受限 SVG 到原生地图几何的转换；绝不保存可执行的 SVG 文档。
 mod geometry;
+mod path;
 mod transaction;
+mod transform;
 use crate::presentation::MapGeometry;
 use quick_xml::{events::Event, Reader};
 use serde_json::{json, Map, Value};
@@ -24,9 +26,10 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
         return Err("SVG 超过 2 MiB 上限".into());
     }
     let mut reader = Reader::from_str(source);
-    let mut stack: Vec<(String, BTreeMap<String, String>)> = Vec::new();
+    let mut stack: Vec<(String, BTreeMap<String, String>, transform::Transform)> = Vec::new();
     let mut bounds = None;
     let mut shapes = Vec::new();
+    let mut total_points = 0;
     let mut closed = false;
     loop {
         match reader
@@ -61,7 +64,7 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
                 }
                 if stack
                     .last()
-                    .is_some_and(|(name, _)| name != "svg" && name != "g")
+                    .is_some_and(|(name, _, _)| name != "svg" && name != "g")
                 {
                     return Err("SVG 图形不能包含子元素".into());
                 }
@@ -79,7 +82,8 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
                     }
                     let allowed = matches!(
                         key.as_str(),
-                        "id" | "fill"
+                        "id" | "transform"
+                            | "fill"
                             | "stroke"
                             | "stroke-width"
                             | "fill-opacity"
@@ -105,7 +109,7 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
                     }
                     attrs.insert(key, value);
                 }
-                let mut style = stack.last().map(|(_, s)| s.clone()).unwrap_or_else(|| {
+                let mut style = stack.last().map(|(_, s, _)| s.clone()).unwrap_or_else(|| {
                     BTreeMap::from([
                         ("fill".into(), "#000000".into()),
                         ("stroke".into(), "none".into()),
@@ -123,12 +127,32 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
                         style.insert(key.into(), value.clone());
                     }
                 }
-                let style_json = style_value(&style)?;
+                let local_transform = attrs
+                    .get("transform")
+                    .map(|value| transform::parse(value))
+                    .transpose()?
+                    .unwrap_or(transform::Transform::IDENTITY);
+                let transform = stack
+                    .last()
+                    .map(|(_, _, t)| *t)
+                    .unwrap_or(transform::Transform::IDENTITY)
+                    .then(local_transform)?;
+                let mut style_json = style_value(&style)?;
+                let width = style_json["stroke_width"].as_f64().unwrap() * transform.scale();
+                if !width.is_finite() || !(0.0..=100.0).contains(&width) {
+                    return Err("SVG 变换后的描边宽度须在 0–100 之间".into());
+                }
+                style_json.insert("stroke_width".into(), json!(width));
                 if tag == "svg" {
                     bounds = Some(geometry::bounds(&attrs)?);
                 }
                 if tag != "svg" && tag != "g" {
-                    let geometry = geometry::parse(&tag, &attrs, bounds.ok_or("缺少 SVG 坐标系")?)?;
+                    let geometry =
+                        geometry::parse(&tag, &attrs, bounds.ok_or("缺少 SVG 坐标系")?, transform)?;
+                    total_points += geometry.points().len();
+                    if total_points > 100_000 {
+                        return Err("SVG 总点数超过 100000 上限".into());
+                    }
                     shapes.push(SvgShape {
                         geometry,
                         style: style_json,
@@ -138,7 +162,7 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
                     }
                 }
                 if !empty {
-                    stack.push((tag, style));
+                    stack.push((tag, style, transform));
                     if stack.len() > 32 {
                         return Err("SVG 嵌套过深".into());
                     }
@@ -149,7 +173,7 @@ pub fn preview(source: &str) -> Result<SvgPreview, String> {
             Event::End(e) => {
                 let name = e.name();
                 let tag = std::str::from_utf8(name.as_ref()).map_err(|_| "SVG 标签无效")?;
-                if stack.pop().is_none_or(|(name, _)| name != tag) {
+                if stack.pop().is_none_or(|(name, _, _)| name != tag) {
                     return Err("SVG 标签未匹配".into());
                 }
                 if stack.is_empty() {
