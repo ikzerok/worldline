@@ -1,12 +1,14 @@
 //! 图形创作的源码修改接口。UI 传递字段,由 core 定位、生成并验证文本。
 mod choices;
 mod events;
+mod predecessors;
 mod world;
 use crate::ast::{ChangeKind, EffectWhen, PropertyValue};
 use crate::lexer::{lex_source, valid_identifier, Line, LineKind};
 use crate::project::Project;
 use crate::Severity;
 pub use choices::ChoiceDraft;
+pub use predecessors::{EventPredecessorOption, EventPredecessorOptions};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 

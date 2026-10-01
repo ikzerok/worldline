@@ -212,7 +212,19 @@ impl Project {
         ))
     }
 
+    /// 完整候选工程通过编译后才一次提交，包含已有后继的时间关系。
     pub fn write_event(
+        &mut self,
+        path: &Path,
+        original: Option<&str>,
+        draft: &EventDraft,
+    ) -> Result<(), String> {
+        let result = self.compile_current();
+        self.validate_event_edit(path, original, draft, &result)?;
+        self.edit(|candidate| candidate.replace_event_source(path, original, draft))
+    }
+
+    fn replace_event_source(
         &mut self,
         path: &Path,
         original: Option<&str>,
