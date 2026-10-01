@@ -43,6 +43,7 @@ impl Server {
         if result.has_errors() {
             return Ok(json!({
                 "ok": false,
+                "timeline": result.analysis.timeline,
                 "diagnostics": result.diagnostics,
                 "language_version": result.options.language_version.as_str(),
                 "workspace_diagnostics": workspace_diagnostics,
@@ -186,16 +187,19 @@ fn compile_options(params: &Value) -> Result<CompileOptions, ProtoError> {
     let version = version
         .as_str()
         .ok_or_else(|| ProtoError::new(-32602, "`language_version` 必须是字符串"))?;
-    match version {
-        "1.9" => Ok(CompileOptions::new(LanguageVersion::V1_9)),
-        "1.10" => Ok(CompileOptions::new(LanguageVersion::V1_10)),
-        "1.11" => Ok(CompileOptions::new(LanguageVersion::V1_11)),
-        "1.12" => Ok(CompileOptions::new(LanguageVersion::V1_12)),
-        _ => Err(ProtoError::new(
-            -32602,
-            format!("不支持的语言版本 `{version}`(可用: 1.9 / 1.10 / 1.11 / 1.12)"),
-        )),
-    }
+    LanguageVersion::from_supported_str(version)
+        .map(CompileOptions::new)
+        .ok_or_else(|| {
+            ProtoError::new(
+                -32602,
+                format!(
+                    "不支持的语言版本 `{version}`(可用: {})",
+                    LanguageVersion::SUPPORTED
+                        .map(LanguageVersion::as_str)
+                        .join(" / ")
+                ),
+            )
+        })
 }
 
 fn compile_path_input(

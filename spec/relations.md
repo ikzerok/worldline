@@ -105,14 +105,42 @@ RelationGraph {
 `relations`(target、label、file、line)、`events`(去重后的关联事件 ID)。
 人物关系图与反向事件列表直接消费此数据,不得在 UI 层另行解析。
 
-## 7. 时段与部分顺序(v1.6)
+## 7. 时段与部分顺序（1.6；1.13 显式跨时段扩展）
 
-`Analysis.timeline` 为 `{periods, events, edges}`。periods 元素含 id、display、parent、file、line；parent 为上级时段 ID，无上级为 null。
-events 元素含 event、period、rank;edges 元素含 before、after。
-rank 是同一时段先后约束的拓扑层级(零起),无约束为 0;同级事件不意味着同时发生。
-时间线消费者以时段分组、约束分列、同列并列,明确区分时间约束与执行跃迁。
-时段里的事件展示不再暗示声明顺序就是发生顺序。
-时间约束允许多前驱与跨故事线，但必须在同一时段内且无环（A213）；执行图的分支、汇合、回环不因此被禁止。正文概览按故事线与 seq 排列仅供阅读，不生成时间边。
+`Analysis.timeline` 为 `{periods, events, edges, order_scope, status}`。时间线由 core
+唯一分析；CLI JSON、RPC、Mermaid 与原生编辑器消费同一结果，不另推导排序。
+
+- `periods[]` 保留 id、display、parent、file、line，新增 `root: string | null`。
+  root 是沿显式 `within` 链到达的、已声明且没有 parent 的顶层时段；缺失上级、
+  循环包含或重复时段造成根身份不明确时为 null。parent 始终是直接上级。
+- `events[]` 保留 event、period、rank。period 始终是作者写的直接 `during`，
+  rank 仍仅计算同一直接时段内显式边的零起拓扑层级，绝不偷偷改成根内层级。
+  新增 root、order_scope（均为时段 ID 或 null）、root_rank（整数或 null）、status。
+- `order_scope` 顶层为 `direct_period`（1.9—1.12）或 `root_period`（显式1.13）。
+  事件的 order_scope 是该版本实际比较范围的 ID；旧版为直接时段，1.13 为 root。
+  1.13 的 root_rank 由同一根内全部合法显式边计算；旧版为 null。
+- `edges[]` 保留 before、after，新增 root（可为空）、order_scope（时段 ID）、
+  file、line，源码位置指向书写 `follows` 的后继事件头；边不会因传递性被自动补齐。
+- 顶层与事件 `status` 为 `complete` 或 `partial`。它表示分析完整性，不表示全序。
+  任一编译 error（包括解析错误造成的空/缺失节点）使整体和所有事件为 partial，
+  所有 root_rank 为 null。保留的旧 rank 此时仅是尽力投影，不得作为可信层级展示。
+  合法空时间线可以 complete；空数组本身从不证明无错误。调用方仍须展示编译诊断。
+
+默认1.9与显式1.10/1.11/1.12继续要求每条 `follows` 两端位于同一直接时段，否则
+A213。显式1.13允许两端在不同直接时段，但必须共享唯一明确顶层 root；根自身内事件
+和任意深度后代均可参与。独立根、未声明时段、没有时段、缺失前驱、自环与任何跨层
+循环均不可合法排序（A213；无效父关系仍为A219）。诊断指向后继事件头，已知前驱
+作为关联位置。父关系编辑立即重算整图并拒绝破坏已有约束的事务。
+
+父子、兄弟声明顺序、显示名、数字形似日期、`at`、正文及控制流都不产生时间边。
+同根不同 rank 也不直接证明两事件有先后关系；须沿显式边可达才有该约束。同 rank
+不代表同时发生，独立根的 rank 不可比较。原生图按直接时段分组，1.13 在同根范围
+按 root_rank 分列，注明范围和不完整状态，保留连线及源导航。Mermaid 保留层级和
+显式边并标出比较范围，不把源码声明顺序当时间。详见 [language-1.13.md](language-1.13.md)。
+
+执行图的分支、汇合、回环不因此被禁止；时间线不调度事件，不改变运行 fingerprint
+或存档兼容性。不提供日期、时长计算、日历转换或自动事实推理。
+
 ## 8. 独立语义关系查询（语言 1.10）
 
 `relation_type` 与 `relation_def` 是作者内容资料，和本文件前述的旧控制流
@@ -235,8 +263,12 @@ continuation 另携本次 `role_mapping`。`cycle_hint` 报告当前页 directed
 查询的根节点最小值；`max_edges=0` 可产生空且 truncated 的关系/历史页。
 
 历史时间仅投影现有 Timeline：事件有显式 period 时返回 `period` 与现有 `rank`，
-否则 `time_status="unknown"` 且不补日期。`temporal_edges` 只返回当前页事件之间已有
-的直接 `before → after` 约束。`parallel_groups` 只分组相同直接 period/rank 的事件；
+新增 `root`、`order_scope`（完整 period TargetRef）、`root_rank` 与 `status`。
+不完整投影的 `time_status="partial"`，rank/root_rank 均为 null；无时段仍为
+`time_status="unknown"` 且不补日期。历史顶层 `timeline_status` 保留全图完整性，
+即使当前历史页为空也不掩盖编译错误。`temporal_edges` 只返回当前页事件之间已有
+的直接 `before → after` 约束。`parallel_groups` 只分组相同实际 order_scope/有效显示 rank 的事件；旧版本为直接
+period/rank，1.13 为 root/root_rank，不完整事件不分组；
 parallel 只表示同一拓扑层级、不表示同时发生。不同 rank 不推出先后，数组按稳定
 对象 ID 排序，不生成全序、日期或冲突裁定。工作区诊断仍由调用方单独返回。
 

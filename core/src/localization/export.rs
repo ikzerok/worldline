@@ -345,6 +345,10 @@ pub(super) fn source_baseline(project: &Project) -> Result<String, String> {
         options.language_version.as_str().as_bytes(),
     );
     append_field(&mut bytes, b"object-refs", &[u8::from(options.object_refs)]);
+    // Preserve pre-1.13 baselines exactly when the new capability is absent.
+    if options.character_refs {
+        append_field(&mut bytes, b"character-refs", &[1]);
+    }
     append_field(
         &mut bytes,
         b"localization-ids",

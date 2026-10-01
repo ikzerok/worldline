@@ -201,3 +201,5 @@ AnchorRecord {
 语言 1.11 的规则、片段调用帧和类型化集合另见 [language-1.11.md](language-1.11.md)，取代本页旧版“无 call stack”对1.11的描述。
 
 显式语言1.12的可见禁用选择见 [choices.md](choices.md)：旧if仍隐藏，enable独立判定可选性；旧choices仅含可选项，全锁仍落穿。
+
+显式语言1.13只扩展作者静态偏序和人物 Ref 属性，见 [language-1.13.md](language-1.13.md)。Ref 属性、schema 和时间元数据保持排除于运行指纹；普通世界/人物标量资料的既有指纹规则不变。人物自身稳定 ID 改名仍影响运行身份，不承诺旧档兼容。

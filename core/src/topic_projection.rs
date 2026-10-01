@@ -4,7 +4,7 @@ use crate::relations::{
     expand_period_scope_refs, relation_matches_scope, RelationQueryContinuation,
     RelationQueryDirection, RelationQueryNode, RelationQueryOptions,
 };
-use crate::timeline::TemporalEdge;
+use crate::timeline::{TemporalEdge, TimelineStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -134,6 +134,7 @@ pub struct TopicProjectionHistoryItem {
 pub enum TopicProjectionTimeStatus {
     Unknown,
     PeriodRanked,
+    Partial,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,11 +145,16 @@ pub struct TopicProjectionHistoryEvent {
     pub time_status: TopicProjectionTimeStatus,
     pub period: Option<TargetRef>,
     pub rank: Option<u32>,
+    pub root: Option<TargetRef>,
+    pub order_scope: Option<TargetRef>,
+    pub root_rank: Option<u32>,
+    pub status: TimelineStatus,
     pub anchors: Vec<TargetRef>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TopicProjectionHistory {
+    pub timeline_status: TimelineStatus,
     pub items: Vec<TopicProjectionHistoryItem>,
     pub events: Vec<TopicProjectionHistoryEvent>,
     pub temporal_edges: Vec<TemporalEdge>,
@@ -388,9 +394,13 @@ impl Analysis {
             let temporal = temporal_by_event.get(target.id.as_str()).copied();
             let (time_status, period, rank) = match temporal {
                 Some(temporal) => (
-                    TopicProjectionTimeStatus::PeriodRanked,
+                    if temporal.status == TimelineStatus::Complete {
+                        TopicProjectionTimeStatus::PeriodRanked
+                    } else {
+                        TopicProjectionTimeStatus::Partial
+                    },
                     Some(TargetRef::new("period", &temporal.period)),
-                    Some(temporal.rank),
+                    (temporal.status == TimelineStatus::Complete).then_some(temporal.rank),
                 ),
                 None => (TopicProjectionTimeStatus::Unknown, None, None),
             };
@@ -410,6 +420,14 @@ impl Analysis {
                     time_status,
                     period,
                     rank,
+                    root: temporal
+                        .and_then(|t| t.root.as_ref())
+                        .map(|id| TargetRef::new("period", id)),
+                    order_scope: temporal
+                        .and_then(|t| t.order_scope.as_ref())
+                        .map(|id| TargetRef::new("period", id)),
+                    root_rank: temporal.and_then(|t| t.root_rank),
+                    status: self.timeline.status,
                     anchors,
                 },
             );
@@ -428,9 +446,10 @@ impl Analysis {
 
         let mut parallel = BTreeMap::<(String, u32), Vec<TargetRef>>::new();
         for event in event_data.values() {
-            if let (Some(period), Some(rank)) = (&event.period, event.rank) {
+            if let (Some(scope), Some(rank)) = (&event.order_scope, event.root_rank.or(event.rank))
+            {
                 parallel
-                    .entry((period.id.clone(), rank))
+                    .entry((scope.id.clone(), rank))
                     .or_default()
                     .push(event.target.clone());
             }
@@ -448,6 +467,7 @@ impl Analysis {
         target_anchors.sort();
 
         TopicProjectionHistory {
+            timeline_status: self.timeline.status,
             items,
             events: event_data.into_values().collect(),
             temporal_edges,

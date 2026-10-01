@@ -97,7 +97,7 @@ pub(super) fn analyze(
         })
         .collect();
 
-    let timeline = crate::timeline::analyze(program, &mut ctx.diags);
+    let mut timeline = crate::timeline::analyze(program, &mut ctx.diags);
     let mut graph = RelationGraph {
         nodes: ctx.graph_nodes,
         ids: ctx.node_ids,
@@ -114,6 +114,7 @@ pub(super) fn analyze(
     let mut all = std::mem::take(&mut ctx.diags);
     all.append(&mut diags);
     sort_diagnostics(&mut all);
+    timeline.mark_incomplete(&all);
 
     let analysis = Analysis {
         catalog,

@@ -18,6 +18,8 @@ pub struct DeletionImpact {
     pub target: TargetRef,
     pub target_exists: bool,
     pub content_references: Vec<ReferenceInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub template_references: Vec<ReferenceInfo>,
     pub map_placements: Vec<MapPlacementRef>,
     pub map_scopes: Vec<MapPlacementRef>,
     pub map_rasters: Vec<MapRasterRef>,
@@ -34,6 +36,7 @@ impl DeletionImpact {
         self.target_exists
             && self.complete
             && self.content_references.is_empty()
+            && self.template_references.is_empty()
             && self.map_placements.is_empty()
             && self.map_scopes.is_empty()
             && self.map_rasters.is_empty()
@@ -91,6 +94,7 @@ pub fn deletion_impact(
         target: target.clone(),
         target_exists: content.analysis.catalog.object(target).is_some(),
         content_references: content_deletion_references(content, target),
+        template_references: Vec::new(),
         map_placements: maps
             .placements_by_target
             .iter()
@@ -195,6 +199,11 @@ impl Project {
                 impact.diagnostics.push(diagnostic.clone());
             }
         }
+        let templates = self.template_index();
+        impact.template_references = templates.references_to(target);
+        impact
+            .diagnostics
+            .extend(templates.diagnostics.iter().cloned());
         let manuscripts = self.manuscript_indices();
         for index in manuscripts.values() {
             impact.manuscripts.extend(index.references_to(target));

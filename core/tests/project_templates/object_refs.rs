@@ -29,7 +29,7 @@ fn template_object_ref_target_kind_is_restricted_with_source_location() {
   "title":"不支持的目标",
   "applies_to":{"kind":"entity","entity_type":"place"},
   "fields":[
-    {"id":"keeper_field","key":"keeper","label":"守灯人","type":"object_ref","required":false,"target":{"kind":"character"}}
+    {"id":"keeper_field","key":"keeper","label":"守灯人","type":"object_ref","required":false,"target":{"kind":"event"}}
   ]
 }"#,
     )

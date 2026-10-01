@@ -82,13 +82,12 @@ pub(super) fn parse_file_args(
 }
 
 pub(super) fn parse_language_version(value: &str) -> Result<LanguageVersion, String> {
-    match value {
-        "1.9" => Ok(LanguageVersion::V1_9),
-        "1.10" => Ok(LanguageVersion::V1_10),
-        "1.11" => Ok(LanguageVersion::V1_11),
-        "1.12" => Ok(LanguageVersion::V1_12),
-        _ => Err(format!(
-            "不支持的语言版本 `{value}`(可用: 1.9 / 1.10 / 1.11 / 1.12)"
-        )),
-    }
+    LanguageVersion::from_supported_str(value).ok_or_else(|| {
+        format!(
+            "不支持的语言版本 `{value}`(可用: {})",
+            LanguageVersion::SUPPORTED
+                .map(LanguageVersion::as_str)
+                .join(" / ")
+        )
+    })
 }

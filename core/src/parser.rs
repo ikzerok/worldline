@@ -51,10 +51,12 @@ fn parse_property_value(
             let [Expr::Str(kind), Expr::Str(id)] = args.as_slice() else {
                 return Err("ref 属性值格式为 ref(\"kind\", \"id\")，只接受两个字符串字面量");
             };
-            if id.trim().is_empty()
-                || !crate::catalog::OBJECT_REFERENCE_TARGET_KINDS.contains(&kind.as_str())
-                || !crate::catalog::is_target_kind(kind, options)
-            {
+            if kind == "character" && !crate::catalog::is_object_reference_kind(kind, options) {
+                return Err(
+                    "人物 ref 属性值需要显式语言 1.13 与清单能力 content.character_refs.v1",
+                );
+            }
+            if id.trim().is_empty() || !crate::catalog::is_object_reference_kind(kind, options) {
                 return Err("ref 属性值的目标类型或 ID 无效");
             }
             Ok(PropertyValue::Ref(relation_target(file, kind, id)))
@@ -124,6 +126,7 @@ pub struct Parser<'a> {
     cur_storyline: Option<String>,
     language_version: crate::compiler::LanguageVersion,
     allow_object_refs: bool,
+    allow_character_refs: bool,
     allow_localization_ids: bool,
 }
 
@@ -144,6 +147,7 @@ impl<'a> Parser<'a> {
             cur_storyline: None,
             language_version: options.language_version,
             allow_object_refs: options.object_refs,
+            allow_character_refs: options.character_refs,
             allow_localization_ids: options.localization_ids,
         }
     }
@@ -167,6 +171,7 @@ impl<'a> Parser<'a> {
     fn options(&self) -> crate::compiler::CompileOptions {
         crate::compiler::CompileOptions::new(self.language_version)
             .with_object_refs(self.allow_object_refs)
+            .with_character_refs(self.allow_character_refs)
             .with_localization_ids(self.allow_localization_ids)
     }
 }

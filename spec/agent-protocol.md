@@ -7,6 +7,13 @@ CAP-01A 的[就地建档组合意图](authoring-intents.md)由 core Project API�
 
 时段包含扩展：`timeline.periods[]` 新增 `parent: string | null`，保存直接上级 ID。父子层级由 core 验证，未知上级及循环包含为 A219 编译诊断。CLI 与 RPC 同时返回该字段，不影响会话状态和运行指纹。
 
+世界时间投影扩展（显式语言1.13）：`timeline` 新增 `order_scope` 与 `status`，
+period/event/edge保留直接身份并附明确root/scope；event新增root_rank，旧rank仍限直接时段内部边。
+全图编译错误为partial且root_rank为null，即使空图也不伪装complete。CLI/RPC使用相同core
+DTO；`timeline --json` 编译失败仍返回 `type:"compile_failed"`、`ok:false`、诊断及
+标为partial的timeline，退出码1；RPC compile失败结果同样附timeline而不创建story_id。
+完整字段与不可比较边界见 [relations.md §7](relations.md)。
+
 资料导航扩展：CLI `catalog --json` 与 agent `analyze.catalog` 的目录新增 `aliases`（target/name/file/line）和 `text_links`（source/target/label/file/line/column）数组；正文引用同时出现在 references。属于向后兼容的附加字段，旧消费者可忽略。未知别名／正文链接目标为 A218 编译诊断；格式错误为 P004；故事层仍返回 `ok:false`，不变成 JSON-RPC 协议错误。播放输出只包含链接的显示文字，不增加运行记录或另一份状态。
 **生产者:** `wl`(JSON 模式)、`wl-agent`(`worldline-agent` crate)
 **消费者:** 外部 agent 程序、CI、测试
@@ -60,7 +67,7 @@ catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
 属于协议版本 1 的向后兼容扩展。详见 [catalog.md](catalog.md)。
 
 人类模式输出保持不变;`--json` 切换机器输出。标志:`--load=<存档.json>`、
-`--save=<存档.json>`、`--language-version=1.9|1.10|1.11|1.12`、`--json`。未指定
+`--save=<存档.json>`、`--language-version=1.9|1.10|1.11|1.12|1.13`、`--json`。未指定
 `--language-version` 时,目录或入口若位于带 `language_version` 的工程清单中,
 由清单选择语言版本;没有清单的旧调用仍固定使用 1.9。直接 source API 和旧
 CLI 调用不会因出现 `entity` 文本而隐式升级。

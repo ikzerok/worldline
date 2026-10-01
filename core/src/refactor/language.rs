@@ -12,6 +12,13 @@ pub(super) fn rewrite(line: &str, target: &TargetRef, new_id: &str) -> (String, 
     let code = &line[..code_len.min(line.len())];
     let suffix = &line[code.len()..];
     let trimmed = code.trim_start();
+    let parsed = crate::lexer::lex_source_with_options(
+        "rename.wl",
+        code,
+        &mut Vec::new(),
+        crate::CompileOptions::v1_11(),
+    );
+    let kind = parsed.first().map(|line| &line.kind);
     let mut output = String::new();
     let mut count = 0;
     let mut previous = String::new();
@@ -40,14 +47,7 @@ pub(super) fn rewrite(line: &str, target: &TargetRef, new_id: &str) -> (String, 
             );
         }
     }
-    let text_line = crate::lexer::lex_source_with_options(
-        "rename.wl",
-        code,
-        &mut Vec::new(),
-        crate::CompileOptions::v1_11(),
-    )
-    .first()
-    .is_some_and(|l| matches!(l.kind, crate::lexer::LineKind::Text { .. }));
+    let text_line = matches!(kind, Some(crate::lexer::LineKind::Text { .. }));
     if text_line {
         let (text, hits) = super::text::rewrite(code, target, new_id, true, false);
         return (format!("{text}{suffix}"), hits);

@@ -30,8 +30,8 @@ tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制�
 它或显示名不修改 ID，也不改变地图标记的位置；同名的 character、tag 和 entity
 保持独立。实体只进入 `catalog.entities` 和统一 `catalog.objects`，不进入事件
 执行结构或运行指纹。description/property 的规则与 world 相同，属性值可为字符串、
-有限数值、布尔值或显式 `ref("kind", "id")` 对象引用；后者只在语言 1.10 支持并
-要求 `content.object_refs.v1`，kind 限定为 `entity` 与 `relation`，以保证 core 重命名和
+有限数值、布尔值或显式 `ref("kind", "id")` 对象引用；后者自语言 1.10 支持并
+要求 `content.object_refs.v1`，1.10–1.12 的 kind 限定为 `entity` 与 `relation`；1.13 仅按 [character-refs.md](character-refs.md) 扩展静态人物引用，以保证 core 重命名和
 删除保护完整。字符串不因模板字段或内容猜测而升级为引用。
 
 实体的正文链接写作 `[[entity:ID|显示文字]]`，并遵守正文链接的转义和目标存在
@@ -181,3 +181,7 @@ property 只匹配目录可取得的字面量属性（character、entity、relat
 命中额外返回 `display`，与 target/source/reasons 来自同一 core 快照。改变排序改变查询指纹，旧游标失效；取消在过滤、排序前后检查，取消不返回部分页。排序和查询均不写源码或展示文档。
 
 保存显式排序时，仍使用已有查询展示文档，文档顶层声明 `required_features:["catalog.query_sort.v1"]`，清单保留 `catalog.saved_queries.v1`，不升级语言或清单能力。新版拒绝载入缺少此声明的排序定义；旧版因查询版本拒绝执行，并因文档能力只读保留原字节。恢复默认并显式保存时清除 query.sort、恢复 query.schema_version=1，且只移除本功能的能力声明；无关未知字段与能力不得丢失。未使用排序的旧查询不因浏览而迁移。
+
+显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。
+
+删除影响的 `template_references` 列出工程模板默认强引用，复用 ReferenceInfo 的完整目标、文档路径与字段行号；为空时不序列化。模板默认值也阻止删除，引用诊断不完整时不能声称安全。

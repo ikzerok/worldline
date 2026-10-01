@@ -1,6 +1,6 @@
 # 语言 1.12：持续资料约束
 
-本规范先于实现定义语义。默认编译仍为 1.9，显式 1.10/1.11 不升级；新声明只在显式 `language_version: "1.12"` 或 `CompileOptions::v1_12()` 中识别。未知语言版本的工作区由既有清单保护按只读保留。强引用仍另需既有 `content.object_refs.v1` 能力；schema 不扩大 ref kind。
+本规范先于实现定义语义。默认编译仍为 1.9，显式 1.10/1.11 不升级；新声明自显式 `language_version: "1.12"` 或 `CompileOptions::v1_12()` 起识别，1.13 延续。未知语言版本的工作区由既有清单保护按只读保留。强引用仍另需既有 `content.object_refs.v1` 能力；1.12 schema 不扩大 ref kind；1.13 的静态人物扩展另见 [character-refs.md](character-refs.md)。
 
 ## 声明与身份
 
@@ -24,7 +24,7 @@ entity harbor kind place as "港城"
 - `schema ID for KIND [entity_type SUBTYPE] [closed]` 是顶层声明。KIND 仅为 world、character、entity、relation；entity_type 仅可用于 entity。ID 在工程 schema 命名空间唯一。
 - 块内仅 `field FIELD_ID KEY TYPE [required]`，TYPE 为 text、number、boolean、enum 或 ref。FIELD_ID 是 schema 内稳定身份，KEY 是实例已有 property 键，二者分别唯一。改 KEY 不更换 FIELD_ID，也绝不自动改已有 property。
 - enum 后跟一个或多个带引号字符串，不接受表达式、数值或布尔枚举。重复枚举值是声明错误。required 位于类型完整子句后。
-- ref 后必须写 entity 或 relation；entity 可再写 `entity_type SUBTYPE`。目标存在性由原强引用校验器处理，schema 额外核对完整 kind 和可选实体子类。文本不会被提升为引用。
+- 1.12 ref 后必须写 entity 或 relation；1.13 双能力保护下可写 character；entity 可再写 `entity_type SUBTYPE`。目标存在性由原强引用校验器处理，schema 额外核对完整 kind 和可选实体子类。文本不会被提升为引用。
 - `bind KIND ID to SCHEMA_ID` 是顶层显式绑定。每个对象只能绑定一次（即使绑定相同 schema 也报错）；对象和 schema 均须存在且 kind/subtype 适配。不提供 kind 全局覆盖、自动绑定、继承或合并。
 - schema 与 field ID 是静态约束身份，不成为可执行状态，也不新增 TargetRef kind。schema 列表及字段、绑定投影保留 file/line 源位置；对象绑定同时进入 catalog.references，参与既有对象重命名和删除影响。删除绑定对象须先显式去除绑定；schema/field 的改名、移除使用源码编辑影响计划，未同步的绑定诊断报错，不猜测重命名意图。
 
@@ -46,3 +46,5 @@ required 只判断该 key 是否实际存在；0、false、空字符串是已填
 `apply_schema_edit(request, plan_digest)` 重新构造计划，校验当前内容基线、磁盘冲突、只读/能力边界和摘要，整笔仅修改内存；拒绝/取消零修改。旧 schema 或实例值不会自动补写、删改或强转。调用方保存 Project 前后快照，统一撤销/重做；错误草稿允许应用和保存，发布仍阻断。完整源码包含多处 schema/绑定时作为同一文件的原子事务；跨文件修改继续使用工作区既有事务而不伪称本 API 支持隐式跨文件重写。
 
 schema 声明、字段约束、绑定及其位置不进入 runtime fingerprint。1.12 本身不额外混入版本盐；未使用运行新增能力时，仅增加、编辑或删除静态约束不得使存档失效。约束不授权公开任何属性、schema 文本或引用目标，读者包仍严格使用既有白名单。
+
+显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。

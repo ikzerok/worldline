@@ -25,7 +25,9 @@ fn field_changes(
                 (Some(old), Some(new))
                     if old.required != new.required
                         || old.default != new.default
-                        || old.choices != new.choices =>
+                        || old.choices != new.choices
+                        || old.target != new.target
+                        || old.target_entity_type != new.target_entity_type =>
                 {
                     "constraints_changed"
                 }

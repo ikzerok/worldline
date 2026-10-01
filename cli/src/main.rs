@@ -35,7 +35,7 @@ fn main() -> ExitCode {
             eprintln!("      wl schema-index <工程目录> [--json]");
             eprintln!("      wl schema-preview <工程目录> --request-json '<DTO>' [--json]");
             eprintln!("      wl schema-apply <工程目录> --request-json '<DTO>' --plan-digest 摘要 [--json]");
-            eprintln!("      check/play/replay/graph/timeline/catalog 可显式指定 --language-version=1.9|1.10|1.11|1.12");
+            eprintln!("      check/play/replay/graph/timeline/catalog 可显式指定 --language-version=1.9|1.10|1.11|1.12|1.13");
             eprintln!("      wl authoring-intent preview|apply <目录或入口> --intent-json '<JSON DTO>' [--json]");
             eprintln!("      wl markdown import preview|apply <工程目录> --source <Markdown目录> --baseline <基线> [--id-map-json '<JSON 对象>'] [--namespace ID] [apply: --plan-digest 摘要 --accept-losses --allow-language-upgrade] [--json]");
             eprintln!("      wl workspace check <目录> [--json]");

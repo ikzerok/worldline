@@ -1,6 +1,7 @@
 //! 跨源码与展示文档的稳定 TargetRef 重命名计划。
 mod documents;
 mod language;
+mod property;
 mod text;
 use crate::catalog::TargetRef;
 use crate::project::Project;
@@ -296,6 +297,14 @@ fn validate_candidate(
             return Err("重命名候选仍含有旧 ID 的书稿引用".into());
         }
     }
+    if let Some(error) = project
+        .template_index()
+        .diagnostics
+        .iter()
+        .find(|item| item.severity == Severity::Error)
+    {
+        return Err(format!("{} {}", error.code, error.message));
+    }
     if matches!(old_target.kind.as_str(), "entity" | "relation")
         && before.analysis.fingerprint != compiled.analysis.fingerprint
     {
@@ -310,11 +319,16 @@ fn rewrite_source(
     new_id: &str,
 ) -> (String, usize) {
     let mut out = String::with_capacity(source.len());
+    let property_ranges = property::reference_ranges(source, target);
     let mut count = 0usize;
     for (index, part) in source.split_inclusive('\n').enumerate() {
         let line = index as u32 + 1;
         if lines.contains(&line) {
-            let (rewritten, hits) = rewrite_source_line(part, target, new_id);
+            let (rewritten, hits) = match property_ranges.get(&line) {
+                Some(Some(range)) => property::rewrite(part, range.clone(), new_id),
+                Some(None) => (part.to_owned(), 0),
+                None => rewrite_source_line(part, target, new_id),
+            };
             out.push_str(&rewritten);
             count += hits;
         } else {

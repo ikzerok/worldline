@@ -16,33 +16,55 @@ pub enum LanguageVersion {
     V1_11,
     #[serde(rename = "1.12")]
     V1_12,
+    #[serde(rename = "1.13")]
+    V1_13,
 }
 
 impl LanguageVersion {
+    /// 清单、CLI、RPC 与机器 Schema 的支持集合真源。
+    pub const SUPPORTED: [Self; 5] = [
+        Self::V1_9,
+        Self::V1_10,
+        Self::V1_11,
+        Self::V1_12,
+        Self::V1_13,
+    ];
+
+    pub fn from_supported_str(value: &str) -> Option<Self> {
+        Self::SUPPORTED
+            .into_iter()
+            .find(|version| version.as_str() == value)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::V1_9 => "1.9",
             Self::V1_10 => "1.10",
             Self::V1_11 => "1.11",
             Self::V1_12 => "1.12",
+            Self::V1_13 => "1.13",
         }
     }
 
     pub const fn supports_entities(self) -> bool {
-        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12)
+        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12 | Self::V1_13)
     }
 
     pub const fn supports_language_111(self) -> bool {
-        matches!(self, Self::V1_11 | Self::V1_12)
+        matches!(self, Self::V1_11 | Self::V1_12 | Self::V1_13)
     }
 
     pub const fn supports_language_112(self) -> bool {
-        matches!(self, Self::V1_12)
+        matches!(self, Self::V1_12 | Self::V1_13)
+    }
+
+    pub const fn supports_language_113(self) -> bool {
+        matches!(self, Self::V1_13)
     }
 
     /// 语义关系与通用实体一起在语言 1.10 显式启用。
     pub const fn supports_relations(self) -> bool {
-        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12)
+        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12 | Self::V1_13)
     }
 }
 
@@ -53,6 +75,9 @@ pub struct CompileOptions {
     /// 显式启用清单能力 `content.object_refs.v1`。独立源码编译默认关闭。
     #[serde(default)]
     pub object_refs: bool,
+    /// 显式启用静态人物引用能力 content.character_refs.v1。
+    #[serde(default)]
+    pub character_refs: bool,
     /// 显式启用清单能力 `content.localization.v1`。
     #[serde(default)]
     pub localization_ids: bool,
@@ -63,6 +88,7 @@ impl Default for CompileOptions {
         Self {
             language_version: LanguageVersion::V1_9,
             object_refs: false,
+            character_refs: false,
             localization_ids: false,
         }
     }
@@ -73,12 +99,17 @@ impl CompileOptions {
         Self {
             language_version,
             object_refs: false,
+            character_refs: false,
             localization_ids: false,
         }
     }
 
     pub const fn v1_9() -> Self {
         Self::new(LanguageVersion::V1_9)
+    }
+
+    pub const fn v1_13() -> Self {
+        Self::new(LanguageVersion::V1_13)
     }
 
     pub const fn v1_12() -> Self {
@@ -95,6 +126,11 @@ impl CompileOptions {
 
     pub const fn with_object_refs(mut self, enabled: bool) -> Self {
         self.object_refs = enabled;
+        self
+    }
+
+    pub const fn with_character_refs(mut self, enabled: bool) -> Self {
+        self.character_refs = enabled;
         self
     }
 
