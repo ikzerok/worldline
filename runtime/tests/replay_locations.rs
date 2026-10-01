@@ -174,9 +174,12 @@ fn copied_workspace_and_moved_shared_fragment_replay_with_current_navigation() {
         }
         let paused = replay(&changed, &paused_trace);
         assert_replayed(&paused, false);
+        let expected_file = fragment_path
+            .split('/')
+            .fold(copy.root.clone(), |path, component| path.join(component));
         assert_eq!(
             paused.current_state["calls"][0]["file"],
-            copy.root.join(fragment_path).to_string_lossy().as_ref()
+            expected_file.to_string_lossy().as_ref()
         );
         assert_eq!(paused.current_state["calls"][0]["line"], 3);
     }
