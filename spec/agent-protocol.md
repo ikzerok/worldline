@@ -427,8 +427,8 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 v1.6 向后兼容扩展:`compile.path` 与所有 CLI 文件参数接受工程目录(解析 world.wl)。
 `analyze.world` 和角色 properties / relations / events 字段见 relations.md §6。
 协议版本仍为 1,消费者应忽略不认识的新增字段。`language_version` 是编译选项
-的机器投影;实体对象只出现在 `catalog.entities` 和作者资料编辑结果,不会进入
-运行时状态或 fingerprint。`project.open` 返回的 `baseline` 是
+的机器投影;实体定义出现在 `catalog.entities` 和作者资料编辑结果，定义本身不进入
+运行时状态或 fingerprint；但 state 所属实体的稳定 ID 仍参与运行指纹。`project.open` 返回的 `baseline` 是
 `Project::content_baseline()` 计算的内容基线,覆盖源码、工程清单和已注册展示文档的
 相对路径、原始字节与删除状态,不使用 runtime fingerprint。后续编辑请求可回传它
 保护陈旧请求。已有 `project_id` 的 `project.analyze` 与 `entity.*` 每次先刷新磁盘源码及
@@ -591,3 +591,11 @@ RPC initialize响应capabilities包含`runtime.choice_presentation.v1`；session
 `runtime.bounded_continue.v1` 通过 initialize/session.open 显式协商。普通继续始终
 有默认保护，旧消费者正常字段不变，超限是 `ok:false` 故事结果。新增预算、
 取消方法、CLI 标志与输出完整契约见 [bounded-execution.md](bounded-execution.md)。
+
+## 稳定 ID 重构计划兼容投影
+
+Rust `Project::plan_rename_target -> Result<RenamePlan, String>` 与既有序列化字段保持兼容，不新增 JSON-RPC 方法。`RenamePlan` 额外暴露 `runtime_fingerprint_before` / `runtime_fingerprint_after`（u64）；每个 `RefactorChange` 额外暴露 `occurrences`，逐处含 `line`、可选 `field`、`before_range` / `after_range`（`{start,end}`，文档 UTF-8 字节半开范围）、`before_token` / `after_token`、`before_context` / `after_context`。语境是计划真实前后字节的完整行，JSON 的 field 是 JSON Pointer；未知新增字段按既有协议规则忽略。原始 before/after 文件字节仍不序列化；机器消费者不能编辑逐处清单授权部分重构。完整基线、范围、语境与候选在应用前重新校验，篡改或过期整批拒绝。
+
+entity/relation 改名仅在运行指纹不变时成功。尤其 state 所属 entity 的稳定 ID 改名安全拒绝，返回中文错误，包含受影响 state ID/文件/行、旧/候选 fingerprint、旧 Story save/检查点的指纹不匹配原因、入口 replay 需按当前稿重新受控验证的边界，以及仅修改实体显示名的路径。实体定义本身排除于运行指纹不意味着对它的所有运行引用也排除。
+
+旧计数字段仍表示实际身份引用数，不要求与 occurrences 项数相等。旧类型的字符串语法重编码可将整条实际变更行投影为 `field:"source.syntax"`，明确不是单个身份 token；entity/relation 计划始终每个身份 token 一项。

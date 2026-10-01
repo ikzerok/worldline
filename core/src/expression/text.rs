@@ -82,7 +82,11 @@ pub(super) fn parse_with_ranges(
                 if !lit.is_empty() {
                     parts.push(TextPart::Str(std::mem::take(&mut lit)));
                 }
+                let id_start = i + 3 + target.kind.chars().count();
+                let id_end = id_start + target.id.chars().count();
                 parts.push(TextPart::Link(crate::navigation::InlineLink {
+                    id_start,
+                    id_end,
                     target,
                     label,
                     start: i,

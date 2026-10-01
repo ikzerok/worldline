@@ -113,6 +113,8 @@ pub(super) fn parse_with_ranges(
         match part {
             TextPart::Expr(expr) => remap_expr(expr, base_col, &positions),
             TextPart::Link(link) => {
+                link.id_start = positions.get(link.id_start).copied().unwrap_or(chars.len());
+                link.id_end = positions.get(link.id_end).copied().unwrap_or(chars.len());
                 link.start = positions.get(link.start).copied().unwrap_or(chars.len());
                 link.end = positions.get(link.end).copied().unwrap_or(chars.len());
                 link.column = base_col + link.start as u32;

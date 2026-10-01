@@ -59,3 +59,9 @@ event arrival with lin after has(mood, calm)
 片段中的旧静态become仍检查所有状态/标签身份，按定义位置进入同一状态变更索引。StateChangeSite的可选source是完整fragment身份；event为空表示调用前无法确定实际执行事件，不把片段当事件。运行后state_history仍记录真实调用者事件和片段节点。
 
 动态动作保留state_expression与tags_expression，Catalog.dynamic_state_changes列出所有定义位置和选择/条件上下文。仅state(id)等直接可确定目标同时挂入该状态的changes；参数或运行表达式目标不猜实例。静态tags构造可列出已知标签，表达式字段始终保留，空tags不意味着清空结果。索引不求值、不改变状态、不自动展开调用。1.11锚点可明确关联rule/fragment，状态与fragment关联的交集查询使用source身份。
+
+## 所属对象身份与安全重构
+
+state 声明的 `target.kind` 与 `target.id` 参与运行指纹。entity 稳定 ID 的全引用重命名若改变这些字段，core 仍拒绝提交；错误给出受影响 state 与声明位置、旧/候选指纹及旧 Story 存档/检查点不匹配原因。入口 replay trace 仍按既有协议允许在新指纹上受控重放，必须重新验证，不能保证沿用。可保留 entity 稳定 ID，只改 `as "显示名"`；显示名不进入实体运行身份。本轮不迁移旧 save/replay，也不移除或放宽任何指纹检查。
+
+当前状态分析不接受 relation 作为有效所属对象，仍报告 A216；本轮不扩展支持范围。运行身份拒绝的实体用例与语法/引用无效的候选保持区分。
