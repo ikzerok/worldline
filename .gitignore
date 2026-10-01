@@ -23,3 +23,7 @@ Thumbs.db
 *.swp
 *.pyc
 *.save.json
+
+# 本地调研与临时验收材料不进入版本库
+/.scratch/
+/.research/
