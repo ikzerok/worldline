@@ -29,6 +29,8 @@ pub struct ConditionExplanation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChoiceExplanation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<worldline_core::evidence_source::EvidenceSource>,
     pub choice: ChoiceIdentity,
     pub available: bool,
     pub condition: Option<ConditionExplanation>,

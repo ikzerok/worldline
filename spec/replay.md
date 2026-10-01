@@ -88,6 +88,31 @@ RPC 仅在 `session.explain_choices` 的 `include_evidence:true` 时返回实际
 新增字段由宽容的 JSON 消费者按可选扩展读取；使用封闭外部 schema 的消费者需要
 在选择启用该参数前更新 schema，不宣称所有外部消费者都无需适配。
 
+### 实际证据的作者来源（0.14 编辑器闭环）
+
+实际缓存中的 `ChoiceExplanation.source` 与 `EvidenceNode.source` 是可选的非语义
+`EvidenceSource`：文件、声明所属身份（`choice` 的完整节点或 `rule` 的名称）和物理行。
+选择来源覆盖显示前提、enable、once 与标签错误；规则体节点保留本次真正进入的规则
+定义来源。错误与未求值节点也可定位其已知声明，但导航不得把“未求值”说成已执行。
+旧证据缺少来源时显示不可定位，不能从标签、显示表达式或旧行号猜测替代位置。
+
+来源不是精确子表达式范围。core 使用同一编译快照的 AST、源字节与正式词法分类
+验证声明身份，返回 UTF-8 字节范围及 `precision: statement_header`，仅表示选择头或
+规则声明头。编辑器明确写“定位选择声明”或“定位规则定义”，不冒称变量/运算符选区。
+文件或身份不唯一、声明类型不符、来源缺失时返回错误，不退回当前打开文件。
+
+编辑器导航再次核对实际运行的源码集合与内容基线、已应用版本和当前来源身份；有
+未应用执行输入、输入法组合、源删除/移动/改名、外部冲突或旧快照时禁用并解释原因。
+不自动应用、保存、恢复旧源或修改轨迹。导航只消费 `choice_evidence` 的当次缓存，
+不得重新调用表达式求值、消耗 RNG 或增加状态/回合。来源有效时复用作者导航历史，
+优先使用可准确表示的书稿结构/写作入口，否则明确源码回退；Alt+Left 沿现有内容
+基线及缓冲代次守卫返回。跳转后的新选择组/重新开始使旧来源请求失效。
+
+新增来源字段使用缺省与省略空值，默认 `explain_choices` 及未启用 `include_evidence`
+的 RPC 保持原 JSON 形状。来源不进入运行指纹、存档、trace、观察或读者发布；不升级
+DSL、replay schema 或解释器语义。节点来源文本计入已有证据预算；超限省略来源，
+不得使用截断文件名或截断身份导航。
+
 ## CLI 与 agent RPC
 
 `wl play` 可指定 `--seed` 并将 trace 写至 `--trace-output`。`wl replay <入口> --trace-json '<DTO>'` 可指定 `--max-steps` 与 `--time-budget-ms`。RPC 的 `session.open` 可传 `seed`；`session.trace`、`session.checkpoint` 与 `session.explain_choices` 读取同一 runtime API；`trace.replay` 接收同一 trace/budget DTO。CLI/RPC 的参数或 DTO 结构错误属于调用错误，节点/选择不匹配、预算耗尽、取消或运行失败是结构化故事结果。

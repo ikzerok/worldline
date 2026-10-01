@@ -21,6 +21,8 @@ pub struct ConditionEvidence {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvidenceNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<worldline_core::evidence_source::EvidenceSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
@@ -122,6 +124,7 @@ impl EvidenceRecorder {
         let index = self.evidence.nodes.len();
         self.indices.insert(expression as *const Expr, index);
         self.evidence.nodes.push(EvidenceNode {
+            source: None,
             file: None,
             line: None,
             parent,
@@ -149,11 +152,28 @@ impl EvidenceRecorder {
         }
     }
 
-    pub fn enter_rule(&mut self, call: &Expr, body: &Expr, file: &str, line: u32) {
+    pub fn enter_rule(&mut self, call: &Expr, body: &Expr, file: &str, line: u32, name: &str) {
         let parent = self.indices.get(&(call as *const Expr)).copied();
         let start = self.evidence.nodes.len();
         self.add(body, parent, 1);
         for index in start..self.evidence.nodes.len() {
+            // Never navigate using a truncated file or identity. Source metadata shares the budget.
+            if file.len() <= MAX_TEXT
+                && name.len() <= MAX_TEXT
+                && file.len() + name.len() <= self.bytes_left
+            {
+                self.bytes_left -= file.len() + name.len();
+                self.evidence.nodes[index].source =
+                    Some(worldline_core::evidence_source::EvidenceSource {
+                        file: file.into(),
+                        line,
+                        owner: worldline_core::evidence_source::EvidenceSourceOwner::Rule {
+                            name: name.into(),
+                        },
+                    });
+            } else {
+                self.evidence.omitted = true;
+            }
             let file = self.text(file);
             self.evidence.nodes[index].file = Some(file);
             self.evidence.nodes[index].line = Some(line);
