@@ -25,6 +25,20 @@ impl<'p> Story<'p> {
         let rng_before = self.rng.get();
         while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
             let mut identity = self.choice_identity(fi, start, offset, c.label_raw.clone());
+            let source = self
+                .current_source_file()
+                .zip(self.current_node())
+                .and_then(|(file, node)| {
+                    (file.len() <= 2048 && node.len() <= 2048).then(|| {
+                        worldline_core::evidence_source::EvidenceSource {
+                            file: file.into(),
+                            line: c.loc.line,
+                            owner: worldline_core::evidence_source::EvidenceSourceOwner::Choice {
+                                node,
+                            },
+                        }
+                    })
+                });
             let condition = if let Some(cond) = &c.cond {
                 let (value, evidence) = self.eval_condition(cond, &mut evidence_budget);
                 let value = value.map_err(|mut error| {
@@ -40,6 +54,7 @@ impl<'p> Story<'p> {
                     Ok(value) => value,
                     Err(error) => {
                         explanations.push(ChoiceExplanation {
+                            source: source.clone(),
                             enable_condition: None,
                             choice: identity,
                             available: false,
@@ -70,6 +85,7 @@ impl<'p> Story<'p> {
                 .is_some_and(|value| value.result == Some(false))
             {
                 explanations.push(ChoiceExplanation {
+                    source: source.clone(),
                     enable_condition: None,
                     choice: identity,
                     available: false,
@@ -83,6 +99,7 @@ impl<'p> Story<'p> {
                 let id = self.choice_id(fi, start, offset);
                 if self.taken_once.contains(&id) {
                     explanations.push(ChoiceExplanation {
+                        source: source.clone(),
                         enable_condition: None,
                         choice: identity,
                         available: false,
@@ -110,6 +127,7 @@ impl<'p> Story<'p> {
                             error.line = Some(c.loc.line);
                         }
                         explanations.push(ChoiceExplanation {
+                            source: source.clone(),
                             choice: identity,
                             available: false,
                             condition,
@@ -135,6 +153,7 @@ impl<'p> Story<'p> {
                 Ok(rendered) => rendered,
                 Err(error) => {
                     explanations.push(ChoiceExplanation {
+                        source: source.clone(),
                         enable_condition,
                         choice: identity,
                         available: false,
@@ -171,6 +190,7 @@ impl<'p> Story<'p> {
                 });
             }
             explanations.push(ChoiceExplanation {
+                source: source.clone(),
                 choice: identity,
                 available: enabled,
                 condition,

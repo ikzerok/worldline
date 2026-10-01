@@ -373,6 +373,7 @@ impl<'p> Story<'p> {
         if let Some(pause) = &self.paused {
             let mut explanations = pause.explanations.clone();
             for choice in &mut explanations {
+                choice.source = None;
                 if let Some(condition) = &mut choice.condition {
                     condition.evidence = None;
                 }
@@ -475,6 +476,7 @@ impl<'p> Story<'p> {
                 }
             }
             explanations.push(ChoiceExplanation {
+                source: None,
                 choice: identity,
                 available,
                 condition,

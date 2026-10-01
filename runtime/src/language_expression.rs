@@ -74,7 +74,7 @@ impl Story<'_> {
                 bindings.insert(p.name.clone(), value);
             }
             if let Some(recorder) = recorder {
-                recorder.enter_rule(call, &rule.expr, &rule.file, rule.loc.line);
+                recorder.enter_rule(call, &rule.expr, &rule.file, rule.loc.line, &rule.name);
             }
             let names = bindings.keys().cloned().collect();
             return self

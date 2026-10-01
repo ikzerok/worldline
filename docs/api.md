@@ -172,3 +172,10 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 `Project::plan_rename_target(&TargetRef, new_id)` 保留原返回接口。`RenamePlan` 保留既有字段，新增前后 `runtime_fingerprint_before/after: u64`；每个 `RefactorChange` 新增 `occurrences`，逐处给出 1 起行号、语义字段或 JSON Pointer、完整文档 UTF-8 字节半开范围、身份 token 及真实前后行语境。范围、预览及私有候选字节出自同一份计划。旧 JSON 消费者可继续读取原字段并忽略新增字段；计划仍由受信 Project API 生成，不能把任意 JSON 当作写入权限。
 
 `apply_rename_plan` 重新生成并核对完整计划，拒绝删减引用、篡改语境、过期内容、外部新增/修改文件与无效候选。成功只写 Project 内存，可由调用方整体撤销；`save` 才写盘。state 所属对象改名仍因运行指纹变化拒绝，错误包含具体 state 和旧/候选指纹；没有新的身份迁移 API。完整契约见[工作区规范](../spec/workspace.md#稳定-id-安全重构与逐处预览)。
+
+
+## 显式语言能力与真实证据来源（0.14）
+
+`capabilities::language_capabilities` / `feature_capabilities` 是已有语言与必需能力的目录真源。`Project::plan_capability_enable` 接收目标版本、明确追加能力和内容基线，返回全文诊断、词法分类变化及真实运行指纹兼容预览；`apply_capability_enable` 重建并核对完整计划后只提交内存清单。无变化、候选错误、过期计划、外部变更或未知能力均不可写入，保存仍独立。参见 [语言版本契约](../spec/language-versions.md)。
+
+`evidence_source::resolve_evidence_source` 以实际 CompileResult、EvidenceSource 的文件/声明身份/行号返回经 AST 和正式词法核对的 `StatementHeader` 范围。它不求值；UI仍须绑定运行快照及草稿基线，点击时可用 `Project::verify_source_navigation` 检查磁盘保存基线。运行选择证据来源为可选扩展，默认解释 DTO 不新增 source。参见 [证据来源契约](../spec/replay.md)。

@@ -11,6 +11,7 @@ mod document_buffers;
 mod export;
 mod lifecycle;
 mod save;
+mod source_navigation;
 
 pub use crate::checkpoints::{
     CheckpointFileChange, CheckpointFileOperation, CheckpointLimits, CheckpointRestorePlan,
