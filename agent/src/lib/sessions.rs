@@ -103,6 +103,19 @@ impl Server {
                     .any(|v| v.as_str() == Some(worldline_runtime::CHOICE_PRESENTATION_CAPABILITY))
             }
         };
+        let bounded_continue = params
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .is_some_and(|values| {
+                values.iter().any(|value| {
+                    value.as_str() == Some(worldline_runtime::BOUNDED_CONTINUE_CAPABILITY)
+                })
+            });
+        let budget = continuation_budget(
+            params,
+            bounded_continue,
+            worldline_runtime::DEFAULT_CONTINUATION_BUDGET,
+        )?;
         let seed = match params.get("seed") {
             None => None,
             Some(value) => Some(
@@ -125,10 +138,11 @@ impl Server {
                 None => Story::new(program, analysis),
             },
         };
-        let story = match opened {
+        let mut story = match opened {
             Ok(s) => s,
             Err(e) => return Ok(json!({ "ok": false, "run_error": e })),
         };
+        story.set_continuation_budget(budget);
         let state = story.state_view();
         self.next_session += 1;
         let session_id = format!("c{}", self.next_session);
@@ -138,15 +152,25 @@ impl Server {
                 story_id,
                 story,
                 choice_presentation,
+                bounded_continue,
+                cancel_next: false,
             },
         );
         let mut response = json!({ "session_id": session_id, "state": state });
+        if bounded_continue {
+            response["execution_diagnostics"] = json!(
+                worldline_core::analysis::execution_diagnostics(program, analysis)
+            );
+        }
         if params.get("capabilities").is_some() {
-            response["capabilities"] = if choice_presentation {
-                json!([worldline_runtime::CHOICE_PRESENTATION_CAPABILITY])
-            } else {
-                json!([])
-            };
+            let mut capabilities = Vec::new();
+            if choice_presentation {
+                capabilities.push(worldline_runtime::CHOICE_PRESENTATION_CAPABILITY);
+            }
+            if bounded_continue {
+                capabilities.push(worldline_runtime::BOUNDED_CONTINUE_CAPABILITY);
+            }
+            response["capabilities"] = json!(capabilities);
         }
         Ok(response)
     }
@@ -258,14 +282,42 @@ pub(super) fn choices_json(story: &Story) -> Vec<Value> {
 impl Server {
     pub(super) fn session_continue(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let session = self.session(params)?;
-        match session.story.continue_story() {
-            Ok(outputs) => {
+        let budget = continuation_budget(
+            params,
+            session.bounded_continue,
+            session.story.continuation_budget(),
+        )?;
+        let cancellation = ReplayCancellation::new();
+        if std::mem::take(&mut session.cancel_next) {
+            cancellation.cancel();
+        }
+        match session.story.continue_story_bounded(budget, &cancellation) {
+            Ok(result) => {
                 let mut response = session_response(session);
-                response["outputs"] = json!(outputs);
+                response["outputs"] = json!(result.outputs);
+                if session.bounded_continue {
+                    response["outcome"] = json!(result.outcome);
+                    response["executed_steps"] = json!(result.executed_steps);
+                }
+                if result.outcome.is_suspended() {
+                    response["ok"] = json!(false);
+                    response["run_error"] = json!(session.story.continuation_error(result.outcome));
+                }
                 Ok(response)
             }
             Err(error) => Ok(json!({ "ok": false, "run_error": error })),
         }
+    }
+    pub(super) fn session_cancel(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        let session = self.session(params)?;
+        if !session.bounded_continue {
+            return Err(ProtoError::new(
+                -32602,
+                "需先协商 runtime.bounded_continue.v1",
+            ));
+        }
+        session.cancel_next = true;
+        Ok(json!({"cancel_pending": true, "state": session.story.state_view()}))
     }
     pub(super) fn session_choose(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let session = self.session(params)?;
@@ -327,4 +379,25 @@ fn session_response(session: &Session) -> Value {
         response["choice_presentation"] = json!(session.story.choice_presentations());
     }
     response
+}
+
+fn continuation_budget(
+    params: &Value,
+    negotiated: bool,
+    defaults: ReplayBudget,
+) -> Result<ReplayBudget, ProtoError> {
+    if !negotiated
+        && ["max_steps", "time_budget_ms"]
+            .iter()
+            .any(|key| params.get(key).is_some())
+    {
+        return Err(ProtoError::new(
+            -32602,
+            "执行预算参数需先协商 runtime.bounded_continue.v1",
+        ));
+    }
+    Ok(ReplayBudget::new(
+        optional_u64(params, "max_steps")?.unwrap_or(defaults.max_steps),
+        optional_u64(params, "time_budget_ms")?.unwrap_or(defaults.time_budget_ms),
+    ))
 }

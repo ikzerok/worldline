@@ -43,7 +43,7 @@ pub fn capture_text_anchor(
     })
 }
 
-fn anchor_status(
+pub fn anchor_status(
     project: &Project,
     content: &CompileResult,
     maps: &MapIndex,
@@ -189,7 +189,6 @@ pub fn write_comment(
     }
     let content = project.compile();
     let maps = crate::presentation_commands::map_index_with_content(project, &content);
-    validate_new_anchor(project, &content, &maps, &command.draft.anchor)?;
     let index = build_comment_index(project, &content, &maps);
     if index
         .diagnostics
@@ -205,6 +204,10 @@ pub fn write_comment(
     if command.original.is_some() && old.is_none() {
         return Err("待编辑批注不存在".into());
     }
+    if old.is_none_or(|comment| comment.draft.anchor != command.draft.anchor) {
+        validate_new_anchor(project, &content, &maps, &command.draft.anchor)?;
+    }
+    project.checkpoint_disk_baselines_match()?;
     if old.is_some_and(|comment| comment.read_only) {
         return Err("批注文档为只读，不能覆盖".into());
     }
@@ -219,10 +222,9 @@ pub fn write_comment(
     let mut source = old
         .map(|comment| comment.source.clone())
         .unwrap_or_else(|| json!({"schema_version":1}));
-    update_known_fields(
-        &mut source,
-        &serde_json::to_value(&command.draft).map_err(|error| error.to_string())?,
-    )?;
+    let mut fresh = serde_json::to_value(&command.draft).map_err(|error| error.to_string())?;
+    preserve_anchor_extensions(&source, &mut fresh);
+    update_known_fields(&mut source, &fresh)?;
     let bytes = serde_json::to_vec_pretty(&source).map_err(|error| error.to_string())?;
     let mut candidate = project.clone();
     let changed_files = if old.is_some() {
@@ -245,4 +247,40 @@ pub fn write_comment(
         changed_files,
         new_revision: *revision,
     })
+}
+
+// 只覆盖已理解的字段，扩展字段不是 UI 重建锚点的附带损失。
+fn preserve_anchor_extensions(source: &Value, fresh: &mut Value) {
+    let Some(old) = source.get("anchor").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(new) = fresh.get_mut("anchor").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for (key, value) in old {
+        if !matches!(
+            key.as_str(),
+            "kind"
+                | "target"
+                | "map_id"
+                | "placement_id"
+                | "path"
+                | "start_line"
+                | "end_line"
+                | "baseline_hash"
+                | "quote"
+        ) {
+            new.entry(key.clone()).or_insert_with(|| value.clone());
+        }
+    }
+    if let (Some(old), Some(new)) = (
+        old.get("target").and_then(Value::as_object),
+        new.get_mut("target").and_then(Value::as_object_mut),
+    ) {
+        for (key, value) in old {
+            if !matches!(key.as_str(), "kind" | "id") {
+                new.entry(key.clone()).or_insert_with(|| value.clone());
+            }
+        }
+    }
 }

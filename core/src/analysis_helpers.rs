@@ -73,65 +73,6 @@ pub(crate) fn first_divert(stmts: &[Stmt]) -> Option<&DivertTarget> {
     None
 }
 
-/// 块的静态终止性:是否不存在"执行到块尾仍未跃迁"的路径(A202)。
-pub(crate) fn terminates(stmts: &[Stmt]) -> bool {
-    let mut i = 0;
-    while i < stmts.len() {
-        match &stmts[i] {
-            Stmt::Divert(_) | Stmt::Return(_) => return true,
-            Stmt::If(s) => {
-                let has_else = s.branches.last().map(|(c, _)| c.is_none()).unwrap_or(false);
-                let all = s.branches.iter().all(|(_, b)| terminates(b));
-                if has_else && all {
-                    return true; // 必进某分支且各分支都终止
-                }
-                // 可能落到 if 之后:由后续语句决定
-                i += 1;
-                continue;
-            }
-            Stmt::Choice(_) => {
-                let mut j = i;
-                let mut unconditional = false;
-                let mut all_bodies_term = true;
-                while let Some(Stmt::Choice(c)) = stmts.get(j) {
-                    if c.cond.is_none() && c.enable.is_none() {
-                        unconditional = true;
-                    }
-                    if !terminates(&c.body) {
-                        all_bodies_term = false;
-                    }
-                    j += 1;
-                }
-                if unconditional && all_bodies_term {
-                    return true; // 必进某选择体且全部跃迁
-                }
-                i = j;
-                continue;
-            }
-            Stmt::Scene(s) => {
-                if terminates(&s.body) {
-                    return true;
-                }
-                i += 1;
-                continue;
-            }
-            Stmt::Local(_)
-            | Stmt::Call(_)
-            | Stmt::Say(_)
-            | Stmt::DynamicChange(_)
-            | Stmt::Text(_)
-            | Stmt::Let(_)
-            | Stmt::Set(_)
-            | Stmt::Change(_)
-            | Stmt::Anchor(_)
-            | Stmt::Effect(_) => {
-                i += 1;
-            }
-        }
-    }
-    false
-}
-
 /// 每个节点是否处于环上(含自环):从后继可达自身。
 pub(crate) fn nodes_on_cycles(adj: &[Vec<u32>]) -> HashSet<u32> {
     let n = adj.len();

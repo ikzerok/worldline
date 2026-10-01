@@ -30,3 +30,5 @@
 - [当前稿查找替换](search-replace.md)：作用域、保护token、基线和原子事务
 
 - [静态人物强引用](character-refs.md)：显式1.13双能力保护、typed property/schema/template、身份改写与披露边界
+
+- [bounded-execution.md](bounded-execution.md)：普通演练的预算、可恢复outcome、CLI与JSON-RPC协商。

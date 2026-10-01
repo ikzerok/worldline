@@ -233,7 +233,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn check_divert(&mut self, d: &DivertStmt, node: &NodeCtx, depth: u32) {
+    fn check_divert(&mut self, d: &DivertStmt, node: &NodeCtx, _depth: u32) {
         let DivertTarget::Node(target) = &d.target else {
             return;
         };
@@ -250,14 +250,6 @@ impl<'a> Ctx<'a> {
             return;
         };
         let full = path.full_name(&self.program.events[path.event].name);
-        if full == node.node_name && depth == 0 {
-            self.diags.push(Diagnostic::warning(
-                "A206",
-                &self.cur_file,
-                Span::new(d.loc.line, d.loc.column, target.chars().count() as u32),
-                format!("无条件跃迁回 `{full}` 自身,会构成死循环"),
-            ));
-        }
         // 漂流语义:A209 同线漂流提示
         if d.drift && node.event < self.program.events.len() {
             let cur_sl = self.program.events[node.event].storyline.clone();

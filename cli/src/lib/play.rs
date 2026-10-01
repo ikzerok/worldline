@@ -14,6 +14,11 @@ pub(super) fn cmd_play(
     if result.has_errors() {
         return compile_failed(&result.diagnostics, f.json, out);
     }
+    for diagnostic in
+        worldline_core::analysis::execution_diagnostics(&result.program, &result.analysis)
+    {
+        eprintln!("{diagnostic}");
+    }
     let mut story = match f.load.as_deref() {
         Some(p) => {
             let save = std::fs::read_to_string(p)
@@ -31,11 +36,13 @@ pub(super) fn cmd_play(
             Err(error) => return play_start_failure(f, out, format!("故事启动失败:{error}")),
         },
     };
+    story.set_continuation_budget(f.continuation_budget);
     let code = if f.json {
         play_json(
             &mut story,
             f.save.as_deref(),
             f.choice_presentation,
+            f.bounded_continue,
             out,
             input,
         )
@@ -106,10 +113,13 @@ pub(super) fn play_human(
 ) -> Result<i32, String> {
     let mut buf = String::new();
     let code = loop {
-        match story.continue_story() {
-            Ok(outputs) => {
+        match story.continue_story_bounded(
+            story.continuation_budget(),
+            &worldline_runtime::ReplayCancellation::new(),
+        ) {
+            Ok(result) => {
                 let mut ended = false;
-                for o in outputs {
+                for o in result.outputs {
                     match o {
                         Output::Text {
                             content, new_line, ..
@@ -123,6 +133,15 @@ pub(super) fn play_human(
                     }
                 }
                 out.flush().map_err(|e| e.to_string())?;
+                if result.outcome.is_suspended() {
+                    writeln!(out, "\n{}", result.outcome.message()).map_err(|e| e.to_string())?;
+                    writeln!(
+                        out,
+                        "可用 --save=路径 保存当前位置，再以 --load=路径 及更高预算续行"
+                    )
+                    .map_err(|e| e.to_string())?;
+                    break 1;
+                }
                 if ended {
                     writeln!(out).map_err(|e| e.to_string())?;
                     writeln!(out, "—— 世界线收束,故事结束 ——").map_err(|e| e.to_string())?;
@@ -196,15 +215,20 @@ pub(super) fn play_json(
     story: &mut Story,
     save: Option<&Path>,
     choice_presentation: bool,
+    bounded_continue: bool,
     out: &mut impl Write,
     input: &mut impl BufRead,
 ) -> Result<i32, String> {
     let mut buf = String::new();
     let code = loop {
-        match story.continue_story() {
-            Ok(outputs) => {
-                let ended = outputs.iter().any(|o| matches!(o, Output::Ended));
-                let outs: Vec<serde_json::Value> = outputs
+        match story.continue_story_bounded(
+            story.continuation_budget(),
+            &worldline_runtime::ReplayCancellation::new(),
+        ) {
+            Ok(result) => {
+                let ended = result.outcome == worldline_runtime::ContinuationOutcome::Ended;
+                let outs: Vec<serde_json::Value> = result
+                    .outputs
                     .iter()
                     .map(|o| serde_json::to_value(o).expect("Output 序列化不失败"))
                     .collect();
@@ -217,7 +241,27 @@ pub(super) fn play_json(
                 if choice_presentation {
                     payload["choice_presentation"] = json!(story.choice_presentations());
                 }
+                if bounded_continue {
+                    payload["outcome"] = json!(result.outcome);
+                    payload["executed_steps"] = json!(result.executed_steps);
+                }
+                if result.outcome.is_suspended() {
+                    payload["ok"] = json!(false);
+                    payload["type"] = json!(if bounded_continue {
+                        "suspended"
+                    } else {
+                        "run_error"
+                    });
+                    let error = story.continuation_error(result.outcome);
+                    payload["message"] = json!(error.message);
+                    payload["node"] = json!(error.node);
+                    payload["line"] = json!(error.line);
+                }
+
                 writeln!(out, "{payload}").map_err(|e| e.to_string())?;
+                if result.outcome.is_suspended() {
+                    break 1;
+                }
                 if ended {
                     break 0;
                 }

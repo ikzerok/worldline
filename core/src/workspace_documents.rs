@@ -2,6 +2,9 @@ use crate::compiler::LanguageVersion;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+mod identity_cache;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod registry_tests;
 mod unique_json;
 pub use unique_json::parse_unique_json;
 
@@ -241,6 +244,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let mut paths = BTreeMap::new();
     let mut read_only_paths = BTreeSet::new();
     paths.insert(registry_path_key(&manifest_path), manifest_path.clone());
+    let mut identities = identity_cache::IdentityCache::new(&manifest_path);
     for key in [
         "maps",
         "graph_views",
@@ -282,11 +286,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             };
             if let Ok(path) = registered_path(root, relative) {
                 let path_key = registry_path_key(&path);
-                if paths.contains_key(&path_key)
-                    || paths
-                        .values()
-                        .any(|registered| same_existing_file(registered, &path))
-                {
+                if paths.contains_key(&path_key) || identities.duplicates(paths.values(), &path) {
                     registry.report(
                         root,
                         "WS004",
@@ -351,18 +351,6 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
 fn registry_path_key(path: &Path) -> String {
     // 工作区须可跨大小写敏感/不敏感文件系统迁移；统一拒绝大小写别名。
     path.to_string_lossy().replace('\\', "/").to_lowercase()
-}
-
-fn same_existing_file(left: &Path, right: &Path) -> bool {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (left, right);
-        false
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        same_file::is_same_file(left, right).unwrap_or(false)
-    }
 }
 
 fn required_feature(object: &Map<String, Value>, feature: &str) -> bool {

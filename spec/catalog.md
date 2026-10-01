@@ -185,3 +185,7 @@ property 只匹配目录可取得的字面量属性（character、entity、relat
 显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。
 
 删除影响的 `template_references` 列出工程模板默认强引用，复用 ReferenceInfo 的完整目标、文档路径与字段行号；为空时不序列化。模板默认值也阻止删除，引用诊断不完整时不能声称安全。
+
+### 7.2 独立未解决修订入口（0.11）
+
+既有 `todo_projection()` schema 1 与四类枚举不变；其中 DetachedComment 仍只表示未解决且失锚的批注。完整未解决清单从 `CommentIndex::review_projection` 读取，含正常附着和失锚的对象、正文与地图批注。编辑器在统一待办提供明确的未解决批注总数和进入修订清单的入口，不能将合法附着批注伪标为失锚，也不能以旧待办为空宣称没有未解决修订。
