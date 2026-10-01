@@ -61,3 +61,7 @@ RPC 仅在 `session.explain_choices` 的 `include_evidence:true` 时返回实际
 ## CLI 与 agent RPC
 
 `wl play` 可指定 `--seed` 并将 trace 写至 `--trace-output`。`wl replay <入口> --trace-json '<DTO>'` 可指定 `--max-steps` 与 `--time-budget-ms`。RPC 的 `session.open` 可传 `seed`；`session.trace`、`session.checkpoint` 与 `session.explain_choices` 读取同一 runtime API；`trace.replay` 接收同一 trace/budget DTO。CLI/RPC 的参数或 DTO 结构错误属于调用错误，节点/选择不匹配、预算耗尽、取消或运行失败是结构化故事结果。
+
+## 语言1.12锁定选择观察
+
+采用enable的作品在ReplayObservation中添加可选choice_presentation数组，保存实际可见项及启用状态和作者说明。重放比较此投影（忽略源码行号），没有新能力的旧trace不增字段。选择身份加入enable条件、不加入禁用说明；说明与条件均参与运行指纹。choose_id/choose_presentation拒选禁用项时不记录步骤、不消费随机数或once；详见 [choices.md](choices.md)。

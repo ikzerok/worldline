@@ -66,6 +66,9 @@ pub(crate) fn populate(program: &Program, symbols: &Symbols, graph: &mut Relatio
                     if let Some(cond) = &c.cond {
                         inner.conditions.push(expression(cond));
                     }
+                    if let Some(cond) = &c.enable {
+                        inner.conditions.push(expression(cond));
+                    }
                     if c.once {
                         inner.conditions.push("此选择尚未选取".into());
                     }

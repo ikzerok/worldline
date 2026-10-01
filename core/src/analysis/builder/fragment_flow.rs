@@ -108,6 +108,9 @@ impl Ctx<'_> {
                     if let Some(condition) = &choice.cond {
                         inner.conditions.push(expression(condition));
                     }
+                    if let Some(condition) = &choice.enable {
+                        inner.conditions.push(expression(condition));
+                    }
                     if choice.once {
                         inner.conditions.push("此选择尚未选取".into());
                     }

@@ -188,3 +188,20 @@ severity 序列化为小写字符串。编辑器据此渲染面板并跳转。
 ### 语言1.11新增诊断
 
 A230（error）表示规则/片段的静态调用环、纯规则中的随机副作用或不允许的执行上下文。未知规则/片段、错误签名、局部重复等继续使用A101/A103/A104及明确中文消息；参见language-1.11.md。
+
+### 语言1.12持续资料约束
+
+SCH001–SCH008 均为 error，并随统一 CompileResult 出现在所有检查与发布前校验中。
+
+| code | 场景 |
+|---|---|
+| SCH001 | schema/field/bind 语法或显式语言门控不符 |
+| SCH002 | schema ID、字段稳定 ID 或 property 键重复 |
+| SCH003 | 绑定对象/schema 不存在、重复绑定、kind/entity subtype 不适配或 schema 声明有歧义 |
+| SCH004 | required 的 property key 未实际出现 |
+| SCH005 | 标量/ref 值类型不符；不自动强转 |
+| SCH006 | 字符串不在枚举集合 |
+| SCH007 | 强 ref 的 kind 或 entity subtype 不符 |
+| SCH008 | opt-in closed schema 中出现未声明 property 键 |
+
+缺失 ref 目标仍报 A214，不重复伪称 subtype 错误。missing 指向对象声明，值违规指向 property，并关联字段约束位置。error 阻止执行和公开读者包；原始无效稿件、源码应用、保存、备份与撤销仍可用。完整边界与影响接口见 [schemas.md](schemas.md)。

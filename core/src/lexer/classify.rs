@@ -93,6 +93,15 @@ pub(super) fn classify(
     let (word, rest) = split_word(&content);
     let rest_trim = rest.trim();
     let word_col = (content.len() - rest.len() - word.len()) as u32 + 1;
+    if options.language_version.supports_language_112()
+        && matches!(word, "schema" | "field" | "bind")
+    {
+        return LineKind::Schema112 {
+            keyword: word.into(),
+            source: rest_trim.into(),
+            loc: Loc::new(no, word_col),
+        };
+    }
     if options.language_version.supports_language_111()
         && (matches!(
             word,

@@ -30,6 +30,7 @@ struct FileArgs {
     save: Option<PathBuf>,
     seed: Option<u64>,
     trace_output: Option<PathBuf>,
+    choice_presentation: bool,
     language_version: Option<LanguageVersion>,
 }
 
@@ -372,6 +373,9 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "catalog" => catalog::cmd_catalog(&catalog::parse_catalog_args(rest)?, out),
         "catalog-query" => catalog_query::cmd_catalog_query(&catalog_query::parse_catalog_query_args(rest)?, out),
         "source-edit" => source_edit::command(rest, out),
+        "schema-index" => source_edit::schema_index(rest, out),
+        "schema-preview" => source_edit::schema_command(rest, out, false),
+        "schema-apply" => source_edit::schema_command(rest, out, true),
         "reader-export" => reader_export::cmd_reader_export(&reader_export::parse_reader_export_args(rest)?, out),
         "localization" => localization::cmd_localization(&localization::parse_localization_args(rest)?, out),
         "markdown" => markdown_import::cmd_markdown_import(&markdown_import::parse_markdown_import_args(rest)?, out),
@@ -385,7 +389,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:workspace / maps / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / reader-export / localization / markdown / authoring-intent / source-edit / entity)"
+                "未知子命令 `{other}`(可用:workspace / maps / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / reader-export / localization / markdown / authoring-intent / source-edit / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

@@ -94,7 +94,7 @@ pub(crate) fn terminates(stmts: &[Stmt]) -> bool {
                 let mut unconditional = false;
                 let mut all_bodies_term = true;
                 while let Some(Stmt::Choice(c)) = stmts.get(j) {
-                    if c.cond.is_none() {
+                    if c.cond.is_none() && c.enable.is_none() {
                         unconditional = true;
                     }
                     if !terminates(&c.body) {

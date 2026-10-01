@@ -187,6 +187,9 @@ fn visit_body(
                 if let Some(e) = &mut c.cond {
                     visit_expr(e, expr);
                 }
+                if let Some(e) = &mut c.enable {
+                    visit_expr(e, expr);
+                }
                 visit_body(&mut c.body, expr, change);
             }
             Stmt::If(i) => {

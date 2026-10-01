@@ -9,6 +9,18 @@ pub fn parse_quoted_interpolations_with_options(
     diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
 ) -> Vec<TextPart> {
+    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new())
+}
+
+pub(super) fn parse_with_ranges(
+    raw: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
+    options: crate::CompileOptions,
+    ranges: &mut Vec<std::ops::Range<usize>>,
+) -> Vec<TextPart> {
     let chars: Vec<char> = raw.chars().collect();
     let mut normalized = String::new();
     let mut positions = Vec::new();
@@ -92,7 +104,11 @@ pub fn parse_quoted_interpolations_with_options(
     positions.push(chars.len());
     let diagnostics_start = diags.len();
     let mut parts =
-        super::parse_interpolations_with_options(&normalized, file, line, base_col, diags, options);
+        super::text::parse_with_ranges(&normalized, file, line, base_col, diags, options, ranges);
+    for range in ranges.iter_mut() {
+        range.start = positions[range.start];
+        range.end = positions[range.end];
+    }
     for part in &mut parts {
         match part {
             TextPart::Expr(expr) => remap_expr(expr, base_col, &positions),
@@ -140,4 +156,35 @@ fn remap_loc(loc: &mut Loc, base: u32, positions: &[usize]) {
                 .unwrap_or_else(|| *positions.last().unwrap_or(&0)) as u32
             + 1;
     }
+}
+
+/// 已由正式词法器确定的静态字符串内部：花括号和链接外形是纯文字。
+/// 复用字符串转义诊断，返回不含转义双字符的原字符范围。
+pub(crate) fn static_literal_ranges(raw: &str) -> Result<Vec<std::ops::Range<usize>>, String> {
+    let mut diagnostics = Vec::new();
+    lexer::decode_escapes(
+        raw,
+        "search.wl",
+        Span::new(1, 1, raw.chars().count() as u32),
+        &mut diagnostics,
+    );
+    if !diagnostics.is_empty() {
+        return Err("静态说明包含未完成转义".into());
+    }
+    let chars: Vec<_> = raw.chars().collect();
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        if chars[at] == '\\' {
+            at += 2;
+            continue;
+        }
+        if let Some(last) = ranges.last_mut().filter(|r| r.end == at) {
+            last.end += 1;
+        } else {
+            ranges.push(at..at + 1);
+        }
+        at += 1;
+    }
+    Ok(ranges)
 }

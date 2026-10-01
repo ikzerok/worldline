@@ -85,6 +85,7 @@ pub(crate) fn rewrite_sources(
             let ts = tokens(&chars);
             let mut edits = Vec::new();
             let mut expressions = Vec::new();
+            let mut located_expressions = Vec::new();
             let mut interpolation = None;
             let mut interpolation_quoted = false;
             match &line.kind {
@@ -207,6 +208,7 @@ pub(crate) fn rewrite_sources(
                 LineKind::Choice {
                     label_raw,
                     cond_src,
+                    enable_src,
                     ..
                 } => {
                     let label = ts.iter().find(|t| t.quoted).ok_or("无法定位选择文本")?;
@@ -241,7 +243,37 @@ pub(crate) fn rewrite_sources(
                     for e in label_edits {
                         edit(&mut edits, positions[e.start], positions[e.end], e.text);
                     }
-                    if let Some(src) = cond_src {
+                    if let Some(enable) = enable_src {
+                        // 说明是纯文字；定位到disabled之前，不能rfind误改其中同名perm文本。
+                        let end = ts
+                            .windows(2)
+                            .rfind(|pair| {
+                                !pair[0].quoted && pair[0].value == "disabled" && pair[1].quoted
+                            })
+                            .map(|pair| pair[0].start)
+                            .ok_or("无法定位禁用说明")?;
+                        let end = clean
+                            .char_indices()
+                            .nth(end)
+                            .map(|(i, _)| i)
+                            .unwrap_or(clean.len());
+                        let prefix = clean[..end].trim_end();
+                        let before_enable = prefix
+                            .strip_suffix(enable.as_str())
+                            .ok_or("无法定位可选条件")?;
+                        located_expressions.push((enable.as_str(), before_enable.len()));
+                        if let Some(src) = cond_src {
+                            let prefix = before_enable
+                                .trim_end()
+                                .strip_suffix("enable")
+                                .ok_or("无法定位enable子句")?
+                                .trim_end();
+                            let before = prefix
+                                .strip_suffix(src.as_str())
+                                .ok_or("无法定位显示条件")?;
+                            located_expressions.push((src.as_str(), before.len()));
+                        }
+                    } else if let Some(src) = cond_src {
                         expressions.push(src.as_str());
                     }
                 }
@@ -250,6 +282,9 @@ pub(crate) fn rewrite_sources(
             }
             for src in expressions {
                 let base = clean.rfind(src).ok_or("无法定位表达式")?;
+                located_expressions.push((src, base));
+            }
+            for (src, base) in located_expressions {
                 let mut diagnostics = Vec::new();
                 let mut expr = crate::expression::parse_expr_src(
                     src,

@@ -12,11 +12,13 @@ pub(super) fn parse_file_args(
     let mut save = None;
     let mut seed = None;
     let mut trace_output = None;
+    let mut choice_presentation = false;
     let mut language_version = None;
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
         match a.as_str() {
             "--json" => json = true,
+            "--choice-presentation" if session_flags => choice_presentation = true,
             other if session_flags && other.starts_with("--load=") => {
                 load = Some(PathBuf::from(other.trim_start_matches("--load=")));
             }
@@ -74,6 +76,7 @@ pub(super) fn parse_file_args(
         save,
         seed,
         trace_output,
+        choice_presentation,
         language_version,
     })
 }
@@ -83,8 +86,9 @@ pub(super) fn parse_language_version(value: &str) -> Result<LanguageVersion, Str
         "1.9" => Ok(LanguageVersion::V1_9),
         "1.10" => Ok(LanguageVersion::V1_10),
         "1.11" => Ok(LanguageVersion::V1_11),
+        "1.12" => Ok(LanguageVersion::V1_12),
         _ => Err(format!(
-            "不支持的语言版本 `{value}`(可用: 1.9 / 1.10 / 1.11)"
+            "不支持的语言版本 `{value}`(可用: 1.9 / 1.10 / 1.11 / 1.12)"
         )),
     }
 }

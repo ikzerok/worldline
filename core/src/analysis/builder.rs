@@ -107,7 +107,10 @@ pub(super) fn analyze(
         storyline_order,
     };
     crate::relation_context::populate(program, &ctx.symbols, &mut graph);
-    let catalog = crate::catalog::analyze(program, &ctx.symbols, &graph, &mut ctx.diags);
+    let mut catalog = crate::catalog::analyze(program, &ctx.symbols, &graph, &mut ctx.diags);
+    ctx.diags
+        .extend(crate::schemas::validate(program, &catalog).diagnostics);
+    crate::schemas::add_binding_references(program, &mut catalog);
     let mut all = std::mem::take(&mut ctx.diags);
     all.append(&mut diags);
     sort_diagnostics(&mut all);

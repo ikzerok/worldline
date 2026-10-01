@@ -14,11 +14,7 @@ impl<'p> Story<'p> {
     /// 序列化当前状态为 JSON(规范 semantics.md §7)。
     pub fn save(&self) -> Result<String, RunError> {
         let state = SaveState {
-            required_features: if worldline_core::language::uses_new_features(self.program) {
-                vec!["runtime.language_1_11.v1".into()]
-            } else {
-                Vec::new()
-            },
+            required_features: required_features(self.program),
             fingerprint: self.fingerprint,
             vars: self.vars.clone(),
             visits: self.visits.clone(),
@@ -64,17 +60,11 @@ impl<'p> Story<'p> {
             .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
         let mut state: SaveState = serde_json::from_value(value)
             .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
-        let required = worldline_core::language::uses_new_features(program);
-        if state
-            .required_features
-            .iter()
-            .any(|f| f != "runtime.language_1_11.v1")
-            || required
-                != state
-                    .required_features
-                    .iter()
-                    .any(|f| f == "runtime.language_1_11.v1")
-        {
+        let mut required = required_features(program);
+        let mut supplied = state.required_features.clone();
+        required.sort();
+        supplied.sort();
+        if required != supplied {
             return Err(RunError::new("存档必需语言能力缺失或不受支持"));
         }
         let legacy = state.fingerprint != analysis.fingerprint;
@@ -370,4 +360,15 @@ impl<'p> Story<'p> {
         }
         Ok(frames)
     }
+}
+
+fn required_features(program: &Program) -> Vec<String> {
+    let mut features = Vec::new();
+    if worldline_core::language::uses_new_features(program) {
+        features.push("runtime.language_1_11.v1".into());
+    }
+    if super::choices::uses_presentation(program) {
+        features.push(super::CHOICE_PRESENTATION_CAPABILITY.into());
+    }
+    features
 }

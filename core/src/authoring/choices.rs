@@ -1,5 +1,5 @@
 //! 分支表单与正文之间的无损局部改写；UI 不解释语言。
-use super::{block_at, comments, header_comment, lines, quote, EventDraft};
+use super::{block_at, comments, header_comment, quote, EventDraft};
 use crate::lexer::LineKind;
 use std::path::Path;
 
@@ -10,6 +10,9 @@ pub struct ChoiceDraft {
     pub label: String,
     pub once: bool,
     pub condition: String,
+    /// 显式 1.12 可选条件；空值表示无锁定能力。
+    pub enable_condition: String,
+    pub disabled_reason: String,
     /// 分支执行的正文和动作，包含内层条件/选择，移除末尾直接出口。
     pub body: String,
     /// 空值表示执行完后回到选择组之后。
@@ -28,6 +31,8 @@ impl EventDraft {
                     label_raw,
                     once,
                     cond_src,
+                    enable_src,
+                    disabled_reason,
                     ..
                 } = &line.kind
                 else {
@@ -84,6 +89,8 @@ impl EventDraft {
                     label: label_raw.clone(),
                     once: *once,
                     condition: cond_src.clone().unwrap_or_default(),
+                    enable_condition: enable_src.clone().unwrap_or_default(),
+                    disabled_reason: disabled_reason.clone().unwrap_or_default(),
                     body,
                     target,
                     drift,
@@ -94,6 +101,14 @@ impl EventDraft {
 
     /// line=None 新增到第一个顶层选择组；已有分支按当前正文行定位。
     pub fn write_choice(&mut self, line: Option<u32>, choice: &ChoiceDraft) -> Result<(), String> {
+        if choice.enable_condition.contains(['\n', '\r'])
+            || choice.disabled_reason.contains(['\n', '\r'])
+        {
+            return Err("可选条件与禁用说明须为单行".into());
+        }
+        if choice.enable_condition.trim().is_empty() != choice.disabled_reason.trim().is_empty() {
+            return Err("可选条件与禁用说明必须同时填写或清除".into());
+        }
         if choice.label.contains(['\n', '\r']) || choice.condition.contains(['\n', '\r']) {
             return Err("选择文案与显示条件须为单行".into());
         }
@@ -132,13 +147,22 @@ impl EventDraft {
             .map(|b| header_comment(&self.body[b.range.start..b.header_end]))
             .unwrap_or("");
         let mut text = format!(
-            "{padding}choice {}{}{}{localization_id}{suffix}\n",
+            "{padding}choice {}{}{}{}{localization_id}{suffix}\n",
             if choice.once { "once " } else { "" },
             quote(&choice.label),
             if choice.condition.trim().is_empty() {
                 String::new()
             } else {
                 format!(" if {}", choice.condition.trim())
+            },
+            if choice.enable_condition.trim().is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " enable {} disabled {}",
+                    choice.enable_condition.trim(),
+                    quote(&choice.disabled_reason)
+                )
             }
         );
         for line in choice.body.trim_end().lines() {
@@ -184,4 +208,13 @@ impl EventDraft {
         self.body.replace_range(block.range, &retained);
         Ok(())
     }
+}
+
+fn lines(text: &str, path: &Path) -> Vec<crate::lexer::Line> {
+    crate::lexer::lex_source_with_options(
+        &path.to_string_lossy(),
+        text,
+        &mut Vec::new(),
+        crate::CompileOptions::v1_12().with_localization_ids(true),
+    )
 }

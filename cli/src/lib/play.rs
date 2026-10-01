@@ -32,7 +32,13 @@ pub(super) fn cmd_play(
         },
     };
     let code = if f.json {
-        play_json(&mut story, f.save.as_deref(), out, input)
+        play_json(
+            &mut story,
+            f.save.as_deref(),
+            f.choice_presentation,
+            out,
+            input,
+        )
     } else {
         play_human(&mut story, f.save.as_deref(), out, input)
     }?;
@@ -133,8 +139,18 @@ pub(super) fn play_human(
             continue;
         }
         writeln!(out).map_err(|e| e.to_string())?;
-        for (i, c) in choices.iter().enumerate() {
-            writeln!(out, "  {}) {}", i + 1, c.label).map_err(|e| e.to_string())?;
+        for c in story.choice_presentations() {
+            if let Some(index) = c.index {
+                writeln!(out, "  {}) {}", index + 1, c.label).map_err(|e| e.to_string())?;
+            } else {
+                writeln!(
+                    out,
+                    "  [锁定] {}：{}",
+                    c.label,
+                    c.disabled_reason.as_deref().unwrap_or("")
+                )
+                .map_err(|e| e.to_string())?;
+            }
         }
         write!(out, "> ").map_err(|e| e.to_string())?;
         out.flush().map_err(|e| e.to_string())?;
@@ -179,6 +195,7 @@ pub(super) fn choices_json(story: &Story) -> Vec<serde_json::Value> {
 pub(super) fn play_json(
     story: &mut Story,
     save: Option<&Path>,
+    choice_presentation: bool,
     out: &mut impl Write,
     input: &mut impl BufRead,
 ) -> Result<i32, String> {
@@ -191,12 +208,15 @@ pub(super) fn play_json(
                     .iter()
                     .map(|o| serde_json::to_value(o).expect("Output 序列化不失败"))
                     .collect();
-                let payload = json!({
+                let mut payload = json!({
                     "type": if ended { "ended" } else { "turn" },
                     "outputs": outs,
                     "choices": choices_json(story),
                     "state": story.state_view(),
                 });
+                if choice_presentation {
+                    payload["choice_presentation"] = json!(story.choice_presentations());
+                }
                 writeln!(out, "{payload}").map_err(|e| e.to_string())?;
                 if ended {
                     break 0;

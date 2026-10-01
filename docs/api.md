@@ -137,7 +137,7 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 
 `Project::write_period_with_parent(id, display, parent)` 设置时段直接上级，放入 Project::edit 以验证层级；旧 write_period 保留现有上级。`Timeline::period_order()` 返回稳定的父先子后顺序及深度。
 
-`EventDraft::choices()` 提取包含嵌套结构的 ChoiceDraft；write_choice 按当前草稿行局部替换，None 新增，remove_choice 删除选择块。ChoiceDraft 包含 line/depth/label/once/condition/body/target/drift；line 只用于当前草稿定位。末尾直接出口单独建模，内部条件跃迁保留在 body。草稿允许未完成输入，最终用 Project::edit 与 write_event 校验提交。
+`EventDraft::choices()` 提取包含嵌套结构的 ChoiceDraft；write_choice 按当前草稿行局部替换，None 新增，remove_choice 删除选择块。ChoiceDraft 包含 line/depth/label/once/condition/enable_condition/disabled_reason/body/target/drift；condition仍是隐藏条件，后两项只用于显式1.12锁定选择；line 只用于当前草稿定位。末尾直接出口单独建模，内部条件跃迁保留在 body。草稿允许未完成输入，最终用 Project::edit 与 write_event 校验提交。
 
 ## 冲突快照
 
@@ -154,3 +154,11 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 ## 0.8 完整源码草稿
 
 `Project::preview_source_edit(&SourceEditRequest)`生成只读预览，`apply_source_edit(&request,plan_digest)`重验基线后仅提交内存；显式`save()`保存。DTO包含相对源码路径、完整源文与当前content_baseline，返回诊断和plan_digest。允许保留编译失败的稿件；只读、越界、旧基线与外部冲突仍拒绝。CLI/RPC已接同一入口，详见agent-protocol“完整源码草稿事务”。
+
+## 0.9 持续约束、锁定投影与当前稿
+
+`Project::schema_index()`读取持续约束、绑定及诊断；`preview_schema_edit`和`apply_schema_edit`使用完整源码DTO和内容基线/plan_digest，返回字段身份变化及实例前后诊断。CLI的schema-index/schema-preview/schema-apply与RPC的schema.index/schema.edit.preview/schema.edit.apply复用此实现，详见[协议](../spec/agent-protocol.md)。
+
+`Story::choices()`只含可选项；显式新消费者使用`choice_presentations()`和`choose_presentation`或`choose_id`。CLI加`--choice-presentation`、RPC session申请`runtime.choice_presentation.v1`才附新展示投影。禁用说明是作者静态文字，不是调试变量或本地化已译承诺。
+
+`Project::compile_writing_drafts`只读编译唯一文件草稿，`manuscript::reading_projection`从core AST生成静态预览；无效/过期时调用方须显著标旧预览，不能当当前稿。`search_replace`提供字面查询、精确scope、保护token及原子计划验证；见[查找替换规范](../spec/search-replace.md)。

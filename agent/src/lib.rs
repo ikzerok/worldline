@@ -86,6 +86,7 @@ struct Session {
     #[allow(dead_code)] // 保留归属信息,便于未来多路复用与调试
     story_id: String,
     story: Story<'static>,
+    choice_presentation: bool,
 }
 
 #[derive(Default)]
@@ -196,6 +197,7 @@ impl Server {
                 "protocol": PROTOCOL,
                 "server": "wl-agent",
                 "version": env!("CARGO_PKG_VERSION"),
+                "capabilities": [worldline_runtime::CHOICE_PRESENTATION_CAPABILITY],
             })),
             "compile" => self.compile(params),
             "analyze" => {
@@ -224,49 +226,8 @@ impl Server {
             }
             "session.open" => self.session_open(params),
             "trace.replay" => self.trace_replay(params),
-            "session.continue" => {
-                let s = self.session(params)?;
-                match s.story.continue_story() {
-                    Ok(outputs) => {
-                        let outs: Vec<Value> = outputs
-                            .iter()
-                            .map(|o| serde_json::to_value(o).expect("Output 序列化不失败"))
-                            .collect();
-                        Ok(json!({
-                            "outputs": outs,
-                            "choices": sessions::choices_json(&s.story),
-                            "state": s.story.state_view(),
-                            "paused": s.story.is_paused(),
-                            "ended": s.story.is_ended(),
-                        }))
-                    }
-                    Err(e) => Ok(json!({ "ok": false, "run_error": e })),
-                }
-            }
-            "session.choose" => {
-                let s = self.session(params)?;
-                let index = params
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| ProtoError::new(-32602, "需要整数参数 `index`(0 起)"))?
-                    as usize;
-                let len = s.story.choices().len();
-                if index >= len {
-                    return Err(ProtoError::new(
-                        -32602,
-                        format!("选择越界:index {index},共 {len} 项"),
-                    ));
-                }
-                match s.story.choose(index) {
-                    Ok(()) => Ok(json!({
-                        "state": s.story.state_view(),
-                        "paused": s.story.is_paused(),
-                        "ended": s.story.is_ended(),
-                        "choices": sessions::choices_json(&s.story),
-                    })),
-                    Err(e) => Ok(json!({ "ok": false, "run_error": e })),
-                }
-            }
+            "session.continue" => self.session_continue(params),
+            "session.choose" => self.session_choose(params),
             "session.state" => {
                 let s = self.session(params)?;
                 Ok(json!({ "state": s.story.state_view() }))
@@ -323,6 +284,9 @@ impl Server {
             "maps.list" => self.maps_list(params),
             "source.edit.preview" => self.source_edit(params, false),
             "source.edit.apply" => self.source_edit(params, true),
+            "schema.index" => self.schema_index(params),
+            "schema.edit.preview" => self.schema_edit(params, false),
+            "schema.edit.apply" => self.schema_edit(params, true),
             "authoring.intent.preview" => self.authoring_intent(params, false),
             "authoring.intent.apply" => self.authoring_intent(params, true),
             "markdown.import.preview" => self.markdown_import(params, false),

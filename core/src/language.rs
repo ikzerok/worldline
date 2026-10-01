@@ -128,7 +128,10 @@ pub fn uses_new_features(program: &Program) -> bool {
             Stmt::Let(l) => expr(&l.expr),
             Stmt::Set(s) => expr(&s.expr),
             Stmt::Choice(c) => {
-                parts(&c.label) || c.cond.as_ref().is_some_and(expr) || body(&c.body)
+                parts(&c.label)
+                    || c.cond.as_ref().is_some_and(expr)
+                    || c.enable.as_ref().is_some_and(expr)
+                    || body(&c.body)
             }
             Stmt::If(i) => i
                 .branches

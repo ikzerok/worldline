@@ -7,6 +7,7 @@ use crate::lexer::{Line, LineKind};
 mod language;
 mod metadata;
 mod program;
+mod schemas;
 mod statements;
 mod text;
 pub(crate) use text::split_text_decorations;

@@ -88,6 +88,20 @@ impl Server {
 
     pub(super) fn session_open(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let story_id = param_str(params, "story_id")?.to_string();
+        let choice_presentation = match params.get("capabilities") {
+            None => false,
+            Some(value) => {
+                let capabilities = value
+                    .as_array()
+                    .ok_or_else(|| ProtoError::new(-32602, "capabilities 必须是字符串数组"))?;
+                if capabilities.iter().any(|v| !v.is_string()) {
+                    return Err(ProtoError::new(-32602, "capabilities 必须是字符串数组"));
+                }
+                capabilities
+                    .iter()
+                    .any(|v| v.as_str() == Some(worldline_runtime::CHOICE_PRESENTATION_CAPABILITY))
+            }
+        };
         let seed = match params.get("seed") {
             None => None,
             Some(value) => Some(
@@ -117,9 +131,23 @@ impl Server {
         let state = story.state_view();
         self.next_session += 1;
         let session_id = format!("c{}", self.next_session);
-        self.sessions
-            .insert(session_id.clone(), Session { story_id, story });
-        Ok(json!({ "session_id": session_id, "state": state }))
+        self.sessions.insert(
+            session_id.clone(),
+            Session {
+                story_id,
+                story,
+                choice_presentation,
+            },
+        );
+        let mut response = json!({ "session_id": session_id, "state": state });
+        if params.get("capabilities").is_some() {
+            response["capabilities"] = if choice_presentation {
+                json!([worldline_runtime::CHOICE_PRESENTATION_CAPABILITY])
+            } else {
+                json!([])
+            };
+        }
+        Ok(response)
     }
 
     pub(super) fn trace_replay(&self, params: &Value) -> Result<Value, ProtoError> {
@@ -162,9 +190,10 @@ fn compile_options(params: &Value) -> Result<CompileOptions, ProtoError> {
         "1.9" => Ok(CompileOptions::new(LanguageVersion::V1_9)),
         "1.10" => Ok(CompileOptions::new(LanguageVersion::V1_10)),
         "1.11" => Ok(CompileOptions::new(LanguageVersion::V1_11)),
+        "1.12" => Ok(CompileOptions::new(LanguageVersion::V1_12)),
         _ => Err(ProtoError::new(
             -32602,
-            format!("不支持的语言版本 `{version}`(可用: 1.9 / 1.10 / 1.11)"),
+            format!("不支持的语言版本 `{version}`(可用: 1.9 / 1.10 / 1.11 / 1.12)"),
         )),
     }
 }
@@ -220,4 +249,78 @@ pub(super) fn choices_json(story: &Story) -> Vec<Value> {
             choice
         })
         .collect()
+}
+
+impl Server {
+    pub(super) fn session_continue(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        let session = self.session(params)?;
+        match session.story.continue_story() {
+            Ok(outputs) => {
+                let mut response = session_response(session);
+                response["outputs"] = json!(outputs);
+                Ok(response)
+            }
+            Err(error) => Ok(json!({ "ok": false, "run_error": error })),
+        }
+    }
+    pub(super) fn session_choose(&mut self, params: &Value) -> Result<Value, ProtoError> {
+        let session = self.session(params)?;
+        let count = ["index", "presentation_index", "choice_id"]
+            .iter()
+            .filter(|key| params.get(**key).is_some())
+            .count();
+        if count != 1 {
+            return Err(ProtoError::new(
+                -32602,
+                "index、presentation_index、choice_id 必须且只能提供一个",
+            ));
+        }
+        let selected = if let Some(index) = params.get("index") {
+            let index = index
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| ProtoError::new(-32602, "需要整数参数 index(0 起)"))?;
+            let len = session.story.choices().len();
+            if index >= len {
+                return Err(ProtoError::new(
+                    -32602,
+                    format!("选择越界:index {index},共 {len} 项"),
+                ));
+            }
+            session.story.choose(index)
+        } else {
+            if !session.choice_presentation {
+                return Err(ProtoError::new(
+                    -32602,
+                    "需先在 session.open 协商 runtime.choice_presentation.v1",
+                ));
+            }
+            if let Some(index) = params.get("presentation_index") {
+                let index = index
+                    .as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or_else(|| ProtoError::new(-32602, "presentation_index 必须为非负整数"))?;
+                session.story.choose_presentation(index)
+            } else {
+                let id = param_str(params, "choice_id")?;
+                session.story.choose_id(id)
+            }
+        };
+        match selected {
+            Ok(()) => Ok(session_response(session)),
+            Err(error) => Ok(json!({ "ok": false, "run_error": error })),
+        }
+    }
+}
+fn session_response(session: &Session) -> Value {
+    let mut response = json!({
+        "choices": choices_json(&session.story),
+        "state": session.story.state_view(),
+        "paused": session.story.is_paused(),
+        "ended": session.story.is_ended(),
+    });
+    if session.choice_presentation {
+        response["choice_presentation"] = json!(session.story.choice_presentations());
+    }
+    response
 }
