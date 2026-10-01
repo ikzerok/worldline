@@ -128,6 +128,10 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 
 运行失败可能包括准入拒绝、动态表达式问题、执行步数限制及无效存档。按实际 RunError 报告位置和信息，避免将所有错误都解释成语法错误。
 
+## 重放比较与源码定位
+
+0.12的runtime语义比较只在临时副本中排除`state.calls[]`各帧顶层的`file`和`line`。不递归删除同名参数/局部字段，不丢弃整个调用栈或未知字段；原始trace、状态视图和当前源码导航照旧保留。CLI/RPC共用此判定，不增加新的重放schema或运行指纹版本。ReplayTrace与调试checkpoint仍严格匹配runtime版本并校验schema；0.11轨迹不能直接在0.12重放，旧可选DTO形状只在runtime/schema兼容时可读。入口trace通过版本检查后可受控比较新稿；checkpoint-origin还校验fingerprint。普通Story存档沿用独立的读取格式、required_features与程序指纹规则，不概括成相同的runtime/schema绑定。编辑器跳转仅取本次ReplayResult的实际当前位置；旧trace定位只供对比，过期结果或无实际位置不能据其猜测跳转。详见[重放契约](../spec/replay.md)。
+
 ## 编辑器边界
 
 这些工具能创建或修改 `.wl` 并检查、演练作品，但没有运行中编辑器的窗口控制协议。切换视图、布局拖动、撤销重做和文件对话框仍是 UI 操作。磁盘改稿由桌面自动刷新接入；需要确认画面效果时，应实际查看编辑器，不能拿 CLI 成功替代 UI 验证。

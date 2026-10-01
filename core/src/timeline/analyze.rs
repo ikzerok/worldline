@@ -119,13 +119,13 @@ pub(crate) fn analyze(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> T
             };
             let same_period =
                 event.period.is_some() && event.period == program.events[before].period;
-            let same_root = event_roots[i].is_some() && event_roots[i] == event_roots[before];
-            if (root_order && !same_root) || (!root_order && !same_period) {
-                let required = if root_order {
-                    "共享唯一明确的已声明时间根"
-                } else {
-                    "位于同一时段"
-                };
+            if let Some(required) = super::scope_rejection(
+                timeline.order_scope,
+                event.period.as_deref(),
+                event_roots[i],
+                program.events[before].period.as_deref(),
+                event_roots[before],
+            ) {
                 report(
                     program,
                     diagnostics,

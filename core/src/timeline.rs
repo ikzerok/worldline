@@ -60,6 +60,27 @@ pub struct Timeline {
     pub status: TimelineStatus,
 }
 
+/// 编译与作者候选投影共用的比较范围规则；根由 analyze 唯一解析。
+pub(crate) fn scope_rejection(
+    scope: TemporalOrderScope,
+    after_period: Option<&str>,
+    after_root: Option<&str>,
+    before_period: Option<&str>,
+    before_root: Option<&str>,
+) -> Option<&'static str> {
+    match scope {
+        TemporalOrderScope::DirectPeriod
+            if after_period.is_none() || after_period != before_period =>
+        {
+            Some("位于同一时段")
+        }
+        TemporalOrderScope::RootPeriod if after_root.is_none() || after_root != before_root => {
+            Some("共享唯一明确的已声明时间根")
+        }
+        _ => None,
+    }
+}
+
 impl Timeline {
     /// 完整编译诊断汇总后再调用，解析失败/缺失节点也不伪装成完整空图。
     pub(crate) fn mark_incomplete(&mut self, diagnostics: &[Diagnostic]) {

@@ -14,6 +14,10 @@ use super::{
     ReplayResult, ReplayStatus, ReplayTrace, RunError, Story, REPLAY_SCHEMA_VERSION,
 };
 
+#[cfg(test)]
+#[path = "replay_runner/tests.rs"]
+mod tests;
+
 struct ReplayCursor {
     initial_state: serde_json::Value,
     initial_pending: bool,
@@ -439,6 +443,19 @@ fn presentation_semantics(presentation: &[serde_json::Value]) -> Vec<serde_json:
 
 fn semantic_state(value: &serde_json::Value) -> serde_json::Value {
     let mut value = value.clone();
+    if let Some(calls) = value
+        .get_mut("calls")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for call in calls {
+            if let Some(call) = call.as_object_mut() {
+                // Only these frame-level fields are source metadata. Keep all
+                // semantic/unknown fields, including locals named file or line.
+                call.remove("file");
+                call.remove("line");
+            }
+        }
+    }
     if let Some(choices) = value
         .get_mut("coverage")
         .and_then(serde_json::Value::as_object_mut)
