@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use worldline_core::ast::{EffectWhen, Program, Stmt, TextPart};
 use worldline_core::Analysis;
 
+mod bounded;
 mod choices;
 mod effects;
 mod evidence;
@@ -23,6 +24,10 @@ mod replay_runner;
 mod util;
 mod variable_validation;
 
+pub use bounded::{
+    BoundedContinuation, ContinuationOutcome, BOUNDED_CONTINUE_CAPABILITY,
+    DEFAULT_CONTINUATION_BUDGET,
+};
 pub use choices::CHOICE_PRESENTATION_CAPABILITY;
 pub use evidence::{ConditionEvidence, EvidenceNode, EvidenceOutcome};
 use model::FrameSrc;
@@ -89,6 +94,9 @@ pub struct Story<'p> {
     choice_coverage: BTreeMap<String, ChoiceCoverage>,
     trace: ReplayTrace,
     failed_explanations: Option<Vec<ChoiceExplanation>>,
+    continuation_budget: ReplayBudget,
+    continuation_outputs: Vec<Output>,
+    interrupted_outputs: Vec<Output>,
 }
 
 impl<'p> Story<'p> {
@@ -140,6 +148,9 @@ impl<'p> Story<'p> {
             state_history: Vec::new(),
             choice_coverage: BTreeMap::new(),
             failed_explanations: None,
+            continuation_budget: DEFAULT_CONTINUATION_BUDGET,
+            continuation_outputs: Vec::new(),
+            interrupted_outputs: Vec::new(),
             trace: ReplayTrace::entry(analysis.fingerprint, seed),
         };
         story.init_vars()?;
@@ -342,6 +353,7 @@ impl<'p> Story<'p> {
     pub fn start_trace_from_here(&mut self) -> Result<(), RunError> {
         let checkpoint = self.checkpoint()?;
         self.trace = ReplayTrace::checkpoint(checkpoint);
+        self.continuation_outputs.clear();
         if self.paused.is_some() {
             self.trace.initial_observation = Some(self.observation(&[]));
         }

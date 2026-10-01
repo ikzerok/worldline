@@ -17,12 +17,19 @@ mod proposal;
 mod proposal_apply;
 mod proposal_merge;
 mod review;
+mod review_projection;
 
-pub use comments::{build_comment_index, capture_text_anchor, write_comment};
+pub use comments::{
+    anchor_status as comment_anchor_status, build_comment_index, capture_text_anchor, write_comment,
+};
 pub use proposal::{build_proposal_index, capture_dirty_proposal, write_proposal};
 pub use proposal_apply::{apply_proposal, apply_proposal_with_resolutions};
 pub use proposal_merge::preview_proposal;
 pub(crate) use review::review_checkpoint_text;
+pub use review_projection::{
+    capture_text_selection, CommentAnchorFilter, CommentResolutionFilter, CommentReviewFilter,
+    CommentReviewItem, CommentReviewProjection,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

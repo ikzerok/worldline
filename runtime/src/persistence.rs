@@ -210,6 +210,9 @@ impl<'p> Story<'p> {
             choice_coverage: state.choice_coverage,
             trace: ReplayTrace::checkpoint(checkpoint),
             failed_explanations: None,
+            continuation_budget: super::DEFAULT_CONTINUATION_BUDGET,
+            continuation_outputs: Vec::new(),
+            interrupted_outputs: Vec::new(),
         };
         story.frames = story.rebuild_frames(&saved_frames, analysis)?;
         if restore_pause {

@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 
 mod expressions;
 mod flow;
+mod flow_safety;
+mod flow_summary;
 mod fragment_flow;
 mod language;
 mod variables;
@@ -128,6 +130,10 @@ pub(super) fn analyze(
     };
     (analysis, all)
 }
+pub(super) fn execution_diagnostics(program: &Program, analysis: &Analysis) -> Vec<Diagnostic> {
+    flow::execution_diagnostics(program, analysis)
+}
+
 impl<'a> Ctx<'a> {
     /// 故事线/角色声明收集(重复角色报 A104;故事线同名合并)。
     fn collect_decl_symbols(&mut self) {

@@ -217,7 +217,7 @@ fn run_replay_slice(
         let initial_actual = if story.is_paused() {
             story.observation(&[])
         } else {
-            let mut outcome = match story.continue_story_inner(Some(&mut *budget)) {
+            let mut outcome = match story.continue_story_inner(&mut *budget) {
                 Ok(outcome) => outcome,
                 Err(error) => {
                     return ReplayProgress::Finished(make_replay_result(
@@ -339,7 +339,7 @@ fn run_replay_slice(
                 &cursor.initial_state,
             ));
         };
-        let mut outcome = match story.continue_story_inner(Some(&mut *budget)) {
+        let mut outcome = match story.continue_story_inner(&mut *budget) {
             Ok(outcome) => outcome,
             Err(error) => {
                 return ReplayProgress::Finished(make_replay_result(

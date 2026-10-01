@@ -87,6 +87,8 @@ struct Session {
     story_id: String,
     story: Story<'static>,
     choice_presentation: bool,
+    bounded_continue: bool,
+    cancel_next: bool,
 }
 
 #[derive(Default)]
@@ -197,7 +199,10 @@ impl Server {
                 "protocol": PROTOCOL,
                 "server": "wl-agent",
                 "version": env!("CARGO_PKG_VERSION"),
-                "capabilities": [worldline_runtime::CHOICE_PRESENTATION_CAPABILITY],
+                "capabilities": [
+                    worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
+                    worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
+                ],
             })),
             "compile" => self.compile(params),
             "analyze" => {
@@ -227,6 +232,7 @@ impl Server {
             "session.open" => self.session_open(params),
             "trace.replay" => self.trace_replay(params),
             "session.continue" => self.session_continue(params),
+            "session.cancel" => self.session_cancel(params),
             "session.choose" => self.session_choose(params),
             "session.state" => {
                 let s = self.session(params)?;
@@ -266,6 +272,7 @@ impl Server {
             }
             "session.restart" => {
                 let s = self.session(params)?;
+                s.cancel_next = false;
                 match s.story.restart() {
                     Ok(()) => Ok(json!({ "state": s.story.state_view() })),
                     Err(e) => Ok(json!({ "ok": false, "run_error": e })),

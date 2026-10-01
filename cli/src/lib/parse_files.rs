@@ -13,11 +13,32 @@ pub(super) fn parse_file_args(
     let mut seed = None;
     let mut trace_output = None;
     let mut choice_presentation = false;
+    let mut bounded_continue = false;
+    let mut continuation_budget = worldline_runtime::DEFAULT_CONTINUATION_BUDGET;
     let mut language_version = None;
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
         match a.as_str() {
             "--json" => json = true,
+            "--bounded-continue" if session_flags => bounded_continue = true,
+            other
+                if session_flags
+                    && matches!(
+                        other.split('=').next(),
+                        Some("--max-steps" | "--time-budget-ms")
+                    ) =>
+            {
+                let (key, value) = match other.split_once('=') {
+                    Some(pair) => pair,
+                    None => (other, iter.next().ok_or("执行预算需要非负整数")?.as_str()),
+                };
+                let value = value.parse().map_err(|_| "执行预算需要非负整数")?;
+                if key == "--max-steps" {
+                    continuation_budget.max_steps = value;
+                } else {
+                    continuation_budget.time_budget_ms = value;
+                }
+            }
             "--choice-presentation" if session_flags => choice_presentation = true,
             other if session_flags && other.starts_with("--load=") => {
                 load = Some(PathBuf::from(other.trim_start_matches("--load=")));
@@ -77,6 +98,8 @@ pub(super) fn parse_file_args(
         seed,
         trace_output,
         choice_presentation,
+        bounded_continue,
+        continuation_budget,
         language_version,
     })
 }

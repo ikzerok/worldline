@@ -1,10 +1,10 @@
-use super::Ctx;
-use crate::analysis_helpers::{nodes_on_cycles, terminates};
+use super::{flow_summary::FlowSummary, Ctx};
+use crate::analysis_helpers::nodes_on_cycles;
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use std::collections::{HashSet, VecDeque};
 impl<'a> Ctx<'a> {
-    /// 流分析:A201 不可达、A202 无终止、A205 once 无意义、A107 未读变量。
+    /// 流分析:A201 不可达、A202 缺尾、A205 once、A206 闭环、A107 未读变量。
     pub(super) fn flow_analysis(&mut self) {
         let entry = self.node_ids.get(&self.program.entry).copied().unwrap_or(0);
         let adj = self.graph_edges.iter().fold(
@@ -47,6 +47,45 @@ impl<'a> Ctx<'a> {
         }
         // 可重访性:节点处于某个环上(含自环)
         let cyclic = nodes_on_cycles(&adj);
+        let flow = FlowSummary::new(self.program, &self.symbols, &self.graph_nodes);
+        for group in &flow.cycles {
+            let (first, site) = &group[0];
+            let names = group
+                .iter()
+                .map(|(index, _)| format!("`{}`", self.graph_nodes[*index].name))
+                .collect::<Vec<_>>()
+                .join("、");
+            let mut diagnostic = Diagnostic::warning(
+                "A206",
+                &site.file,
+                site.span,
+                format!("节点 {names} 构成没有选择暂停或出口的闭环；请补可退出分支或选择暂停"),
+            );
+            for (index, site) in group {
+                if index != first {
+                    diagnostic = diagnostic.with_related(&site.file, site.span);
+                }
+            }
+            self.diags.push(diagnostic);
+        }
+        let mut reachable_tail = HashSet::new();
+        let authored_flow = flow
+            .authored_flow
+            .get(entry as usize)
+            .copied()
+            .unwrap_or(false);
+        for (index, node) in self.graph_nodes.iter().enumerate() {
+            if authored_flow && flow.reachable[index] && flow.fallthrough[index] {
+                if let Some(path) = self
+                    .symbols
+                    .events
+                    .get(&node.name)
+                    .or_else(|| self.symbols.scenes.get(&node.name))
+                {
+                    reachable_tail.insert(path.event);
+                }
+            }
+        }
         // A202 / A205
         for idx in 0..self.program.events.len() {
             let name = self.program.events[idx].name.clone();
@@ -60,14 +99,17 @@ impl<'a> Ctx<'a> {
                 .cloned()
                 .unwrap_or_default();
             let loc = self.program.events[idx].loc;
-            if self.program.events[idx].period.is_none()
-                && !terminates(&self.program.events[idx].body)
+            let root_fallthrough = self
+                .node_ids
+                .get(&name)
+                .is_some_and(|&node| flow.fallthrough[node as usize]);
+            if reachable_tail.contains(&idx)
+                || (self.program.events[idx].period.is_none() && root_fallthrough)
             {
-                self.diags.push(Diagnostic::warning(
-                    "A202",
+                self.diags.push(tail_diagnostic(
+                    &self.program.events[idx],
                     &self.cur_file,
-                    Span::new(loc.line, loc.column, name.chars().count() as u32),
-                    format!("事件 `{name}` 可能执行到结尾而没有跃迁(视同 END);建议显式 `-> END` 或补跃迁"),
+                    loc,
                 ));
             }
             let body = self.program.events[idx].body.clone();
@@ -147,5 +189,50 @@ impl<'a> Ctx<'a> {
             }
         }
         depth
+    }
+}
+
+/// 只有明确开始试玩时调用；补充普通检查不能从历史正文推断的执行用途。
+pub(super) fn execution_diagnostics(
+    program: &Program,
+    analysis: &crate::analysis::Analysis,
+) -> Vec<Diagnostic> {
+    let Some(&entry) = analysis.graph.ids.get(&program.entry) else {
+        return Vec::new();
+    };
+    let Some(path) = analysis.symbols.events.get(&program.entry) else {
+        return Vec::new();
+    };
+    let event = &program.events[path.event];
+    if event.period.is_none() {
+        return Vec::new();
+    }
+    let flow = FlowSummary::new(program, &analysis.symbols, &analysis.graph.nodes);
+    if flow.authored_flow[entry as usize] || !flow.fallthrough[entry as usize] {
+        return Vec::new();
+    }
+    let file = program
+        .event_files
+        .get(path.event)
+        .map(String::as_str)
+        .unwrap_or_default();
+    vec![tail_diagnostic(event, file, event.loc)]
+}
+
+fn tail_diagnostic(event: &Event, file: &str, loc: Loc) -> Diagnostic {
+    let name = &event.name;
+    let span = Span::new(loc.line, loc.column, name.chars().count() as u32);
+    if event.period.is_some() {
+        Diagnostic::hint(
+            "A202", file, span,
+            format!("事件 `{name}` 在当前试玩路径中可能自然结束；可显式 `-> END`，作为历史资料无需补跃迁"),
+        )
+    } else {
+        Diagnostic::warning(
+            "A202",
+            file,
+            span,
+            format!("事件 `{name}` 可能执行到结尾而没有跃迁(视同 END);建议显式 `-> END` 或补跃迁"),
+        )
     }
 }

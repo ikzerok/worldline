@@ -375,16 +375,17 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 
 | 方法 | 参数 | 结果(result) |
 |---|---|---|
-| `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version: "0.2.0"}` |
+| `initialize` | `{}` | `{protocol: 1, server: "wl-agent", version, capabilities}` |
 | `compile` | `{path, language_version?}` 或 `{source, file_name?, language_version?}` | `{ok, story_id, fingerprint, stats, diagnostics, workspace_diagnostics, read_only, language_version}`;故事编译失败时无 story_id；工程可编译但工作区只读时仍可返回 story_id，`read_only` 为 true |
 | `analyze` | `{story_id}` | `{graph, anchors, symbols, stats, world, timeline, catalog, language_version}`(结构化,同 §2.2/§2.3 形状;symbols 为符号表全量) |
 | `export` | `{story_id, format}`;format ∈ `graph_mermaid` \| `timeline_mermaid` | `{text}` |
-| `session.open` | `{story_id, save?, seed?}`(save 为存档 JSON 字符串；seed 为新会话的非负整数随机种子，不能与 save 同用) | `{session_id, state}` |
+| `session.open` | `{story_id, save?, seed?, capabilities?, max_steps?, time_budget_ms?}`(预算须协商，详见 bounded-execution.md；save 为存档 JSON 字符串；seed 为新会话的非负整数随机种子，不能与 save 同用) | `{session_id, state}` |
 | `session.trace` | `{session_id}` | `{trace}`；输出与 CLI 相同的 runtime ReplayTrace |
 | `session.checkpoint` | `{session_id}` | `{checkpoint}`；仅用于相同 runtime/schema/fingerprint |
 | `session.explain_choices` | `{session_id,include_evidence?:bool}` | `{choices}`；默认旧形状只读解释；显式 true 只返回已实际执行的暂停/失败组证据，没有缓存则空数组；证据契约见 replay.md |
 | `trace.replay` | `{story_id, trace, max_steps?, time_budget_ms?}` | `{ok, replay}`；选择/观察不匹配和预算停止为结构化故事结果，不是 JSON-RPC 错误 |
-| `session.continue` | `{session_id}` | `{outputs, choices, state, paused, ended}`;运行期错误 → `ok:false` |
+| `session.continue` | `{session_id, max_steps?, time_budget_ms?}`（预算覆盖须先协商） | `{outputs, choices, state, paused, ended}`；协商后附 outcome/executed_steps，运行失败或预算/取消暂停 → `ok:false` |
+| `session.cancel` | `{session_id}`（须协商 runtime.bounded_continue.v1） | `{cancel_pending:true,state}`；取消下一次推进，顺序传输不抢占已开始请求 |
 | `session.choose` | `{session_id, index}`(**0 起**) | `{state, paused, ended, choices}`;越界 → error `-32602` |
 | `session.state` | `{session_id}` | `{state}` |
 | `session.save` | `{session_id}` | `{save}`(存档 JSON **字符串**) |
@@ -467,7 +468,7 @@ core 的 cancellable 查询 API 可返回 `CANCELLED`；当前 CLI/RPC 方法没
 - `session.open` 基于 story_id 新建会话(多会话可共享同一 story);带
   `save` 时经 `Story::load` 恢复,指纹不匹配 → `ok:false`。
   `session_id` 自 `"c1"` 起递增。
-- `session.continue` 对应库层 `continue_story()`;`session.choose` 对应
+- `session.continue` 对应库层有界推进;`session.choose` 对应
   `choose()`——**只消费选择、不推进**(与库语义一致),推进靠随后的
   `session.continue`。
 - 会话结束(ended)后 `session.continue` 仍可安全调用:返回
@@ -584,3 +585,9 @@ DTO格式/参数错属于协议错误；只读、过期、路径、保存冲突�
 RPC initialize响应capabilities包含`runtime.choice_presentation.v1`；session.open以`capabilities:["runtime.choice_presentation.v1"]`申请，响应返回已协商能力数组。只有协商成功的session.continue/session.choose附带choice_presentation；缺省旧消费者得到仅可选choices。session.choose的`index`、`presentation_index`、`choice_id`必须三选一；后两者要求已协商能力。禁用或失效身份是`ok:false/run_error`且零推进；参数格式或多选择器属于JSON-RPC error。capabilities未知项不被接受，不扩大其它权限。
 
 投影字段为`id,label,links?,line,offset,enabled,index,disabled_reason`；不含条件表达式、变量或调试证据。全锁组落穿，不因禁用项创建暂停。作者静态禁用说明未纳入本地化交换白名单，交换成功不等于该说明已翻译。
+
+## 普通有界演练扩展
+
+`runtime.bounded_continue.v1` 通过 initialize/session.open 显式协商。普通继续始终
+有默认保护，旧消费者正常字段不变，超限是 `ok:false` 故事结果。新增预算、
+取消方法、CLI 标志与输出完整契约见 [bounded-execution.md](bounded-execution.md)。

@@ -38,7 +38,9 @@ impl ReplayExecutionBudget<'_> {
         if self.cancellation.is_cancelled() {
             return Some(ReplayStop::Status(ReplayStatus::Cancelled));
         }
-        if self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms) {
+        if self.limits.time_budget_ms != u64::MAX
+            && self.started.elapsed() >= Duration::from_millis(self.limits.time_budget_ms)
+        {
             return Some(ReplayStop::Status(ReplayStatus::TimeBudgetExceeded));
         }
         if self.steps >= self.limits.max_steps {
@@ -65,16 +67,9 @@ impl ReplayExecutionBudget<'_> {
 impl<'p> Story<'p> {
     // -- 推进 ---------------------------------------------------------------
 
-    /// 推进到暂停(选择)或结束;返回本轮输出。
-    pub fn continue_story(&mut self) -> Result<Vec<Output>, RunError> {
-        let outcome = self.continue_story_inner(None)?;
-        self.record_continuation(&outcome.outputs);
-        Ok(outcome.outputs)
-    }
-
     pub(super) fn continue_story_inner(
         &mut self,
-        mut budget: Option<&mut ReplayExecutionBudget<'_>>,
+        budget: &mut ReplayExecutionBudget<'_>,
     ) -> Result<ContinueOutcome, RunError> {
         let mut out = Vec::new();
         if self.paused.is_some() {
@@ -84,14 +79,6 @@ impl<'p> Story<'p> {
             });
         }
         loop {
-            if let Some(run_budget) = budget.as_deref_mut() {
-                if let Some(stop) = run_budget.consume_step() {
-                    return Ok(ContinueOutcome {
-                        outputs: out,
-                        stop: Some(stop),
-                    });
-                }
-            }
             let Some(fi) = self.frames.len().checked_sub(1) else {
                 out.push(Output::Ended);
                 return Ok(ContinueOutcome {
@@ -99,6 +86,12 @@ impl<'p> Story<'p> {
                     stop: None,
                 });
             };
+            if let Some(stop) = budget.consume_step() {
+                return Ok(ContinueOutcome {
+                    outputs: out,
+                    stop: Some(stop),
+                });
+            }
             if self.frames[fi].idx >= self.frames[fi].stmts.len() {
                 // 事件自然完成先 done 后 exit；弹栈前保留记录的事件归属。
                 if fi == 0 {
@@ -353,6 +346,8 @@ impl<'p> Story<'p> {
     /// 从头开始(多周目)。
     pub fn restart(&mut self) -> Result<(), RunError> {
         self.failed_explanations = None;
+        self.continuation_outputs.clear();
+        self.interrupted_outputs.clear();
         self.vars.clear();
         self.visits.clear();
         self.turns = 0;
