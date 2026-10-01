@@ -68,3 +68,17 @@ Project 为外部刷新维护会话代次。`restore` 只接受同一工作区�
 清单 `language_version: "1.12"` 显式启用 `schema`/`field`/`bind`；默认 1.9 与显式 1.10/1.11 不升级。未知语言版本仍按既有工作区只读保护保留原文。schema 不将旧模板转换为强约束，不扩大 `content.object_refs.v1` 的引用 kind；强 ref 属性仍需原能力声明。静态 schema 与绑定不进入运行指纹，进入源码内容基线与 Project 快照撤销；诊断/编辑影响和发布阻断见 [schemas.md](schemas.md)。
 
 显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。
+
+## 稳定 ID 安全重构与逐处预览
+
+`Project::plan_rename_target` 生成只读、不可拆分的全工程计划；`apply_rename_plan` 整批提交内存缓冲，保存继续使用既有事务。entity/relation 的声明、别名、显式 ref、正文/选项链接、关系端点、状态所属对象、mark/attach/anchor_link、scope_ref 与 schema bind 只替换 core 正式词法/语法提供的身份 token 范围。普通文字、注释（含同一行与跨行块注释）、引号显示名、转义、Unicode、相似 ID，以及链接 label 的原始字节均保持不变。不通过整行字符串替换推断引用，不在 UI 建立第二套解析器。
+
+每个 `RefactorChange` 保留 path/kind/reference_count，新增 `occurrences`。每一处含 `line`（1 起）、`field`（源码语义字段或 JSON Pointer）、`before_range` / `after_range`（整份文档 UTF-8 字节半开范围，start/end）、`before_token` / `after_token`、`before_context` / `after_context`（真实前后完整行）。计划保留 target/new_id/content_baseline/changes/explicit_references，新增 `runtime_fingerprint_before` / `runtime_fingerprint_after`（u64）。逐处预览、范围及候选字节来自同一次真实编辑；注册 JSON 也只定位既有受支持引用字段，保留无关字节、扩展字段及排版。字段名改动以该键的 JSON Pointer 标识，不把同值普通字段视作引用。
+
+预览绑定完整内容基线。应用时重新生成完整计划，并比较全部身份、位置、语境、前后字节及引用数；删减文件、修改 token/语境或篡改目标均拒绝，不提供任意排除某一引用的接口。取消、陈旧预览、磁盘外改、只读文件、无效候选或被篡改计划均零修改。没有有效候选时不提供可提交的预览。
+
+entity/relation 改名仍要求运行指纹完全相同；其中作为 state 所属对象的 entity 稳定 ID 是运行身份的一部分，并非纯静态资料。若候选改变指纹，安全拒绝并列出受影响 state 的 ID、声明文件/行及旧/候选指纹，解释旧 Story 存档与检查点的指纹不匹配、不能直接载入候选；入口 trace 按 [replay.md](replay.md) 允许在新指纹上重新受控验证，不能保证沿用；建议保留稳定 ID、仅修改 entity 的 `as "显示名"`。本功能不增加迁移模式，不修改旧 save/replay，不移除 state target 指纹，不放宽载入守卫。
+
+关系定义不采用实体的 `as` 显示名语法；如需变更关系称呼，可保留稳定 ID、编辑对象别名。当前状态分析不接受 relation 作为有效所属对象，仍报告原有 A216，不因本轮重构扩大语言支持。
+
+既有 rule/fragment/character/tag/state 改名保留原语法改写与 `reference_count` / `explicit_references` 身份引用计数。若旧语法必须重编码整条引号语句，逐处项以 `field: "source.syntax"` 标识真实整行语法变更范围；一项可包含多个身份引用，不能把逐处项数冒充旧引用计数。entity/relation 始终投影精准身份 token，不使用该回退。

@@ -4,6 +4,8 @@
 use crate::ast::Loc;
 use crate::diagnostic::{Diagnostic, Span};
 mod classify;
+mod identity;
+pub use identity::{identity_source_spans, IdentitySourceSpan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuotedStringError;

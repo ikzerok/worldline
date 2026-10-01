@@ -220,3 +220,5 @@ AnchorRecord {
 显式语言1.12的可见禁用选择见 [choices.md](choices.md)：旧if仍隐藏，enable独立判定可选性；旧choices仅含可选项，全锁仍落穿。
 
 显式语言1.13只扩展作者静态偏序和人物 Ref 属性，见 [language-1.13.md](language-1.13.md)。Ref 属性、schema 和时间元数据保持排除于运行指纹；普通世界/人物标量资料的既有指纹规则不变。人物自身稳定 ID 改名仍影响运行身份，不承诺旧档兼容。
+
+稳定 ID 重构不承诺所有 entity 均为静态：state 所属对象 ID 进入运行指纹，改其 ID 会使旧 Story save 与检查点的指纹不匹配；入口 replay trace 仍可按现有协议在新指纹上受控重放，但必须重新验证，不能保证沿用。因此 entity/relation 原子改名仍在指纹变化时拒绝；错误列出具体状态及旧/候选指纹。仅修改实体显示名可保留身份。重构预览与原子提交契约见 [workspace.md](workspace.md)。

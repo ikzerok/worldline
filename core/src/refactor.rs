@@ -1,6 +1,9 @@
 //! 跨源码与展示文档的稳定 TargetRef 重命名计划。
 mod documents;
+mod json_spans;
 mod language;
+mod preview;
+pub use preview::{RefactorByteRange, RefactorOccurrence};
 mod property;
 mod text;
 use crate::catalog::TargetRef;
@@ -11,24 +14,27 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RefactorChange {
     pub path: PathBuf,
     pub kind: String,
     pub reference_count: usize,
+    pub occurrences: Vec<RefactorOccurrence>,
     #[serde(skip)]
     before: Vec<u8>,
     #[serde(skip)]
     after: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenamePlan {
     pub target: TargetRef,
     pub new_id: String,
     pub content_baseline: String,
     pub changes: Vec<RefactorChange>,
     pub explicit_references: usize,
+    pub runtime_fingerprint_before: u64,
+    pub runtime_fingerprint_after: u64,
 }
 impl Project {
     pub fn plan_rename_target(
@@ -37,6 +43,7 @@ impl Project {
         new_id: &str,
     ) -> Result<RenamePlan, String> {
         self.ensure_workspace_writable()?;
+        ensure_source_inventory(self)?;
         if !matches!(
             target.kind.as_str(),
             "entity" | "relation" | "rule" | "fragment" | "character" | "tag" | "state"
@@ -108,7 +115,8 @@ impl Project {
                 .map(|document| document.text.as_bytes().to_vec())
                 .ok_or_else(|| format!("源码未载入：{}", path.display()))?;
             let text = String::from_utf8(before.clone()).map_err(|_| "源码不是 UTF-8")?;
-            let (after, count) = rewrite_source(&text, &line_numbers, target, new_id);
+            let (after, occurrences, count) =
+                rewrite_source(&text, &line_numbers, target, new_id, self.compile_options())?;
             if count == 0 {
                 return Err(format!("无法安全定位重命名位置：{}", path.display()));
             }
@@ -116,6 +124,7 @@ impl Project {
                 path,
                 kind: "source".into(),
                 reference_count: count,
+                occurrences,
                 before,
                 after: after.into_bytes(),
             });
@@ -143,31 +152,44 @@ impl Project {
                 crate::workspace_documents::parse_unique_json(&before).map_err(|error| {
                     format!("展示文档 JSON 无法安全读取：{}：{error}", path.display())
                 })?;
+            let original = value.clone();
             let count = rewrite_registered(&mut value, &registry, path, target, new_id);
             if count == 0 {
                 continue;
             }
-            let after = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+            let source = std::str::from_utf8(&before).map_err(|_| "展示文档不是 UTF-8")?;
+            let edits = json_spans::edits(source, &original, &value, target, new_id)?;
+            let (after, occurrences) = preview::apply(source, edits)?;
+            if occurrences.len() != count
+                || serde_json::from_str::<serde_json::Value>(&after)
+                    .map_err(|error| error.to_string())?
+                    != value
+            {
+                return Err("展示文档逐处预览与候选不匹配".into());
+            }
             changes.push(RefactorChange {
                 path: path.clone(),
                 kind: "authoring".into(),
                 reference_count: count,
+                occurrences,
                 before,
-                after,
+                after: after.into_bytes(),
             });
         }
 
         let explicit_references = changes.iter().map(|change| change.reference_count).sum();
-        let plan = RenamePlan {
+        let mut plan = RenamePlan {
             target: target.clone(),
             new_id: new_id.into(),
             content_baseline: self.content_baseline(),
             changes,
             explicit_references,
+            runtime_fingerprint_before: content.analysis.fingerprint,
+            runtime_fingerprint_after: content.analysis.fingerprint,
         };
         let mut candidate = self.clone();
         apply_plan_bytes(&mut candidate, &plan)?;
-        validate_candidate(&candidate, &content, target)?;
+        plan.runtime_fingerprint_after = validate_candidate(&candidate, &content, target)?;
         Ok(plan)
     }
 
@@ -176,6 +198,10 @@ impl Project {
         self.checkpoint_disk_baselines_match()?;
         if self.content_baseline() != plan.content_baseline {
             return Err("重命名预览已过期，请重新生成影响计划".into());
+        }
+        let expected = self.plan_rename_target(&plan.target, &plan.new_id)?;
+        if &expected != plan {
+            return Err("重命名计划或逐处预览已变化，整批未提交，请重新生成计划".into());
         }
         let current = self.compile_current();
         if current.analysis.catalog.object(&plan.target).is_none() {
@@ -197,6 +223,24 @@ impl Project {
         Ok(())
     }
 }
+fn ensure_source_inventory(project: &Project) -> Result<(), String> {
+    let paths = match crate::file_access::workspace_files(&project.root) {
+        Ok(paths) => paths,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(format!("无法检查重命名源码集合：{error}")),
+    };
+    if let Some(path) = paths.iter().find(|path| {
+        path.extension().is_some_and(|extension| extension == "wl")
+            && !project.documents.contains_key(*path)
+    }) {
+        return Err(format!(
+            "磁盘新增源码尚未载入，整批未提交，请刷新后重新预览：{}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn current_bytes(project: &Project, change: &RefactorChange) -> Result<Vec<u8>, String> {
     match change.kind.as_str() {
         "source" => project
@@ -232,7 +276,7 @@ fn validate_candidate(
     project: &Project,
     before: &CompileResult,
     old_target: &TargetRef,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let compiled = project.compile_current();
     if let Some(error) = compiled
         .diagnostics
@@ -308,208 +352,84 @@ fn validate_candidate(
     if matches!(old_target.kind.as_str(), "entity" | "relation")
         && before.analysis.fingerprint != compiled.analysis.fingerprint
     {
-        return Err("entity / relation ID 重命名不应改变运行指纹".into());
+        let affected = before
+            .analysis
+            .catalog
+            .states
+            .values()
+            .filter(|state| state.target == *old_target)
+            .map(|state| format!("state {}（{}:{}）", state.id, state.file, state.line))
+            .collect::<Vec<_>>();
+        let reason = if affected.is_empty() {
+            "此候选改变了运行身份或可见正文".to_string()
+        } else {
+            format!(
+                "受影响状态：{}。状态所属对象的稳定 ID 参与运行指纹",
+                affected.join("、")
+            )
+        };
+        let alternative = if old_target.kind == "entity" {
+            "请保留实体稳定 ID，仅修改实体声明的 as \"显示名\"。"
+        } else {
+            "请保留关系稳定 ID，使用 alias relation ID as \"别名\" 修改对象别名；若修改关系类型显示文字，会影响同类关系的显示，但不改变关系 ID。"
+        };
+        return Err(format!(
+            "已安全拒绝稳定 ID 重命名，工程未修改。{reason}。旧 fingerprint={}；候选 fingerprint={}。旧 Story 存档（save）与检查点的 fingerprint 不匹配，不能直接载入此候选；入口轨迹（replay）须按当前稿重新受控验证，不能保证沿用。不会修改或自动迁移旧文件。{alternative}",
+            before.analysis.fingerprint, compiled.analysis.fingerprint,
+        ));
     }
-    Ok(())
+    Ok(compiled.analysis.fingerprint)
 }
 fn rewrite_source(
     source: &str,
     lines: &BTreeSet<u32>,
     target: &TargetRef,
     new_id: &str,
-) -> (String, usize) {
-    let mut out = String::with_capacity(source.len());
+    options: crate::CompileOptions,
+) -> Result<(String, Vec<RefactorOccurrence>, usize), String> {
+    if matches!(target.kind.as_str(), "entity" | "relation") {
+        let edits = crate::lexer::identity_source_spans("rename.wl", source, options)
+            .into_iter()
+            // Catalog 的部分引用位置指向所属声明（例如 scope_ref），不等于 token 所在行。
+            // 文件由语义引用闭包选定；文件内仅正式身份 span 决定实际修改范围。
+            .filter(|span| span.target == *target)
+            .map(|span| preview::Edit {
+                range: span.range,
+                replacement: new_id.into(),
+                field: span.field,
+            })
+            .collect();
+        let (after, occurrences) = preview::apply(source, edits)?;
+        let count = occurrences.len();
+        return Ok((after, occurrences, count));
+    }
+    let mut after = String::new();
+    let mut edits = Vec::new();
+    let mut offset = 0;
+    let mut count = 0;
     let property_ranges = property::reference_ranges(source, target);
-    let mut count = 0usize;
     for (index, part) in source.split_inclusive('\n').enumerate() {
         let line = index as u32 + 1;
-        if lines.contains(&line) {
-            let (rewritten, hits) = match property_ranges.get(&line) {
+        let (rewritten, hits) = if lines.contains(&line) {
+            match property_ranges.get(&line) {
                 Some(Some(range)) => property::rewrite(part, range.clone(), new_id),
                 Some(None) => (part.to_owned(), 0),
-                None => rewrite_source_line(part, target, new_id),
-            };
-            out.push_str(&rewritten);
-            count += hits;
-        } else {
-            out.push_str(part);
-        }
-    }
-    if source.is_empty() {
-        return (out, count);
-    }
-    if !source.ends_with('\n')
-        && source.lines().count() as u32 > lines.iter().copied().max().unwrap_or(0)
-    {
-        return (out, count);
-    }
-    (out, count)
-}
-
-fn rewrite_source_line(line: &str, target: &TargetRef, new_id: &str) -> (String, usize) {
-    if !matches!(target.kind.as_str(), "entity" | "relation") {
-        return language::rewrite(line, target, new_id);
-    }
-    let mut text = line.to_string();
-    let (rewritten, mut count) = rewrite_explicit_refs(&text, target, new_id);
-    text = rewritten;
-    if line.trim_start().starts_with("property ") {
-        return (text, count);
-    }
-    let link_old = format!("[[{}:{}|", target.kind, target.id);
-    let link_new = format!("[[{}:{}|", target.kind, new_id);
-    let hits = text.matches(&link_old).count();
-    if hits > 0 {
-        text = text.replace(&link_old, &link_new);
-        count += hits;
-    }
-
-    let pair_old = format!("{} {}", target.kind, target.id);
-    let pair_new = format!("{} {}", target.kind, new_id);
-    let (rewritten, hits) = replace_structural_pair(&text, &pair_old, &pair_new);
-    text = rewritten;
-    count += hits;
-
-    if target.kind == "relation" {
-        let decl_old = format!("relation_def {}", target.id);
-        let decl_new = format!("relation_def {new_id}");
-        let (rewritten, hits) = replace_structural_pair(&text, &decl_old, &decl_new);
-        text = rewritten;
-        count += hits;
-    }
-    (text, count)
-}
-
-/// Rewrite only the explicit property-value grammar. Plain strings containing the same
-/// `kind:id` text are intentionally untouched.
-fn rewrite_explicit_refs(line: &str, target: &TargetRef, new_id: &str) -> (String, usize) {
-    let mut text = line.to_owned();
-    let mut cursor = 0usize;
-    let mut count = 0usize;
-    while let Some(relative) = text[cursor..].find("ref") {
-        let start = cursor + relative;
-        let after_name = start + 3;
-        let before_ok = start == 0 || !text[..start].chars().next_back().is_some_and(is_ident_char);
-        let after_ok = text[after_name..]
-            .chars()
-            .next()
-            .is_none_or(|character| !is_ident_char(character));
-        if !before_ok || !after_ok {
-            cursor = after_name;
-            continue;
-        }
-        let Some(open) =
-            skip_ascii_space(&text, after_name).filter(|index| text[*index..].starts_with('('))
-        else {
-            cursor = after_name;
-            continue;
-        };
-        let Some(kind_start) = skip_ascii_space(&text, open + 1) else {
-            break;
-        };
-        let Some((kind, kind_end, _)) = parse_quoted_literal(&text, kind_start) else {
-            cursor = open + 1;
-            continue;
-        };
-        let Some(comma) =
-            skip_ascii_space(&text, kind_end).filter(|index| text[*index..].starts_with(','))
-        else {
-            cursor = kind_end;
-            continue;
-        };
-        let Some(id_start) = skip_ascii_space(&text, comma + 1) else {
-            break;
-        };
-        let Some((id, id_end, id_range)) = parse_quoted_literal(&text, id_start) else {
-            cursor = comma + 1;
-            continue;
-        };
-        let Some(close) =
-            skip_ascii_space(&text, id_end).filter(|index| text[*index..].starts_with(')'))
-        else {
-            cursor = id_end;
-            continue;
-        };
-        if kind == target.kind && id == target.id {
-            let quoted = crate::authoring::quote(new_id);
-            let inner = &quoted[1..quoted.len() - 1];
-            let delta = inner.len() as isize - id_range.len() as isize;
-            text.replace_range(id_range, inner);
-            count += 1;
-            cursor = (close as isize + delta).max(0) as usize + 1;
-        } else {
-            cursor = close + 1;
-        }
-    }
-    (text, count)
-}
-
-fn skip_ascii_space(text: &str, mut index: usize) -> Option<usize> {
-    while let Some(character) = text.get(index..)?.chars().next() {
-        if !character.is_ascii_whitespace() {
-            break;
-        }
-        index += character.len_utf8();
-    }
-    Some(index)
-}
-
-/// Returns the decoded string, byte after the literal, and the inner range to replace.
-fn parse_quoted_literal(
-    text: &str,
-    start: usize,
-) -> Option<(String, usize, std::ops::Range<usize>)> {
-    if !text.get(start..)?.starts_with('"') {
-        return None;
-    }
-    let mut index = start + 1;
-    let mut decoded = String::new();
-    while let Some(character) = text.get(index..)?.chars().next() {
-        match character {
-            '"' => return Some((decoded, index + 1, start + 1..index)),
-            '\\' => {
-                index += 1;
-                let escaped = text.get(index..)?.chars().next()?;
-                decoded.push(match escaped {
-                    'n' => '\n',
-                    'r' => '\r',
-                    't' => '\t',
-                    other => other,
-                });
-                index += escaped.len_utf8();
+                None => language::rewrite(part, target, new_id),
             }
-            other => {
-                decoded.push(other);
-                index += other.len_utf8();
-            }
-        }
-    }
-    None
-}
-
-fn replace_structural_pair(text: &str, old: &str, new: &str) -> (String, usize) {
-    let mut result = String::new();
-    let mut rest = text;
-    let mut count = 0;
-    while let Some(index) = rest.find(old) {
-        let before_ok = index == 0 || !rest[..index].chars().next_back().is_some_and(is_ident_char);
-        let end = index + old.len();
-        let after_ok = end == rest.len() || !rest[end..].chars().next().is_some_and(is_ident_char);
-        if before_ok && after_ok {
-            result.push_str(&rest[..index]);
-            result.push_str(new);
-            rest = &rest[end..];
-            count += 1;
         } else {
-            let split = index + old.chars().next().map(char::len_utf8).unwrap_or(1);
-            result.push_str(&rest[..split]);
-            rest = &rest[split..];
+            (part.to_owned(), 0)
+        };
+        count += hits;
+        for mut edit in preview::legacy_edits(part, &rewritten, &target.id, new_id) {
+            edit.range = offset + edit.range.start..offset + edit.range.end;
+            edits.push(edit);
         }
+        offset += part.len();
+        after.push_str(&rewritten);
     }
-    result.push_str(rest);
-    (result, count)
-}
-
-fn is_ident_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')
+    let (actual, occurrences) = preview::apply(source, edits)?;
+    if actual != after {
+        return Err("逐处预览与语言重构候选不匹配".into());
+    }
+    Ok((actual, occurrences, count))
 }

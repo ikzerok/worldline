@@ -166,3 +166,9 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 `Story::choices()`只含可选项；显式新消费者使用`choice_presentations()`和`choose_presentation`或`choose_id`。CLI加`--choice-presentation`、RPC session申请`runtime.choice_presentation.v1`才附新展示投影。禁用说明是作者静态文字，不是调试变量或本地化已译承诺。
 
 `Project::compile_writing_drafts`只读编译唯一文件草稿，`manuscript::reading_projection`从core AST生成静态预览；无效/过期时调用方须显著标旧预览，不能当当前稿。`search_replace`提供字面查询、精确scope、保护token及原子计划验证；见[查找替换规范](../spec/search-replace.md)。
+
+## 0.13 身份重构的逐处计划
+
+`Project::plan_rename_target(&TargetRef, new_id)` 保留原返回接口。`RenamePlan` 保留既有字段，新增前后 `runtime_fingerprint_before/after: u64`；每个 `RefactorChange` 新增 `occurrences`，逐处给出 1 起行号、语义字段或 JSON Pointer、完整文档 UTF-8 字节半开范围、身份 token 及真实前后行语境。范围、预览及私有候选字节出自同一份计划。旧 JSON 消费者可继续读取原字段并忽略新增字段；计划仍由受信 Project API 生成，不能把任意 JSON 当作写入权限。
+
+`apply_rename_plan` 重新生成并核对完整计划，拒绝删减引用、篡改语境、过期内容、外部新增/修改文件与无效候选。成功只写 Project 内存，可由调用方整体撤销；`save` 才写盘。state 所属对象改名仍因运行指纹变化拒绝，错误包含具体 state 和旧/候选指纹；没有新的身份迁移 API。完整契约见[工作区规范](../spec/workspace.md#稳定-id-安全重构与逐处预览)。

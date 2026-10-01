@@ -20,6 +20,9 @@ pub struct InlineLink {
     pub start: usize,
     pub end: usize,
     pub column: u32,
+    /// 原始正文内身份 token 的字符半开范围。
+    pub id_start: usize,
+    pub id_end: usize,
 }
 
 /// 求值后文字中的显式链接；start/end 是 UTF-8 字节范围。

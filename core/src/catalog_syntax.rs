@@ -124,6 +124,25 @@ pub(crate) fn tokenize(
     line: u32,
     diags: &mut Vec<Diagnostic>,
 ) -> Vec<(String, bool)> {
+    tokenize_spanned(rest, file, line, diags)
+        .into_iter()
+        .map(|token| (token.value, token.quoted))
+        .collect()
+}
+
+/// 正式目录 token 的字符范围；包含引号的 token 也保留原始边界。
+pub(crate) struct SourceToken {
+    pub value: String,
+    pub quoted: bool,
+    pub range: std::ops::Range<usize>,
+}
+
+pub(crate) fn tokenize_spanned(
+    rest: &str,
+    file: &str,
+    line: u32,
+    diags: &mut Vec<Diagnostic>,
+) -> Vec<SourceToken> {
     let chars = rest.chars().collect::<Vec<_>>();
     // 逗号与空白都用作 ID 列表分隔,引号内路径完整保留。
     let mut tokens = Vec::new();
@@ -136,7 +155,11 @@ pub(crate) fn tokenize(
         if chars[i] == '"' {
             match crate::lexer::parse_quoted(&chars, i, file, line, diags) {
                 Ok((text, end)) => {
-                    tokens.push((text, true));
+                    tokens.push(SourceToken {
+                        value: text,
+                        quoted: true,
+                        range: i..end,
+                    });
                     i = end;
                 }
                 Err(_) => break,
@@ -146,7 +169,11 @@ pub(crate) fn tokenize(
             while i < chars.len() && !chars[i].is_whitespace() && chars[i] != ',' {
                 i += 1;
             }
-            tokens.push((chars[start..i].iter().collect::<String>(), false));
+            tokens.push(SourceToken {
+                value: chars[start..i].iter().collect(),
+                quoted: false,
+                range: start..i,
+            });
         }
     }
     tokens
