@@ -120,12 +120,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
 
     registry.language_version = match object.get("language_version") {
         None => LanguageVersion::V1_9,
-        Some(Value::String(version)) => match version.as_str() {
-            "1.9" => LanguageVersion::V1_9,
-            "1.10" => LanguageVersion::V1_10,
-            "1.11" => LanguageVersion::V1_11,
-            "1.12" => LanguageVersion::V1_12,
-            _ => {
+        Some(Value::String(version)) => match LanguageVersion::from_supported_str(version) {
+            Some(version) => version,
+            None => {
                 manifest_read_only = true;
                 registry.report(
                     root,
@@ -140,7 +137,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             registry.report(
                 root,
                 "WS003",
-                "清单 language_version 必须是 \"1.9\"、\"1.10\"、\"1.11\" 或 \"1.12\"，按只读处理",
+                "清单 language_version 必须是 \"1.9\"、\"1.10\"、\"1.11\"、\"1.12\" 或 \"1.13\"，按只读处理",
             );
             LanguageVersion::V1_9
         }
@@ -490,10 +487,10 @@ fn manifest_capability_is_read_only(bytes: &[u8]) -> bool {
         .and_then(Value::as_u64)
         .is_some_and(|version| version == 1);
     let language_ok = object.get("language_version").is_none_or(|version| {
-        matches!(
-            version.as_str(),
-            Some("1.9") | Some("1.10") | Some("1.11") | Some("1.12")
-        )
+        version
+            .as_str()
+            .and_then(LanguageVersion::from_supported_str)
+            .is_some()
     });
     let features_ok = object
         .get("required_features")
@@ -523,6 +520,7 @@ fn supported_feature(feature: &str) -> bool {
             | "presentation.manuscripts.v1"
             | "content.templates.v1"
             | "content.object_refs.v1"
+            | "content.character_refs.v1"
             | "presentation.presets.v1"
             | "collaboration.comments.v1"
             | "collaboration.proposals.v1"

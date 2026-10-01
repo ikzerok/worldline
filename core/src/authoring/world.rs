@@ -17,7 +17,20 @@ impl Project {
                 &draft.id,
             )?;
             candidate.apply_rename_plan(&plan)?;
-            candidate.write_character(path, Some(&draft.id), draft)?;
+            let mut renamed_draft = draft.clone();
+            for (_, value) in &mut renamed_draft.properties {
+                if let PropertyValue::Ref(target) = value {
+                    if target.kind == "character" && target.id == original {
+                        target.id = draft.id.clone();
+                    }
+                }
+            }
+            for (target, _) in &mut renamed_draft.relations {
+                if target == original {
+                    *target = draft.id.clone();
+                }
+            }
+            candidate.write_character(path, Some(&draft.id), &renamed_draft)?;
             *self = candidate;
             return Ok(());
         }

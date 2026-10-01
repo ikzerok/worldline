@@ -42,7 +42,7 @@ impl<'a> Parser<'a> {
                     loc,
                 } if keyword == "field" => {
                     if let Some(field) =
-                        crate::schemas::parse::field(&source, file, loc, self.diags)
+                        crate::schemas::parse::field(&source, file, loc, self.options(), self.diags)
                     {
                         if let Some(schema) = &mut schema {
                             schema.fields.push(field);

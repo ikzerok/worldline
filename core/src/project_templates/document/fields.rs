@@ -11,6 +11,7 @@ fn parse_template_document(
     content: &CompileResult,
 ) -> ProjectTemplateDocument {
     let mut entry = ProjectTemplateDocument {
+        file: file.into(),
         template: None,
         source_document: None,
         source_bytes: bytes.to_vec(),
@@ -203,6 +204,24 @@ fn parse_template_document(
             format!("对象引用字段要求清单声明 `{OBJECT_REFS_REQUIRED_FEATURE}`，模板按只读处理"),
         );
         entry.read_only = true;
+    }
+    if parsed_fields.iter().any(field_contains_character_ref) {
+        let document_declares = object
+            .get("required_features")
+            .and_then(Value::as_array)
+            .is_some_and(|features| {
+                features
+                    .iter()
+                    .any(|feature| feature.as_str() == Some(CHARACTER_REFS_REQUIRED_FEATURE))
+            });
+        if !language_version.supports_language_113()
+            || !manifest_features.contains(CHARACTER_REFS_REQUIRED_FEATURE)
+            || !document_declares
+        {
+            entry.error("TPL005", file, line_for(bytes, "character"),
+                "人物引用字段要求显式语言 1.13、清单及模板文档声明 content.character_refs.v1，模板按只读处理");
+            entry.read_only = true;
+        }
     }
     for field in &parsed_fields {
         validate_field_targets(field, &content.analysis.catalog, bytes, file, &mut entry);

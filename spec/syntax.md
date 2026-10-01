@@ -86,7 +86,7 @@ entity lighthouse kind place as "雾港灯塔"
 
 语言 1.10 属性可使用 `ref("kind", "id")` 声明显式对象引用，例如
 `property home = ref("entity", "harbor")`。两项参数必须是非空字符串字面量，不求值；
-kind 仅允许 `entity` 或 `relation`；其他类型报 P004。项目清单必须声明
+1.10–1.12 的 kind 仅允许 `entity` 或 `relation`；1.13 人物扩展需遵守 [character-refs.md](character-refs.md) 的双能力门。其他类型报 P004。项目清单必须声明
 `content.object_refs.v1`，以使不支持该能力的旧客户端按只读处理。缺失目标报告 A214；
 只有此显式值建立强引用，普通字符串、模板字段同名或显示文字不自动转成引用。
 该属性供作者资料、目录和引用影响使用，不参与事件执行或运行指纹。重命名会更新
@@ -568,3 +568,5 @@ storyline harbor
 顶层新增 `alias KIND TARGET as "别名"`；正文和选择文案新增 `[[KIND:TARGET|显示文字]]`。详细语法限制、转义、诊断、静态资料与运行边界见 [catalog.md](catalog.md) §5。`alias` 是声明关键字，普通叙述请避免以该关键字开头。
 
 语言 1.11 的显式扩展与兼容边界见 [language-1.11.md](language-1.11.md)。
+
+显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。

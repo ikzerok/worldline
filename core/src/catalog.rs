@@ -43,7 +43,16 @@ pub const TARGET_KINDS: &[&str] = &[
 ];
 
 /// Explicit property references currently target kinds supported by the core rename plan.
-pub const OBJECT_REFERENCE_TARGET_KINDS: &[&str] = &["entity", "relation"];
+pub const OBJECT_REFERENCE_TARGET_KINDS: &[&str] = &["entity", "relation", "character"];
+
+/// 静态属性引用的唯一能力门；普通 TargetRef 不受此限制。
+pub fn is_object_reference_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
+    OBJECT_REFERENCE_TARGET_KINDS.contains(&kind)
+        && options.object_refs
+        && options.language_version.supports_entities()
+        && (kind != "character"
+            || (options.character_refs && options.language_version.supports_language_113()))
+}
 
 pub fn is_target_kind(kind: &str, options: crate::compiler::CompileOptions) -> bool {
     TARGET_KINDS.contains(&kind)

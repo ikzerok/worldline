@@ -95,3 +95,5 @@ CLI 与 JSON-RPC 只解码、传入同一 core DTO、序列化 core plan/result�
 台词 source.kind 为 say，翻译只含 spoken text 及原有占位/链接 token；speaker 身份、显示名和 direction
 不会自动进入交换包。正文修订与占位表达式绑定；演出备注不属于翻译内容。导入仍复用完整源码基线、
 计划重建、只读保护和 locale sidecar 原子应用，旧稳定 ID 不随正文移动自动改变。
+
+静态人物引用的 `content.character_refs.v1` 能力开启时纳入本地化 source_baseline，能力变更使旧交换包过期；缺少该新能力时保留原baseline字节编码，不为旧工程添加恒false字段。该检查不改变runtime fingerprint。

@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 mod document;
+mod references;
 
 type PreparedTemplateMutation = (
     Project,
@@ -26,6 +27,7 @@ type PreparedTemplateMutation = (
 
 pub const PROJECT_TEMPLATE_REQUIRED_FEATURE: &str = "content.templates.v1";
 pub const OBJECT_REFS_REQUIRED_FEATURE: &str = "content.object_refs.v1";
+pub const CHARACTER_REFS_REQUIRED_FEATURE: &str = "content.character_refs.v1";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProjectTemplateField {
@@ -52,6 +54,8 @@ pub struct ProjectTemplate {
 
 #[derive(Debug, Clone)]
 pub struct ProjectTemplateDocument {
+    /// 注册文档的来源路径，供缓存索引直接投影引用导航。
+    pub file: String,
     pub template: Option<ProjectTemplate>,
     pub source_document: Option<Value>,
     pub source_bytes: Vec<u8>,

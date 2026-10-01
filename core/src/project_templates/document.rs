@@ -163,6 +163,17 @@ fn field_contains_object_ref(field: &ProjectTemplateField) -> bool {
 fn supported_template_feature(feature: &str) -> bool {
     matches!(
         feature,
-        PROJECT_TEMPLATE_REQUIRED_FEATURE | OBJECT_REFS_REQUIRED_FEATURE
+        PROJECT_TEMPLATE_REQUIRED_FEATURE
+            | OBJECT_REFS_REQUIRED_FEATURE
+            | CHARACTER_REFS_REQUIRED_FEATURE
     )
+}
+
+fn field_contains_character_ref(field: &ProjectTemplateField) -> bool {
+    (field.field_type == "object_ref"
+        && field
+            .target
+            .as_ref()
+            .is_some_and(|target| target.kind == "character"))
+        || field.fields.iter().any(field_contains_character_ref)
 }

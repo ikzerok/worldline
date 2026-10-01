@@ -283,6 +283,19 @@ fn prepare_template_mutation(
             &project.compile_current(),
         );
         diagnostics.extend(parsed.diagnostics.iter().cloned());
+        if parsed
+            .template
+            .as_ref()
+            .is_some_and(|template| template.fields.iter().any(field_contains_character_ref))
+            && !registry
+                .required_features
+                .contains(OBJECT_REFS_REQUIRED_FEATURE)
+        {
+            return Err(
+                "TPL005：人物引用模板必须预先声明 content.object_refs.v1；不会自动开启缺失能力"
+                    .into(),
+            );
+        }
         if parsed.read_only {
             return Err(parsed
                 .diagnostics

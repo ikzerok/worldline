@@ -18,8 +18,8 @@
 
 - `text`、`number`、`boolean` 分别对应字符串、有限数值和布尔属性。
 - `enum` 的 `choices` 必须非空、无重复且不含空白项；实例值仍是字符串。
-- `object_ref` 必须指定 `target.kind` 为 `entity` 或 `relation`；可选
-  `target.entity_type` 仅用于 `entity`。v1 限制为 core 可完整重命名和保护删除的目标类型。
+- `object_ref` 必须指定 `target.kind` 为 `entity` 或 `relation`，或显式 1.13 双能力保护下的 `character`（模板文档还须声明 `content.character_refs.v1`，见 [character-refs.md](character-refs.md)）；可选
+  `target.entity_type` 仅用于 `entity`。目标限制为 core 可完整重命名和保护删除的上述类型。
   实例必须使用下文的显式 `ref("kind", "id")` 属性值；普通字符串即使内容相同
   也不是对象引用。默认值以 `{"kind":"entity","id":"harbor"}` 的 TargetRef
   形状保存，并且目标必须存在且符合 `target` 约束。引用按完整 `TargetRef` 参与验证、
@@ -61,3 +61,7 @@ core 只在 `ref(...)` 值上建立强引用；
 内置目录现有字段 `widget`（如 `multiline`）与工程模板的稳定字段 `type` 是不同
 契约，不隐式迁移内置模板 ID 或旧模板目录。模板诊断 code 使用 `TPL` 前缀，message
 使用中文。
+
+显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。
+
+字段 target.kind 或 target.entity_type 变化属于 constraints_changed，影响预览显示实例类型是否匹配，不把既有字符串、其他 kind 或默认值写入实例。人物模板默认引用进入统一删除影响，并随人物稳定 ID RenamePlan 改写。

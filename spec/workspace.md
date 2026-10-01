@@ -38,7 +38,7 @@ Project 为外部刷新维护会话代次。`restore` 只接受同一工作区�
 `property key = ref("kind", "id")` 是有类型的 `TargetRef` 值，不是字符串约定；
 使用它的工程须在清单 `required_features` 声明 `content.object_refs.v1`，不支持该能力
 的旧客户端按只读保护。缺失目标由 core 产生 A214，引用参与重命名和删除影响；普通
-字符串不参与；当前允许的 kind 只有 `entity` 和 `relation`。语法和模板字段见
+字符串不参与；1.10–1.12 允许的 kind 只有 `entity` 和 `relation`，1.13 的静态人物扩展需额外 `content.character_refs.v1`，见 [character-refs.md](character-refs.md)。语法和模板字段见
 [syntax.md](syntax.md) 与 [templates.md](templates.md)。
 
 ## 可恢复保存
@@ -64,3 +64,5 @@ Project 为外部刷新维护会话代次。`restore` 只接受同一工作区�
 ### 语言 1.12 显式持续资料约束
 
 清单 `language_version: "1.12"` 显式启用 `schema`/`field`/`bind`；默认 1.9 与显式 1.10/1.11 不升级。未知语言版本仍按既有工作区只读保护保留原文。schema 不将旧模板转换为强约束，不扩大 `content.object_refs.v1` 的引用 kind；强 ref 属性仍需原能力声明。静态 schema 与绑定不进入运行指纹，进入源码内容基线与 Project 快照撤销；诊断/编辑影响和发布阻断见 [schemas.md](schemas.md)。
+
+显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。

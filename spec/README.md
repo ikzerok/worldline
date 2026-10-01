@@ -28,3 +28,5 @@
 - [持续资料约束](schemas.md)：显式1.12的schema、field身份、bind、统一校验与影响计划
 - [可见禁用选择](choices.md)：显式1.12 enable/disabled、presentation协商和兼容
 - [当前稿查找替换](search-replace.md)：作用域、保护token、基线和原子事务
+
+- [静态人物强引用](character-refs.md)：显式1.13双能力保护、typed property/schema/template、身份改写与披露边界

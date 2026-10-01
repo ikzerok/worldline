@@ -87,6 +87,10 @@ impl Project {
             .with_object_refs(
                 required_features.contains(crate::project_templates::OBJECT_REFS_REQUIRED_FEATURE),
             )
+            .with_character_refs(
+                required_features
+                    .contains(crate::project_templates::CHARACTER_REFS_REQUIRED_FEATURE),
+            )
             .with_localization_ids(
                 required_features.contains(crate::localization::LOCALIZATION_REQUIRED_FEATURE),
             )

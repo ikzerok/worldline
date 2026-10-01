@@ -300,10 +300,13 @@ fn schemas_are_not_implicitly_published_or_ref_kinds_expanded() {
         .join("\n");
     assert!(!text.contains("people_id"));
     assert!(!text.contains("population"));
-    assert_eq!(
-        worldline_core::catalog::OBJECT_REFERENCE_TARGET_KINDS,
-        &["entity", "relation"]
-    );
+    let options = worldline_core::CompileOptions::v1_12().with_object_refs(true);
+    let supported = worldline_core::catalog::OBJECT_REFERENCE_TARGET_KINDS
+        .iter()
+        .copied()
+        .filter(|kind| worldline_core::catalog::is_object_reference_kind(kind, options))
+        .collect::<Vec<_>>();
+    assert_eq!(supported, ["entity", "relation"]);
     assert!(f
         .project
         .schema_index()

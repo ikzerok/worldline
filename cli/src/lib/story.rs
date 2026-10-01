@@ -97,11 +97,14 @@ pub(super) fn cmd_timeline(f: &FileArgs, out: &mut impl Write) -> Result<i32, St
         return Ok(2);
     };
     let result = &snapshot.result;
-    if result.has_errors() {
-        return compile_failed(&result.diagnostics, f.json, out);
+    if result.has_errors() && !f.json {
+        return compile_failed(&result.diagnostics, false, out);
     }
     if f.json {
-        let payload = json!({
+        let mut payload = json!({
+            "ok": !result.has_errors(),
+            "diagnostics": result.diagnostics,
+            "language_version": result.options.language_version.as_str(),
             "stats": &result.analysis.stats,
             "anchors": &result.analysis.anchors,
             "timeline": &result.analysis.timeline,
@@ -109,8 +112,11 @@ pub(super) fn cmd_timeline(f: &FileArgs, out: &mut impl Write) -> Result<i32, St
             "workspace_diagnostics": snapshot.workspace_diagnostics,
             "read_only": snapshot.read_only,
         });
+        if result.has_errors() {
+            payload["type"] = json!("compile_failed");
+        }
         writeln!(out, "{payload}").map_err(|e| e.to_string())?;
-        return Ok(0);
+        return Ok(if result.has_errors() { 1 } else { 0 });
     }
     let s = result.analysis.stats;
     writeln!(

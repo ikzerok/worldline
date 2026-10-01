@@ -4,6 +4,8 @@ use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::lexer;
 mod quoted;
+mod reference;
+pub(crate) use reference::static_ref_id_range;
 mod text;
 pub use quoted::parse_quoted_interpolations_with_options;
 pub(crate) use quoted::static_literal_ranges;

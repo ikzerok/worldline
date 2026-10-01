@@ -105,6 +105,7 @@ pub(crate) fn field(
     source: &str,
     file: &str,
     loc: Loc,
+    options: crate::CompileOptions,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<SchemaField> {
     let mut tokens = crate::catalog_syntax::tokenize(source, file, loc.line, diagnostics);
@@ -140,6 +141,12 @@ pub(crate) fn field(
         }
         "ref" if crate::catalog::OBJECT_REFERENCE_TARGET_KINDS.contains(&word(&tokens, 3)) => {
             let target_kind = word(&tokens, 3).to_owned();
+            if target_kind == "character"
+                && !crate::catalog::is_object_reference_kind(&target_kind, options)
+            {
+                error(file, loc, "ref character 需要显式语言 1.13 与 content.object_refs.v1、content.character_refs.v1 双能力", diagnostics);
+                return None;
+            }
             let entity_type = if tokens.len() == 6
                 && target_kind == "entity"
                 && word(&tokens, 4) == "entity_type"
@@ -152,7 +159,7 @@ pub(crate) fn field(
                 error(
                     file,
                     loc,
-                    "ref 类型为 ref entity [entity_type SUBTYPE] 或 ref relation",
+                    "ref 类型为 ref entity [entity_type SUBTYPE] 或 ref relation/character（人物需显式能力）",
                     diagnostics,
                 );
                 return None;
@@ -163,7 +170,7 @@ pub(crate) fn field(
             }
         }
         _ => {
-            error(file, loc, "字段类型应为 text/number/boolean/enum \"值\"…/ref entity|relation，尾部可写 required", diagnostics);
+            error(file, loc, "字段类型应为 text/number/boolean/enum \"值\"…/ref entity|relation|character，尾部可写 required", diagnostics);
             return None;
         }
     };
