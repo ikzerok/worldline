@@ -4,7 +4,11 @@ use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::lexer;
 mod quoted;
+mod text;
 pub use quoted::parse_quoted_interpolations_with_options;
+pub(crate) use quoted::static_literal_ranges;
+pub(crate) use text::literal_ranges;
+pub use text::{parse_interpolations, parse_interpolations_with_options};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Tok {
@@ -395,143 +399,6 @@ pub fn parse_expr_src(
 
 /// 文本内插:把 `你有 {coins} 枚` 切成字面量与表达式片段。
 /// 输入为原始文本(转义未解码);输出字面量已解码。
-pub fn parse_interpolations(
-    raw: &str,
-    file: &str,
-    line: u32,
-    base_col: u32,
-    diags: &mut Vec<Diagnostic>,
-) -> Vec<TextPart> {
-    parse_interpolations_with_options(
-        raw,
-        file,
-        line,
-        base_col,
-        diags,
-        crate::compiler::CompileOptions::default(),
-    )
-}
-
-pub fn parse_interpolations_with_options(
-    raw: &str,
-    file: &str,
-    line: u32,
-    base_col: u32,
-    diags: &mut Vec<Diagnostic>,
-    options: crate::compiler::CompileOptions,
-) -> Vec<TextPart> {
-    let chars: Vec<char> = raw.chars().collect();
-    let mut parts = Vec::new();
-    let mut lit = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '\\' && i + 1 < chars.len() {
-            let n = chars[i + 1];
-            match n {
-                'n' => lit.push('\n'),
-                't' => lit.push('\t'),
-                '{' | '}' | '#' | '~' | '"' | '\\' | '[' | ']' => lit.push(n),
-                other => {
-                    diags.push(Diagnostic::error(
-                        "P003",
-                        file,
-                        Span::new(line, base_col + i as u32 + 1, 2),
-                        format!("未知的转义 \\{other}"),
-                    ));
-                    lit.push('\\');
-                    lit.push(other);
-                }
-            }
-            i += 2;
-            continue;
-        }
-        if c == '[' && chars.get(i + 1) == Some(&'[') {
-            let end = (i + 2..chars.len().saturating_sub(1))
-                .find(|&j| chars[j] == ']' && chars[j + 1] == ']');
-            let Some(end) = end else {
-                diags.push(Diagnostic::error(
-                    "P004",
-                    file,
-                    Span::new(line, base_col + i as u32, 2),
-                    "正文对象链接未闭合",
-                ));
-                lit.extend(chars[i..].iter());
-                break;
-            };
-            let inner: String = chars[i + 2..end].iter().collect();
-            if let Some((target, label)) =
-                crate::navigation::parse_link_with_options(&inner, options)
-            {
-                if !lit.is_empty() {
-                    parts.push(TextPart::Str(std::mem::take(&mut lit)));
-                }
-                parts.push(TextPart::Link(crate::navigation::InlineLink {
-                    target,
-                    label,
-                    start: i,
-                    end: end + 2,
-                    column: base_col + i as u32,
-                }));
-            } else {
-                diags.push(Diagnostic::error(
-                    "P004",
-                    file,
-                    Span::new(line, base_col + i as u32, (end + 2 - i) as u32),
-                    "正文链接需要 [[对象类型:ID|显示文字]]，显示文字不可包含语法分隔符",
-                ));
-                lit.extend(chars[i..end + 2].iter());
-            }
-            i = end + 2;
-            continue;
-        }
-        if c == '{' {
-            if !lit.is_empty() {
-                parts.push(TextPart::Str(std::mem::take(&mut lit)));
-            }
-            // 找到配对的 `}`(允许嵌套括号内的表达式含字符串,字符串里的 } 不算)
-            let start = i + 1;
-            let mut j = start;
-            let mut in_str = false;
-            while j < chars.len() {
-                let d = chars[j];
-                if in_str {
-                    if d == '\\' {
-                        j += 1;
-                    } else if d == '"' {
-                        in_str = false;
-                    }
-                } else if d == '"' {
-                    in_str = true;
-                } else if d == '}' {
-                    break;
-                }
-                j += 1;
-            }
-            if j >= chars.len() {
-                diags.push(Diagnostic::error(
-                    "P003",
-                    file,
-                    Span::new(line, base_col + i as u32 + 1, 1),
-                    "插值 `{` 未闭合",
-                ));
-                break;
-            }
-            let inner: String = chars[start..j].iter().collect();
-            let expr = parse_expr_src(&inner, file, line, base_col + start as u32, diags);
-            parts.push(TextPart::Expr(expr));
-            i = j + 1;
-            continue;
-        }
-        lit.push(c);
-        i += 1;
-    }
-    if !lit.is_empty() {
-        parts.push(TextPart::Str(lit));
-    }
-    parts
-}
-
 #[cfg(test)]
 mod tests {
     use super::{parse_expr_src, parse_interpolations};

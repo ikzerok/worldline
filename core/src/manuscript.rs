@@ -6,6 +6,9 @@
 mod commands;
 mod index;
 mod organization;
+mod reading;
+#[cfg(test)]
+mod reading_tests;
 mod source;
 mod writing;
 
@@ -14,6 +17,7 @@ mod writing_tests;
 use crate::catalog::TargetRef;
 use crate::presentation_commands::Revision;
 use crate::Diagnostic;
+pub use reading::{reading_projection, ReadingPart, ReadingProjection};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;

@@ -1,6 +1,9 @@
 use super::super::*;
 use super::ClassifyInput;
 
+#[path = "choice_tail.rs"]
+mod choice_tail;
+
 pub(super) fn classify_statement(
     input: ClassifyInput<'_>,
     file: &str,
@@ -201,6 +204,9 @@ pub(super) fn classify_statement(
                     once,
                     label_raw: String::new(),
                     cond_src: None,
+                    enable_src: None,
+                    disabled_reason: None,
+                    disabled_span: None,
                     localization_id: None,
                     loc: Loc::new(no, word_col),
                     label_span: Span::new(no, off + i as u32 + 1, 1),
@@ -217,6 +223,9 @@ pub(super) fn classify_statement(
                         once,
                         label_raw: String::new(),
                         cond_src: None,
+                        enable_src: None,
+                        disabled_reason: None,
+                        disabled_span: None,
                         localization_id: None,
                         loc: Loc::new(no, word_col),
                         label_span: Span::new(no, off + i as u32 + 1, 1),
@@ -237,24 +246,15 @@ pub(super) fn classify_statement(
                 options.localization_ids,
                 diags,
             );
-            let mut cond_src = None;
-            if tail.trim().starts_with("if") {
-                let s = tail.trim();
-                if let Some(cond) = s.strip_prefix("if") {
-                    cond_src = Some(cond.trim().to_string());
-                }
-            } else if !tail.trim().is_empty() {
-                diags.push(Diagnostic::error(
-                    "P004",
-                    file,
-                    Span::new(no, off + i as u32 + 1, tail.chars().count() as u32),
-                    "choice 标签之后只能是 `if 条件` 或 `#wl-localization:<id>`",
-                ));
-            }
+            let (cond_src, enable_src, disabled_reason, disabled_span) =
+                choice_tail::parse(&tail, file, no, off + i as u32 + 1, options, diags);
             LineKind::Choice {
                 once,
                 label_raw: label,
                 cond_src,
+                enable_src,
+                disabled_reason,
+                disabled_span,
                 localization_id,
                 loc: Loc::new(no, word_col),
                 label_span,

@@ -1,7 +1,7 @@
 //! worldline AST —— 语法规范见 `worldline/spec/syntax.md`。
 
 /// 源文件内的位置:1-based 行号 + 文件内诊断所需的行首列偏移由各节点自带。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct Loc {
     pub line: u32,
     pub column: u32,
@@ -361,6 +361,9 @@ pub struct ChoiceStmt {
     pub label_raw: String,
     pub once: bool,
     pub cond: Option<Expr>,
+    /// 显式1.12可选条件；if仍仅决定可见性。
+    pub enable: Option<Expr>,
+    pub disabled_reason: Option<String>,
     pub body: Vec<Stmt>,
     pub loc: Loc,
     /// 显式稳定的本地化源身份，不参与运行语义。
@@ -456,6 +459,8 @@ pub struct Event {
 #[derive(Debug, Clone, Default)]
 pub struct Program {
     pub language_version: crate::compiler::LanguageVersion,
+    pub schemas: Vec<crate::schemas::SchemaDecl>,
+    pub schema_bindings: Vec<crate::schemas::SchemaBinding>,
     pub rules: Vec<crate::language::RuleDecl>,
     pub fragments: Vec<crate::language::FragmentDecl>,
     /// 旧权限与身份状态的兼容映射；不保存运行状态。

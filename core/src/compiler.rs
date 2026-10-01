@@ -3,7 +3,7 @@ use crate::{analysis, lexer, parser, CompileResult, Diagnostic, Span};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
-/// 语言版本。默认入口仍然固定使用 1.9；需要 1.10 语法的调用方必须
+/// 语言版本。默认入口仍然固定使用 1.9；需要更新语法的调用方必须
 /// 显式传入 [`CompileOptions`]。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LanguageVersion {
@@ -14,6 +14,8 @@ pub enum LanguageVersion {
     V1_10,
     #[serde(rename = "1.11")]
     V1_11,
+    #[serde(rename = "1.12")]
+    V1_12,
 }
 
 impl LanguageVersion {
@@ -22,20 +24,25 @@ impl LanguageVersion {
             Self::V1_9 => "1.9",
             Self::V1_10 => "1.10",
             Self::V1_11 => "1.11",
+            Self::V1_12 => "1.12",
         }
     }
 
     pub const fn supports_entities(self) -> bool {
-        matches!(self, Self::V1_10 | Self::V1_11)
+        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12)
     }
 
     pub const fn supports_language_111(self) -> bool {
-        matches!(self, Self::V1_11)
+        matches!(self, Self::V1_11 | Self::V1_12)
+    }
+
+    pub const fn supports_language_112(self) -> bool {
+        matches!(self, Self::V1_12)
     }
 
     /// 语义关系与通用实体一起在语言 1.10 显式启用。
     pub const fn supports_relations(self) -> bool {
-        matches!(self, Self::V1_10 | Self::V1_11)
+        matches!(self, Self::V1_10 | Self::V1_11 | Self::V1_12)
     }
 }
 
@@ -72,6 +79,10 @@ impl CompileOptions {
 
     pub const fn v1_9() -> Self {
         Self::new(LanguageVersion::V1_9)
+    }
+
+    pub const fn v1_12() -> Self {
+        Self::new(LanguageVersion::V1_12)
     }
 
     pub const fn v1_11() -> Self {

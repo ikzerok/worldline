@@ -411,6 +411,8 @@ fn run_replay_slice(
 
 fn observations_match(expected: &ReplayObservation, actual: &ReplayObservation) -> bool {
     expected.outputs == actual.outputs
+        && presentation_semantics(&expected.choice_presentation)
+            == presentation_semantics(&actual.choice_presentation)
         && expected
             .choices
             .iter()
@@ -420,6 +422,19 @@ fn observations_match(expected: &ReplayObservation, actual: &ReplayObservation) 
                 .iter()
                 .map(|choice| (&choice.id, &choice.label)))
         && semantic_state(&expected.state) == semantic_state(&actual.state)
+}
+
+fn presentation_semantics(presentation: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    presentation
+        .iter()
+        .map(|item| {
+            let mut item = item.clone();
+            if let Some(object) = item.as_object_mut() {
+                object.remove("line");
+            }
+            item
+        })
+        .collect()
 }
 
 fn semantic_state(value: &serde_json::Value) -> serde_json::Value {

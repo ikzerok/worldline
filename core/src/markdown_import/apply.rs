@@ -350,7 +350,7 @@ fn update_import_manifest(project: &mut Project, import_source: &Path) -> Result
         object
             .get("language_version")
             .and_then(serde_json::Value::as_str),
-        Some("1.10" | "1.11")
+        Some("1.10" | "1.11" | "1.12")
     ) {
         object.insert(
             "language_version".into(),

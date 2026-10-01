@@ -33,6 +33,8 @@ pub struct ChoiceExplanation {
     pub available: bool,
     pub condition: Option<ConditionExplanation>,
     pub unavailable_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_condition: Option<ConditionExplanation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,6 +82,8 @@ impl ReplayOrigin {
 pub struct ReplayObservation {
     pub outputs: Vec<serde_json::Value>,
     pub choices: Vec<ChoiceIdentity>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choice_presentation: Vec<serde_json::Value>,
     pub state: serde_json::Value,
 }
 

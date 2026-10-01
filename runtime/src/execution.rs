@@ -7,11 +7,10 @@ pub(super) use web_time::Instant as MonotonicInstant;
 
 use worldline_core::ast::{DivertTarget, EffectWhen, Stmt};
 
-use super::util::{choice_signature, expression_source, stable_hash, stmt_line};
+use super::util::{choice_signature, stable_hash, stmt_line};
 use super::{
-    AnchorKind, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ChoiceView,
-    ConditionExplanation, Frame, FrameSrc, Output, Pause, ReplayBudget, ReplayCancellation,
-    ReplayStatus, ReplayStep, ReplayTrace, RunError, Story, Value,
+    AnchorKind, ChoiceCoverage, ChoiceIdentity, Frame, FrameSrc, Output, ReplayBudget,
+    ReplayCancellation, ReplayStatus, ReplayStep, ReplayTrace, RunError, Story, Value,
 };
 
 pub(super) enum ReplayStop {
@@ -277,136 +276,12 @@ impl<'p> Story<'p> {
                     self.frames[fi].idx += 1;
                 }
                 Stmt::Choice(_) => {
-                    // 选择组 = 连续 Choice 语句
-                    let stmts = self.frames[fi].stmts;
-                    let start = self.frames[fi].idx;
-                    let mut group_len = 0usize;
-                    while matches!(stmts.get(start + group_len), Some(Stmt::Choice(_))) {
-                        group_len += 1;
-                    }
-                    let mut choices = Vec::new();
-                    let mut explanations = Vec::with_capacity(group_len);
-                    let mut evidence_budget = super::evidence::EvidenceBudget::default();
-                    self.failed_explanations = None;
-                    let mut offset = 0usize;
-                    let rng_before = self.rng.get();
-                    while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
-                        let mut identity =
-                            self.choice_identity(fi, start, offset, c.label_raw.clone());
-                        let condition = if let Some(cond) = &c.cond {
-                            let (value, evidence) = self.eval_condition(cond, &mut evidence_budget);
-                            let value = value.map_err(|mut error| {
-                                error
-                                    .node
-                                    .get_or_insert_with(|| self.current_node().unwrap_or_default());
-                                if error.line.is_none() || error.line == Some(0) {
-                                    error.line = Some(c.loc.line);
-                                }
-                                error
-                            });
-                            let value = match value {
-                                Ok(value) => value,
-                                Err(error) => {
-                                    explanations.push(ChoiceExplanation {
-                                        choice: identity,
-                                        available: false,
-                                        condition: Some(ConditionExplanation {
-                                            expression: expression_source(cond),
-                                            result: None,
-                                            error: Some(error.message.clone()),
-                                            evidence: Some(evidence),
-                                        }),
-                                        unavailable_reason: Some("条件求值失败".into()),
-                                    });
-                                    self.failed_explanations = Some(explanations);
-                                    return Err(error);
-                                }
-                            };
-                            let result = matches!(value, Value::Bool(true));
-                            Some(ConditionExplanation {
-                                expression: expression_source(cond),
-                                result: Some(result),
-                                error: None,
-                                evidence: Some(evidence),
-                            })
-                        } else {
-                            None
-                        };
-                        if condition
-                            .as_ref()
-                            .is_some_and(|value| value.result == Some(false))
-                        {
-                            explanations.push(ChoiceExplanation {
-                                choice: identity,
-                                available: false,
-                                condition,
-                                unavailable_reason: Some("条件求值为 false".into()),
-                            });
-                            offset += 1;
-                            continue;
-                        }
-                        if c.once {
-                            let id = self.choice_id(fi, start, offset);
-                            if self.taken_once.contains(&id) {
-                                explanations.push(ChoiceExplanation {
-                                    choice: identity,
-                                    available: false,
-                                    condition,
-                                    unavailable_reason: Some("once 选择已使用".into()),
-                                });
-                                offset += 1;
-                                continue;
-                            }
-                        }
-                        let (label, links) = match self.render_parts(&c.label) {
-                            Ok(rendered) => rendered,
-                            Err(error) => {
-                                explanations.push(ChoiceExplanation {
-                                    choice: identity,
-                                    available: false,
-                                    condition,
-                                    unavailable_reason: Some(format!(
-                                        "选择标签求值失败：{}",
-                                        error.message
-                                    )),
-                                });
-                                self.failed_explanations = Some(explanations);
-                                return Err(error);
-                            }
-                        };
-                        identity.label = label.clone();
-                        choices.push(ChoiceView {
-                            id: identity.id.clone(),
-                            label,
-                            links,
-                            line: c.loc.line,
-                            offset,
+                    if self.pause_choices(fi)? {
+                        return Ok(ContinueOutcome {
+                            outputs: out,
+                            stop: None,
                         });
-                        explanations.push(ChoiceExplanation {
-                            choice: identity,
-                            available: true,
-                            condition,
-                            unavailable_reason: None,
-                        });
-                        offset += 1;
                     }
-                    if choices.is_empty() {
-                        // 组耗尽:落穿到组后(隐式汇聚)
-                        self.frames[fi].idx = start + group_len;
-                        continue;
-                    }
-                    self.paused = Some(Box::new(Pause {
-                        frame_depth: fi,
-                        start,
-                        group_len,
-                        choices,
-                        explanations,
-                        rng_before,
-                    }));
-                    return Ok(ContinueOutcome {
-                        outputs: out,
-                        stop: None,
-                    });
                 }
             }
         }

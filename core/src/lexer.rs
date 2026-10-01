@@ -18,6 +18,11 @@ pub struct Line {
 
 #[derive(Debug, Clone)]
 pub enum LineKind {
+    Schema112 {
+        keyword: String,
+        source: String,
+        loc: Loc,
+    },
     Language111 {
         keyword: String,
         source: String,
@@ -141,6 +146,10 @@ pub enum LineKind {
         once: bool,
         label_raw: String,
         cond_src: Option<String>,
+        enable_src: Option<String>,
+        disabled_reason: Option<String>,
+        /// 禁用说明的原始字面量范围，不含引号；列相对去缩进行，字符计数。
+        disabled_span: Option<Span>,
         localization_id: Option<String>,
         loc: Loc,
         label_span: Span,

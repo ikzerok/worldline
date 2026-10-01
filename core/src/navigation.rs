@@ -307,6 +307,8 @@ pub fn reading_lines_with_options(
                     label_raw,
                     once,
                     cond_src,
+                    enable_src,
+                    disabled_reason,
                     ..
                 }) => {
                     let indent: String = raw.chars().take_while(|c| c.is_whitespace()).collect();
@@ -317,10 +319,19 @@ pub fn reading_lines_with_options(
                     parts.extend(linked_parts(label_raw, file, options));
                     parts.push(ReadingPart {
                         text: format!(
-                            "\"{}",
+                            "\"{}{}",
                             cond_src
                                 .as_ref()
                                 .map(|c| format!(" if {c}"))
+                                .unwrap_or_default(),
+                            enable_src
+                                .as_ref()
+                                .map(|e| format!(
+                                    " enable {e} disabled {}",
+                                    crate::authoring::quote(
+                                        disabled_reason.as_deref().unwrap_or("")
+                                    )
+                                ))
                                 .unwrap_or_default()
                         ),
                         target: None,

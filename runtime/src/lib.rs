@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use worldline_core::ast::{EffectWhen, Program, Stmt, TextPart};
 use worldline_core::Analysis;
 
+mod choices;
 mod effects;
 mod evidence;
 mod execution;
@@ -22,9 +23,12 @@ mod replay_runner;
 mod util;
 mod variable_validation;
 
+pub use choices::CHOICE_PRESENTATION_CAPABILITY;
 pub use evidence::{ConditionEvidence, EvidenceNode, EvidenceOutcome};
 use model::FrameSrc;
-pub use model::{AnchorKind, AnchorRecord, ChoiceView, Output, RunError, StateRecord, Value};
+pub use model::{
+    AnchorKind, AnchorRecord, ChoicePresentation, ChoiceView, Output, RunError, StateRecord, Value,
+};
 pub use replay::{
     AccessCoverage, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ConditionExplanation,
     ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
@@ -56,6 +60,7 @@ struct Pause {
     start: usize,
     group_len: usize,
     choices: Vec<ChoiceView>,
+    presentations: Vec<ChoicePresentation>,
     explanations: Vec<ChoiceExplanation>,
     rng_before: u64,
 }
@@ -359,6 +364,9 @@ impl<'p> Story<'p> {
                 if let Some(condition) = &mut choice.condition {
                     condition.evidence = None;
                 }
+                if let Some(condition) = &mut choice.enable_condition {
+                    condition.evidence = None;
+                }
             }
             return Ok(explanations);
         }
@@ -402,7 +410,7 @@ impl<'p> Story<'p> {
                 .is_some_and(|value| value.result != Some(true));
             let already_taken =
                 choice.once && self.taken_once.contains(&self.choice_id(fi, start, offset));
-            let unavailable_reason = if condition
+            let mut unavailable_reason = if condition
                 .as_ref()
                 .is_some_and(|value| value.error.is_some())
             {
@@ -417,8 +425,35 @@ impl<'p> Story<'p> {
             } else {
                 None
             };
-            let available = !condition_failed && !already_taken;
-            if available {
+            let visible = !condition_failed && !already_taken;
+            let enable_condition = if visible {
+                choice.enable.as_ref().map(|expression| {
+                    match self.eval_with_rng(expression, &mut rng) {
+                        Ok(value) => ConditionExplanation {
+                            expression: expression_source(expression),
+                            result: Some(matches!(value, Value::Bool(true))),
+                            error: None,
+                            evidence: None,
+                        },
+                        Err(error) => ConditionExplanation {
+                            expression: expression_source(expression),
+                            result: None,
+                            error: Some(error.message),
+                            evidence: None,
+                        },
+                    }
+                })
+            } else {
+                None
+            };
+            let enabled = enable_condition
+                .as_ref()
+                .is_none_or(|v| v.result == Some(true));
+            if visible && !enabled {
+                unavailable_reason = Some("可选条件未满足或求值失败".into());
+            }
+            let available = visible && enabled;
+            if visible && !enable_condition.as_ref().is_some_and(|v| v.error.is_some()) {
                 for part in &choice.label {
                     if let TextPart::Expr(expression) = part {
                         // Mirror ordinary label rendering on the copied stream so later
@@ -432,6 +467,7 @@ impl<'p> Story<'p> {
                 available,
                 condition,
                 unavailable_reason,
+                enable_condition,
             });
             offset += 1;
         }
@@ -453,6 +489,14 @@ impl<'p> Story<'p> {
                 .map(|output| serde_json::to_value(output).unwrap_or(serde_json::Value::Null))
                 .collect(),
             choices,
+            choice_presentation: if choices::uses_presentation(self.program) {
+                self.choice_presentations()
+                    .iter()
+                    .map(|v| serde_json::to_value(v).unwrap())
+                    .collect()
+            } else {
+                Vec::new()
+            },
             state: self.state_view(),
         }
     }

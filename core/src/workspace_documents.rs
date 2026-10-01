@@ -124,6 +124,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             "1.9" => LanguageVersion::V1_9,
             "1.10" => LanguageVersion::V1_10,
             "1.11" => LanguageVersion::V1_11,
+            "1.12" => LanguageVersion::V1_12,
             _ => {
                 manifest_read_only = true;
                 registry.report(
@@ -139,7 +140,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
             registry.report(
                 root,
                 "WS003",
-                "清单 language_version 必须是 \"1.9\"、\"1.10\" 或 \"1.11\"，按只读处理",
+                "清单 language_version 必须是 \"1.9\"、\"1.10\"、\"1.11\" 或 \"1.12\"，按只读处理",
             );
             LanguageVersion::V1_9
         }
@@ -489,7 +490,10 @@ fn manifest_capability_is_read_only(bytes: &[u8]) -> bool {
         .and_then(Value::as_u64)
         .is_some_and(|version| version == 1);
     let language_ok = object.get("language_version").is_none_or(|version| {
-        matches!(version.as_str(), Some("1.9") | Some("1.10") | Some("1.11"))
+        matches!(
+            version.as_str(),
+            Some("1.9") | Some("1.10") | Some("1.11") | Some("1.12")
+        )
     });
     let features_ok = object
         .get("required_features")
@@ -510,6 +514,7 @@ fn supported_feature(feature: &str) -> bool {
         feature,
         "presentation.maps.v1"
             | "content.entities.v1"
+            | "content.choice_presentation.v1"
             | "content.relations.v1"
             | "presentation.geometry.line_area.v1"
             | "presentation.geometry.text.v1"

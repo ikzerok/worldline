@@ -47,7 +47,7 @@ pub(super) fn next_rnd(rng: &mut u64) -> u64 {
 }
 
 pub(super) fn choice_signature(choice: &worldline_core::ast::ChoiceStmt) -> String {
-    format!(
+    let mut signature = format!(
         "label={};condition={};once={}",
         choice.label_raw,
         choice
@@ -56,7 +56,11 @@ pub(super) fn choice_signature(choice: &worldline_core::ast::ChoiceStmt) -> Stri
             .map(expression_signature)
             .unwrap_or_else(|| "always".into()),
         choice.once
-    )
+    );
+    if let Some(enable) = &choice.enable {
+        signature.push_str(&format!(";enable={}", expression_signature(enable)));
+    }
+    signature
 }
 
 pub(super) fn stable_hash(bytes: &[u8]) -> u64 {

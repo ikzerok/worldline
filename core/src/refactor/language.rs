@@ -20,6 +20,26 @@ pub(super) fn rewrite(line: &str, target: &TargetRef, new_id: &str) -> (String, 
     let mut argument_indices: Vec<usize> = Vec::new();
     let mut list_kind = "";
     let mut spoken_seen = false;
+    // 1.12 显式绑定的目标是结构引用；不把旧正文整体按新版本重新分类。
+    if trimmed.starts_with("bind ") {
+        let tokens: Vec<_> = trimmed.split_whitespace().collect();
+        if tokens.len() == 5
+            && tokens[0] == "bind"
+            && tokens[1] == target.kind
+            && tokens[2] == target.id
+            && tokens[3] == "to"
+        {
+            let start = code.find("bind ").unwrap_or(0);
+            let prefix = &code[..start];
+            return (
+                format!(
+                    "{prefix}bind {} {new_id} to {}{suffix}",
+                    target.kind, tokens[4]
+                ),
+                1,
+            );
+        }
+    }
     let text_line = crate::lexer::lex_source_with_options(
         "rename.wl",
         code,

@@ -59,6 +59,21 @@ impl<'a> Parser<'a> {
         let line = self.next().expect("parse_stmt 调用前已确认存在");
         let file = self.file_of(line);
         match line.kind.clone() {
+            LineKind::Schema112 { loc, .. } => {
+                self.diags.push(Diagnostic::error(
+                    "P002",
+                    &file,
+                    Span::new(loc.line, loc.column, 6),
+                    "schema / bind 只能出现在顶层，不能写入执行块",
+                ));
+                Stmt::Text(TextStmt {
+                    parts: Vec::new(),
+                    glue: false,
+                    tags: Vec::new(),
+                    localization_id: None,
+                    loc,
+                })
+            }
             LineKind::Language111 {
                 keyword,
                 source,
@@ -110,6 +125,9 @@ impl<'a> Parser<'a> {
                 once,
                 label_raw,
                 cond_src,
+                enable_src,
+                disabled_reason,
+                disabled_span: _,
                 localization_id,
                 loc,
                 label_span,
@@ -131,12 +149,16 @@ impl<'a> Parser<'a> {
                         self.diags,
                     )
                 });
+                let enable = enable_src
+                    .map(|src| parse_expr_src(&src, &file, line.no, label_span.column, self.diags));
                 let body = self.parse_block(indent, &file, false);
                 Stmt::Choice(ChoiceStmt {
                     label,
                     label_raw,
                     once,
                     cond,
+                    enable,
+                    disabled_reason,
                     body,
                     loc,
                     localization_id,

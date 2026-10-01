@@ -60,7 +60,7 @@ catalog 含 objects/tags/assets/states/anchors/marks/attachments/references,
 属于协议版本 1 的向后兼容扩展。详见 [catalog.md](catalog.md)。
 
 人类模式输出保持不变;`--json` 切换机器输出。标志:`--load=<存档.json>`、
-`--save=<存档.json>`、`--language-version=1.9|1.10|1.11`、`--json`。未指定
+`--save=<存档.json>`、`--language-version=1.9|1.10|1.11|1.12`、`--json`。未指定
 `--language-version` 时,目录或入口若位于带 `language_version` 的工程清单中,
 由清单选择语言版本;没有清单的旧调用仍固定使用 1.9。直接 source API 和旧
 CLI 调用不会因出现 `entity` 文本而隐式升级。
@@ -565,3 +565,15 @@ DTO格式/参数错属于协议错误；只读、过期、路径、保存冲突�
 运行Value继续使用既有外部标记枚举JSON；新增`{"Tag":"id"}`、`{"TagSet":["id",...]}`、`{"StateRef":"id"}`。TagSet按ID排序并去重，无普通字符串隐式身份转换。只在实际采用新增能力的作品中，state视图增加calls，逐层提供`fragment,statement,line,file,caller,call_statement,locals`。这些是作者/调试接口，不自动进入读者包。
 
 规则真实求值EvidenceNode可选file/line，其他节点省略，不把未执行分支编造为已满足。状态变更索引的StateChangeSite可选source完整TargetRef及state_expression/tags_expression；片段定义的event为空、node为fragment:ID。Catalog.dynamic_state_changes列出参数化动作，空时省略；只有运行state_history是已发生记录，静态参数目标不会被猜成某个具体state。
+
+## 显式语言 1.12：schema 与锁定选择
+
+`--language-version=1.12`、清单同名版本与 RPC compile 选择同一 core。默认1.9和显式1.10/1.11不升级。持续约束见 [schemas.md](schemas.md)，锁定选择语法与降级规则见 [choices.md](choices.md)。
+
+`wl schema-index DIR --json` / RPC `schema.index {path|project_id}` 返回 `ok/index/baseline/workspace_diagnostics`，index直接序列化core的SchemaIndex，含声明、绑定、实例和定位诊断，不另行推断约束。`wl schema-preview DIR --request-json '<SourceEditRequest>' --json` / RPC `schema.edit.preview {path|project_id,request}` 返回同一core SchemaEditPreview。`wl schema-apply` / RPC `schema.edit.apply` 另需`plan_digest`，重验并整笔应用后使用既有保存事务；source-edit的严格DTO/基线/路径/只读规则不变。预览提供field_changes、instance_impacts及完整性标记，不自动迁移、改名、强转或补值。业务拒绝用 `ok:false,error.code:"SCHEMA_EDIT_REJECTED"`；DTO错误仍是协议错误。允许保留无效草稿，不代表可以绕过发布检查。
+
+运行旧 `choices` 数组始终只包含可选项，index零起。CLI `play --json --choice-presentation` 显式添加 `choice_presentation`，其 `index` 指向旧choices数组，禁用项为null；stdin仍读取旧可选索引。纯文本菜单用无编号锁定行呈现说明。
+
+RPC initialize响应capabilities包含`runtime.choice_presentation.v1`；session.open以`capabilities:["runtime.choice_presentation.v1"]`申请，响应返回已协商能力数组。只有协商成功的session.continue/session.choose附带choice_presentation；缺省旧消费者得到仅可选choices。session.choose的`index`、`presentation_index`、`choice_id`必须三选一；后两者要求已协商能力。禁用或失效身份是`ok:false/run_error`且零推进；参数格式或多选择器属于JSON-RPC error。capabilities未知项不被接受，不扩大其它权限。
+
+投影字段为`id,label,links?,line,offset,enabled,index,disabled_reason`；不含条件表达式、变量或调试证据。全锁组落穿，不因禁用项创建暂停。作者静态禁用说明未纳入本地化交换白名单，交换成功不等于该说明已翻译。

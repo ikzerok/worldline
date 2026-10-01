@@ -23,6 +23,21 @@ impl<'a> Parser<'a> {
                 ));
             }
             match &line.kind {
+                LineKind::Schema112 {
+                    keyword,
+                    source,
+                    loc,
+                } => {
+                    self.next();
+                    self.parse_schema_declaration(
+                        &mut program,
+                        keyword,
+                        source,
+                        *loc,
+                        line.indent,
+                        &file,
+                    );
+                }
                 LineKind::Language111 {
                     keyword,
                     source,

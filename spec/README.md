@@ -24,3 +24,7 @@
 [v1.9 创作模型补全](authoring-v19.md)：权限统一为状态、独立锚点、条件关系与正文概览。
 
 - [显式语言1.11](language-1.11.md)：规则、片段、类型化集合、角色台词以及兼容契约。
+
+- [持续资料约束](schemas.md)：显式1.12的schema、field身份、bind、统一校验与影响计划
+- [可见禁用选择](choices.md)：显式1.12 enable/disabled、presentation协商和兼容
+- [当前稿查找替换](search-replace.md)：作用域、保护token、基线和原子事务

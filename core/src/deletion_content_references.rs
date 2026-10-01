@@ -162,6 +162,9 @@ fn collect_stmt_references(
                 if let Some(condition) = &choice.cond {
                     collect_expr_references(content, condition, owner, file, target, references);
                 }
+                if let Some(condition) = &choice.enable {
+                    collect_expr_references(content, condition, owner, file, target, references);
+                }
                 collect_stmt_references(content, &choice.body, owner, file, target, references);
             }
             Stmt::If(branches) => {

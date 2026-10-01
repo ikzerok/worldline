@@ -60,3 +60,7 @@ Project 为外部刷新维护会话代次。`restore` 只接受同一工作区�
 删除使用 `Project::delete_checkpoint(id)` 显式执行。不会因容量压力自动删除历史。恢复与创建失败时保留当前稿件；检查点本身在完整记录发布前不可见。存储布局、额度、浏览器保留范围及校验契约见 [ADR-0004](../docs/adr/0004-local-checkpoints.md)。
 
 共享查询的显式排序使用查询文档级 `catalog.query_sort.v1` 能力（不加入工程清单），以及内层 query schema_version 2；旧版只读保留该文档且拒绝执行未知查询版本。恢复默认并保存时仅清除本功能排序与能力声明，见 catalog.md §7.1。
+
+### 语言 1.12 显式持续资料约束
+
+清单 `language_version: "1.12"` 显式启用 `schema`/`field`/`bind`；默认 1.9 与显式 1.10/1.11 不升级。未知语言版本仍按既有工作区只读保护保留原文。schema 不将旧模板转换为强约束，不扩大 `content.object_refs.v1` 的引用 kind；强 ref 属性仍需原能力声明。静态 schema 与绑定不进入运行指纹，进入源码内容基线与 Project 快照撤销；诊断/编辑影响和发布阻断见 [schemas.md](schemas.md)。

@@ -1,0 +1,1 @@
+{"schema_version":1,"language_version":"1.12","entry":"world.wl","required_features":["content.entities.v1","content.object_refs.v1","content.choice_presentation.v1","presentation.manuscripts.v1"],"maps":{},"graph_views":{},"manuscripts":{"island":".world/manuscripts/island.json"}}

@@ -91,6 +91,20 @@ pub struct ChoiceView {
     pub offset: usize,
 }
 
+/// 显式消费者使用的全部可见选择；index 始终指向旧的可选数组。
+#[derive(Debug, Clone, Serialize)]
+pub struct ChoicePresentation {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<worldline_core::navigation::RenderedLink>,
+    pub line: u32,
+    pub offset: usize,
+    pub enabled: bool,
+    pub index: Option<usize>,
+    pub disabled_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RunError {
     pub message: String,

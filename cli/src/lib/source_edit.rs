@@ -2,6 +2,18 @@ use super::*;
 use worldline_core::source_edit::SourceEditRequest;
 
 pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, String> {
+    execute(args, out, false)
+}
+pub(super) fn schema_command(
+    args: &[String],
+    out: &mut impl Write,
+    apply: bool,
+) -> Result<i32, String> {
+    let mut args = args.to_vec();
+    args.insert(0, if apply { "apply" } else { "preview" }.into());
+    execute(&args, out, true)
+}
+fn execute(args: &[String], out: &mut impl Write, schema: bool) -> Result<i32, String> {
     let apply = match args.first().map(String::as_str) {
         Some("preview") => false,
         Some("apply") => true,
@@ -54,15 +66,30 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
         return Err("preview不能提供--plan-digest".into());
     }
     let mut project = Project::open(&path)?;
-    let result = if apply {
+    let result = if schema {
+        if apply {
+            project
+                .apply_schema_edit(&request, digest.as_deref().unwrap())
+                .and_then(|preview| {
+                    project.save()?;
+                    Ok(json!(preview))
+                })
+        } else {
+            project
+                .preview_schema_edit(&request)
+                .map(|preview| json!(preview))
+        }
+    } else if apply {
         project
             .apply_source_edit(&request, digest.as_deref().unwrap())
             .and_then(|preview| {
                 project.save()?;
-                Ok(preview)
+                Ok(json!(preview))
             })
     } else {
-        project.preview_source_edit(&request)
+        project
+            .preview_source_edit(&request)
+            .map(|preview| json!(preview))
     };
     let (code, payload) = match result {
         Ok(preview) => (
@@ -71,7 +98,7 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
         ),
         Err(message) => (
             1,
-            json!({"ok":false,"error":{"code":"SOURCE_EDIT_REJECTED","message":message},"baseline":project.content_baseline()}),
+            json!({"ok":false,"error":{"code":if schema {"SCHEMA_EDIT_REJECTED"} else {"SOURCE_EDIT_REJECTED"},"message":message},"baseline":project.content_baseline()}),
         ),
     };
     if json_output {
@@ -92,4 +119,21 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
         writeln!(out, "{}", payload["error"]["message"]).map_err(|e| e.to_string())?;
     }
     Ok(code)
+}
+
+pub(super) fn schema_index(args: &[String], out: &mut impl Write) -> Result<i32, String> {
+    let mut path = None;
+    for argument in args {
+        if argument == "--json" {
+            continue;
+        }
+        if argument.starts_with('-') || path.replace(PathBuf::from(argument)).is_some() {
+            return Err("schema-index只接受一个工程目录和--json".into());
+        }
+    }
+    let project = Project::open(&path.ok_or("schema-index需要工程目录")?)?;
+    let index = project.schema_index();
+    let payload = json!({"ok":true,"index":index,"baseline":project.content_baseline(),"workspace_diagnostics":project.authoring_diagnostics()});
+    writeln!(out, "{payload}").map_err(|e| e.to_string())?;
+    Ok(0)
 }

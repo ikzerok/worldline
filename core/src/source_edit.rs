@@ -45,7 +45,7 @@ impl Project {
         Ok(preview)
     }
 
-    fn prepare_source_edit(
+    pub(crate) fn prepare_source_edit(
         &self,
         request: &SourceEditRequest,
     ) -> Result<(Project, SourceEditPreview), String> {

@@ -41,6 +41,8 @@ pub mod refactor;
 pub mod reference_impact;
 pub mod relation_context;
 pub mod relations;
+pub mod schemas;
+pub mod search_replace;
 pub mod source_config;
 pub mod states;
 mod storage;

@@ -198,6 +198,9 @@ impl Collector<'_, '_> {
                     if let Some(expr) = &choice.cond {
                         self.expr(expr);
                     }
+                    if let Some(expr) = &choice.enable {
+                        self.expr(expr);
+                    }
                     self.body(&choice.body);
                 }
                 Stmt::If(branches) => {

@@ -111,8 +111,11 @@ impl<'a> Ctx<'a> {
                         }
                         if let Some(cond) = &c.cond {
                             self.check_expr(cond, Some(ValueKind::Bool));
-                        } else {
+                        } else if c.enable.is_none() {
                             all_cond = false;
+                        }
+                        if let Some(enable) = &c.enable {
+                            self.check_expr(enable, Some(ValueKind::Bool));
                         }
                         for p in &c.label {
                             if let TextPart::Expr(e) = p {

@@ -18,7 +18,7 @@ fn main() -> ExitCode {
         Err(msg) => {
             eprintln!("wl: {msg}");
             eprintln!("用法: wl check <文件.wl> [--json]");
-            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json] [--json]");
+            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json] [--choice-presentation] [--json]");
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl graph <文件.wl> [--json]");
             eprintln!("      wl timeline <文件.wl> [--json]");
@@ -32,6 +32,10 @@ fn main() -> ExitCode {
             eprintln!("      wl localization import preview <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --json");
             eprintln!("      wl localization import apply <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --plan-digest 摘要 --json");
             eprintln!("      wl source-edit preview|apply <工程目录> --request-json '<DTO>' [apply: --plan-digest 摘要] [--json]");
+            eprintln!("      wl schema-index <工程目录> [--json]");
+            eprintln!("      wl schema-preview <工程目录> --request-json '<DTO>' [--json]");
+            eprintln!("      wl schema-apply <工程目录> --request-json '<DTO>' --plan-digest 摘要 [--json]");
+            eprintln!("      check/play/replay/graph/timeline/catalog 可显式指定 --language-version=1.9|1.10|1.11|1.12");
             eprintln!("      wl authoring-intent preview|apply <目录或入口> --intent-json '<JSON DTO>' [--json]");
             eprintln!("      wl markdown import preview|apply <工程目录> --source <Markdown目录> --baseline <基线> [--id-map-json '<JSON 对象>'] [--namespace ID] [apply: --plan-digest 摘要 --accept-losses --allow-language-upgrade] [--json]");
             eprintln!("      wl workspace check <目录> [--json]");

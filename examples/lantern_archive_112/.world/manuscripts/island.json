@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"island","title":"镜海孤岛 · 银钥匙档案","entries":[{"id":"arrival_chapter","kind":"chapter","title":"第一章：镜海港的银钥匙与漫长夜色","target_ref":{"kind":"event","id":"arrival"},"summary":"看见锁住的路径，领取钥匙后进入档案室。","status":"draft"},{"id":"ending_chapter","kind":"chapter","title":"第二章：灯塔之后","target_ref":{"kind":"event","id":"ending"},"status":"draft"}]}

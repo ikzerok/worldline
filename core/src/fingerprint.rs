@@ -232,6 +232,11 @@ fn walk_stmts(hash: &mut u64, statements: &[Stmt]) {
                 if let Some(condition) = &choice.cond {
                     walk_expr(hash, condition);
                 }
+                if let Some(enable) = &choice.enable {
+                    mix(hash, "choice-enable-1.12");
+                    walk_expr(hash, enable);
+                    mix(hash, choice.disabled_reason.as_deref().unwrap_or(""));
+                }
                 walk_stmts(hash, &choice.body);
             }
             Stmt::If(statement) => {
