@@ -354,9 +354,7 @@ fn duplicate_bindings_link_the_original_file_and_line() {
     assert_eq!(duplicate.file, path.to_string_lossy());
     assert_eq!(duplicate.span.line, 1);
     assert_eq!(duplicate.related.len(), 1);
-    assert_eq!(
-        duplicate.related[0].0,
-        f.root.join("world.wl").to_string_lossy()
-    );
+    // Windows临时目录可能以8.3别名传入；诊断使用Project规范化后的真实源码路径。
+    assert_eq!(duplicate.related[0].0, f.project.entry.to_string_lossy());
     assert_eq!(duplicate.related[0].1.line, 3);
 }
