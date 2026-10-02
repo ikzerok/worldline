@@ -102,20 +102,29 @@ fn deep_move_preserves_formal_inbound_outbound_resources_and_plain_bytes() {
         plan.runtime_fingerprint_after
     );
     assert_eq!(plan.entry_before, plan.entry_after);
-    assert!(plan
+    let expected_asset = project.root.join("assets").join("picture.txt");
+    let asset = plan
         .resources
         .iter()
-        .any(|r| r.resolved_before == ws.0.join("assets/picture.txt")
-            && r.resolved_after == r.resolved_before));
+        .find(|resource| resource.field == "asset.path")
+        .unwrap_or_else(|| panic!("asset.path missing; resources={:?}", plan.resources));
+    assert_eq!(
+        asset.resolved_before, expected_asset,
+        "asset must resolve to the specific canonical workspace file; resource={asset:?}"
+    );
+    assert_eq!(
+        asset.resolved_after, asset.resolved_before,
+        "asset resolution must remain identical across the move; resource={asset:?}"
+    );
     assert!(plan
         .changes
         .iter()
         .flat_map(|c| &c.occurrences)
         .any(|o| o.field.as_deref() == Some("outbound.asset.path")));
     project.apply_source_lifecycle_plan(&plan).unwrap();
-    let new_text = project
-        .document(&ws.0.join("章节/第一 卷/新章.wl"))
-        .unwrap();
+    let expected_source = project.root.join("章节").join("第一 卷").join("新章.wl");
+    assert_eq!(plan.destination_path.as_ref(), Some(&expected_source));
+    let new_text = project.document(&expected_source).unwrap();
     assert!(new_text.contains("include \"../../sibling.wl\""));
     assert!(new_text.contains("\"../../assets/picture.txt\""));
     assert!(new_text.contains("[[file:../../sibling.wl|兄弟]]"));
@@ -156,11 +165,9 @@ fn archived_move_keeps_membership_and_manifest_optional_bytes() {
         .unwrap();
     assert_eq!(plan.membership, "archived");
     project.apply_source_lifecycle_plan(&plan).unwrap();
-    assert!(project
-        .source_selection()
-        .unwrap()
-        .is_archived(&ws.0.join("归档/旧稿.wl")));
-    assert!(!project.sources().contains_key(&ws.0.join("归档/旧稿.wl")));
+    let archived = project.root.join("归档").join("旧稿.wl");
+    assert!(project.source_selection().unwrap().is_archived(&archived));
+    assert!(!project.sources().contains_key(&archived));
     assert!(!project
         .compile()
         .program
