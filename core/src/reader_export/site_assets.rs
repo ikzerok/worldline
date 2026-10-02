@@ -68,7 +68,7 @@ for (const svg of document.querySelectorAll('svg.reader-map')) {
   }
   let drag = null;
   svg.addEventListener('pointerdown', event => {
-    if (event.target.closest('a')) return;
+    if (event.target.closest('a[href]')) return;
     drag = [event.clientX, event.clientY, view.slice()];
     svg.setPointerCapture(event.pointerId);
   });

@@ -225,6 +225,9 @@ fn typed_pages_search_manifest_and_canary_isolation_are_consistent() {
     let js = String::from_utf8_lossy(&files[Path::new("reader.js")]);
     assert!(js.contains("textContent") && !js.contains("fetch("));
     assert!(js.contains("selectedKind") && js.contains("aliases"));
+    // 无 href 的 SVG 定位锚点仍允许拖图；真正的导航链接保持可点击。
+    assert!(js.contains("event.target.closest('a[href]')"));
+    assert!(!js.contains("event.target.closest('a')"));
     assert_eq!(project.export_files().unwrap(), before);
     assert_eq!(project.content_baseline(), baseline);
     assert!(!project.is_dirty());
