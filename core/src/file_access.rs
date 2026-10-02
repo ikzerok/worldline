@@ -5,6 +5,14 @@ use std::path::Path;
 
 /// 枚举整个工作区；链接不属于可移植工程，拒绝跟随。
 pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+    workspace_files_limited(root, usize::MAX)
+}
+
+/// 有界文件枚举；不会先累积超出额度的完整路径列表。
+pub fn workspace_files_limited(
+    root: &Path,
+    max_files: usize,
+) -> std::io::Result<Vec<std::path::PathBuf>> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut files = Vec::new();
@@ -38,6 +46,12 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
                 if metadata.is_dir() {
                     pending.push(path);
                 } else if metadata.is_file() {
+                    if files.len() >= max_files {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "工作区文件数超过后台快照限制",
+                        ));
+                    }
                     files.push(path);
                 }
             }
@@ -47,8 +61,8 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
     }
     #[cfg(target_arch = "wasm32")]
     {
-        Ok(FILES.with(|files| {
-            files
+        FILES.with(|files| {
+            let files: Vec<_> = files
                 .borrow()
                 .keys()
                 .filter(|p| {
@@ -57,9 +71,17 @@ pub fn workspace_files(root: &Path) -> std::io::Result<Vec<std::path::PathBuf>> 
                             && !is_workspace_state_path(relative, ".checkpoints")
                     })
                 })
+                .take(max_files.saturating_add(1))
                 .cloned()
-                .collect()
-        }))
+                .collect();
+            if files.len() > max_files {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "工作区文件数超过后台快照限制",
+                ));
+            }
+            Ok(files)
+        })
     }
 }
 

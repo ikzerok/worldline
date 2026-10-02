@@ -19,11 +19,21 @@ const PROJECT_MANIFEST: &str = ".world/project.json";
 /// 文件重新出现。其余工作区文件逐字节复制，因此普通 JSON、无效 UTF-8
 /// 和工具未知格式都能随工程包保留。
 pub fn snapshot_files(project: &Project) -> Result<Files, String> {
+    snapshot_files_limited(project, usize::MAX, usize::MAX)
+}
+
+/// 在复制与读取之前检查预算；墓碑原字节由 SnapshotState 的传输预算另计。
+pub fn snapshot_files_limited(
+    project: &Project,
+    max_files: usize,
+    max_bytes: usize,
+) -> Result<Files, String> {
     ensure_storage_ready(project)?;
 
     let root = crate::compiler::source_path(&project.root);
     let mut managed = BTreeSet::new();
     let mut files = Files::new();
+    let mut used = 0usize;
 
     for (path, document) in &project.documents {
         let relative = relative_path(&root, path)?;
@@ -37,6 +47,7 @@ pub fn snapshot_files(project: &Project) -> Result<Files, String> {
             return Err(format!("工程包含重复文件路径:{}", relative.display()));
         }
         if !document.is_deleted() {
+            reserve(&files, &mut used, document.text.len(), max_files, max_bytes)?;
             insert_file(&mut files, relative, document.text.as_bytes().to_vec())?;
         }
     }
@@ -53,11 +64,29 @@ pub fn snapshot_files(project: &Project) -> Result<Files, String> {
             return Err(format!("工程包含重复文件路径:{}", relative.display()));
         }
         if !document.is_deleted() {
+            reserve(
+                &files,
+                &mut used,
+                document.bytes().len(),
+                max_files,
+                max_bytes,
+            )?;
             insert_file(&mut files, relative, document.bytes().to_vec())?;
         }
     }
 
-    for path in workspace_files(&root)? {
+    // 磁盘中的已删除受管文件不是活动文件，不能误占活动集合的额度。
+    let tombstones = project
+        .documents
+        .values()
+        .filter(|doc| doc.is_deleted())
+        .count()
+        + project
+            .authoring_documents
+            .values()
+            .filter(|doc| doc.is_deleted())
+            .count();
+    for path in workspace_files(&root, max_files.saturating_add(tombstones))? {
         let relative = relative_path(&root, &path)?;
         if is_transaction_path(&relative) {
             return Err("工程包含未完成的保存事务".into());
@@ -65,10 +94,33 @@ pub fn snapshot_files(project: &Project) -> Result<Files, String> {
         if managed.contains(&relative) {
             continue;
         }
-        let bytes = crate::file_access::read(&path).map_err(|error| error.to_string())?;
+        if files.len() >= max_files {
+            return Err("后台快照文件数超过限制".into());
+        }
+        let bytes = crate::file_access::read_limited(&path, max_bytes.saturating_sub(used))
+            .map_err(|error| error.to_string())?;
+        reserve(&files, &mut used, bytes.len(), max_files, max_bytes)?;
         insert_file(&mut files, relative, bytes)?;
     }
     Ok(files)
+}
+
+fn reserve(
+    files: &Files,
+    used: &mut usize,
+    bytes: usize,
+    max_files: usize,
+    max_bytes: usize,
+) -> Result<(), String> {
+    if files.len() >= max_files {
+        return Err("后台快照文件数超过限制".into());
+    }
+    let next = used.checked_add(bytes).ok_or("后台快照字节数溢出")?;
+    if next > max_bytes {
+        return Err("后台快照字节数超过限制".into());
+    }
+    *used = next;
+    Ok(())
 }
 
 /// 从新的 `.world/project.json` 中读取可选的 `.wl` 入口。
@@ -109,12 +161,12 @@ fn ensure_storage_ready(project: &Project) -> Result<(), String> {
     Ok(())
 }
 
-fn workspace_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn workspace_files(root: &Path, max_files: usize) -> Result<Vec<PathBuf>, String> {
     #[cfg(not(target_arch = "wasm32"))]
     if !root.exists() {
         return Ok(Vec::new());
     }
-    crate::file_access::workspace_files(root).map_err(|error| error.to_string())
+    crate::file_access::workspace_files_limited(root, max_files).map_err(|error| error.to_string())
 }
 
 fn insert_file(files: &mut Files, path: PathBuf, bytes: Vec<u8>) -> Result<(), String> {
