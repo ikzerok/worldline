@@ -213,7 +213,7 @@ impl Project {
     }
 }
 
-fn require_active_source(project: &Project, path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn require_active_source(project: &Project, path: &Path) -> Result<PathBuf, String> {
     // Web's `/world` mount is workspace-absolute even when Path::is_absolute returns false.
     let web_rooted = matches!(
         path.components().next(),

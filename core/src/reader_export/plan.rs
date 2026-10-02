@@ -1,35 +1,27 @@
+use super::inputs::{build_exclusions, read_public_asset};
+use super::progress::{check_budget, report};
 use super::render::render_object_body;
-#[cfg(not(target_arch = "wasm32"))]
-use super::site::validate_output_path;
-use super::site::{html_escape, relative_url, render_package};
+use super::site::{html_escape, relative_url};
 use super::*;
-use crate::catalog::AssetInfo;
 use crate::manuscript::{ManuscriptEntryKind, ManuscriptReferenceStatus};
 use std::path::Path;
 
 impl Project {
-    /// 只读预览当前缓冲中的显式公开选择，不刷新或修改 Project。
     pub fn preview_reader_export(
         &self,
         selection: &ReaderExportSelection,
     ) -> Result<ReaderExportPreview, String> {
-        Ok(prepare(self, selection)?.preview)
+        self.preview_reader_export_with_progress(selection, &mut |_| true)
     }
 
-    /// 按预览摘要生成站点文件；路径、正文和索引都只来自显式授权内容。
     pub fn build_reader_export(
         &self,
         selection: &ReaderExportSelection,
         expected_plan_digest: &str,
     ) -> Result<BTreeMap<PathBuf, Vec<u8>>, String> {
-        let prepared = prepare(self, selection)?;
-        if prepared.preview.plan_digest != expected_plan_digest {
-            return Err("阅读包预览已过期，请重新预览并核对选择".into());
-        }
-        render_package(prepared)
+        self.build_reader_export_with_progress(selection, expected_plan_digest, &mut |_| true)
     }
 
-    /// 原子发布到一个新目录；失败时不覆盖已存在的目标。
     #[cfg(not(target_arch = "wasm32"))]
     pub fn export_reader_site(
         &self,
@@ -37,74 +29,32 @@ impl Project {
         expected_plan_digest: &str,
         destination: &Path,
     ) -> Result<(), String> {
-        let files = self.build_reader_export(selection, expected_plan_digest)?;
-        let destination = crate::compiler::source_path(destination);
-        if output_entry_exists(&destination)? {
-            return Err("导出目标已存在，请选择新的文件夹名称".into());
-        }
-        if destination.starts_with(crate::compiler::source_path(&self.root)) {
-            return Err("阅读包目标必须位于当前工作区之外".into());
-        }
-        let parent = destination.parent().ok_or("导出目录缺少父目录")?;
-        if !parent.is_dir() {
-            return Err("阅读包目标的父目录必须已存在".into());
-        }
-
-        static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let mut staging = None;
-        for _ in 0..100 {
-            let sequence = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let candidate = parent.join(format!(
-                ".worldline-reader-export-{}-{sequence}",
-                std::process::id()
-            ));
-            match std::fs::create_dir(&candidate) {
-                Ok(()) => {
-                    staging = Some(candidate);
-                    break;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(format!("无法建立阅读包暂存目录：{error}")),
-            }
-        }
-        let staging = staging.ok_or("无法分配唯一的阅读包暂存目录")?;
-        let write_result = (|| -> std::io::Result<()> {
-            for (relative, bytes) in files {
-                validate_output_path(&relative).map_err(std::io::Error::other)?;
-                let target = staging.join(relative);
-                std::fs::create_dir_all(
-                    target.parent().expect("validated output path has parent"),
-                )?;
-                std::fs::write(target, bytes)?;
-            }
-            match std::fs::symlink_metadata(&destination) {
-                Ok(_) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::AlreadyExists,
-                        "导出目标已存在",
-                    ));
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error),
-            }
-            std::fs::rename(&staging, &destination)
-        })();
-        if let Err(error) = write_result {
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("阅读包导出失败：{error}"));
-        }
-        Ok(())
+        self.export_reader_site_with_progress(
+            selection,
+            expected_plan_digest,
+            destination,
+            &mut |_| true,
+        )
     }
 }
 
-fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<PreparedExport, String> {
+pub(super) fn prepare_with_routes(
+    project: &Project,
+    selection: &ReaderExportSelection,
+    overrides: &[ReaderProfileRoute],
+    progress: &mut dyn FnMut(&ReaderExportProgress) -> bool,
+) -> Result<PreparedExport, String> {
+    report(progress, "validate", 0, 1)?;
+    super::routes::validate_profile_routes(overrides)?;
     validate_selection(selection)?;
     #[cfg(not(target_arch = "wasm32"))]
     project.ensure_storage_ready()?;
 
     // Compile a clone so include loading never mutates the caller's buffers.
     let mut compile_project = project.clone();
+    report(progress, "compile", 0, 1)?;
     let compiled = compile_project.compile();
+    report(progress, "compile", 1, 1)?;
     if compiled.has_errors() {
         let details = compiled
             .diagnostics
@@ -155,7 +105,12 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
             id: id.clone(),
             display: asset.display.clone(),
             source_path,
-            output_path: PathBuf::from(format!("assets/a{:04}.{extension}", index + 1)),
+            output_path: PathBuf::from(super::routes::target_route(
+                selection,
+                &TargetRef::new("asset", id),
+                format!("assets/a{:04}.{extension}", index + 1),
+                overrides,
+            )?),
             bytes,
         });
     }
@@ -164,19 +119,27 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
     let mut object_order = selection.objects.clone();
     object_order.sort();
     for (index, target) in object_order.iter().enumerate() {
-        routes.insert(target.clone(), format!("objects/o{:04}.html", index + 1));
+        routes.insert(
+            target.clone(),
+            super::routes::target_route(
+                selection,
+                target,
+                format!("objects/o{:04}.html", index + 1),
+                overrides,
+            )?,
+        );
     }
     for attachment in &attachments {
         routes.insert(
             TargetRef::new("asset", &attachment.id),
-            attachment.output_path.to_string_lossy().into_owned(),
+            super::portable_output_path(&attachment.output_path)?,
         );
         included.push(ReaderExportIncluded {
             target: Some(TargetRef::new("asset", &attachment.id)),
             manuscript_id: None,
             chapter_id: None,
             title: attachment.display.clone(),
-            output_path: attachment.output_path.to_string_lossy().into_owned(),
+            output_path: super::portable_output_path(&attachment.output_path)?,
         });
     }
 
@@ -190,8 +153,10 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         }
     }
 
+    let public_field_references = super::fields::public_references(&compiled, selection);
     let mut pages = Vec::new();
-    for target in object_order {
+    for (object_index, target) in object_order.into_iter().enumerate() {
+        report(progress, "objects", object_index, selection.objects.len())?;
         let route = routes.get(&target).expect("selected object route").clone();
         let object = compiled
             .analysis
@@ -200,12 +165,40 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
             .expect("selection was validated");
         let (body_html, searchable_text) =
             render_object_body(&compiled, &target, &routes, &file_routes, selection)?;
-        pages.push(PublicPage {
+        let empty_content = searchable_text.trim().is_empty();
+        let aliases = if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+            compiled
+                .analysis
+                .catalog
+                .aliases
+                .iter()
+                .filter(|alias| alias.target == target)
+                .map(|alias| alias.name.clone())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut page = PublicPage {
             title: object.display.clone(),
             output_path: PathBuf::from(&route),
             body_html,
             searchable_text,
-        });
+            kind: target.kind.clone(),
+            aliases,
+            anchors: Vec::new(),
+            empty_content,
+        };
+        if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+            super::semantics::append_object(
+                &compiled,
+                &target,
+                &routes,
+                &public_field_references,
+                &mut page,
+            )?;
+        }
+        pages.push(page);
+        check_budget(&pages, &attachments)?;
         included.push(ReaderExportIncluded {
             target: Some(target),
             manuscript_id: None,
@@ -222,11 +215,27 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
             .ok_or_else(|| format!("未注册书稿：{}", book_selection.id))?;
         validate_manuscript(index, book_selection)?;
         for (chapter_index, chapter_id) in book_selection.chapters.iter().enumerate() {
-            let route = format!(
-                "manuscripts/m{:04}-c{:04}.html",
-                book_index + 1,
-                chapter_index + 1
-            );
+            report(
+                progress,
+                "chapters",
+                selected_chapter_pairs.len(),
+                selection
+                    .manuscripts
+                    .iter()
+                    .map(|book| book.chapters.len())
+                    .sum(),
+            )?;
+            let route = super::routes::chapter_route(
+                selection,
+                &book_selection.id,
+                chapter_id,
+                format!(
+                    "manuscripts/m{:04}-c{:04}.html",
+                    book_index + 1,
+                    chapter_index + 1
+                ),
+                overrides,
+            )?;
             let chapter = index
                 .entries
                 .iter()
@@ -247,17 +256,63 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
                         html_escape(&href)
                     ));
                     searchable_text.push_str(" 阅读已公开的来源内容");
+                    if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+                        let (html, plain) = super::render::render_object_body_at(
+                            &compiled,
+                            target,
+                            &routes,
+                            &file_routes,
+                            selection,
+                            &route,
+                        )?;
+                        body_html.push_str(&html);
+                        searchable_text.push_str(&plain);
+                    }
                 } else {
                     body_html.push_str("<p class=\"unavailable\">未公开内容</p>");
                     searchable_text.push_str(" 未公开内容");
                 }
             }
+            if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+                for (label, next_index) in [
+                    ("上一章", chapter_index.checked_sub(1)),
+                    (
+                        "下一章",
+                        (chapter_index + 1 < book_selection.chapters.len())
+                            .then_some(chapter_index + 1),
+                    ),
+                ] {
+                    if let Some(next_index) = next_index {
+                        let next = super::routes::chapter_route(
+                            selection,
+                            &book_selection.id,
+                            &book_selection.chapters[next_index],
+                            format!(
+                                "manuscripts/m{:04}-c{:04}.html",
+                                book_index + 1,
+                                next_index + 1
+                            ),
+                            overrides,
+                        )?;
+                        body_html.push_str(&format!(
+                            "<p><a href=\"{}\">{label}</a></p>",
+                            html_escape(&relative_url(&route, next))
+                        ));
+                    }
+                }
+            }
+            let empty_content = searchable_text.trim().is_empty();
             pages.push(PublicPage {
                 title: chapter.title.clone(),
                 output_path: PathBuf::from(&route),
                 body_html,
                 searchable_text,
+                kind: "chapter".into(),
+                aliases: Vec::new(),
+                anchors: Vec::new(),
+                empty_content,
             });
+            check_budget(&pages, &attachments)?;
             included.push(ReaderExportIncluded {
                 target: None,
                 manuscript_id: Some(book_selection.id.clone()),
@@ -268,7 +323,24 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         }
     }
 
-    super::maps::append_maps(project, selection, &routes, &mut pages, &mut included)?;
+    super::maps::append_maps(
+        super::maps::MapExportContext {
+            project,
+            compiled: &compiled,
+            selection,
+            routes: &routes,
+            overrides,
+        },
+        &mut pages,
+        &mut included,
+        progress,
+    )?;
+    if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+        super::semantic_pages::append_world_pages(&compiled, selection, &routes, &mut pages)?;
+        super::semantics::append_map_backlinks(project, selection, &routes, overrides, &mut pages)?;
+    }
+    super::routes::validate_unique_paths(&pages, &attachments)?;
+    check_budget(&pages, &attachments)?;
 
     let selected_asset_paths: BTreeSet<_> = attachments
         .iter()
@@ -285,24 +357,51 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         project,
     });
     let content_baseline = project.content_baseline();
-    let mut plan_digest = digest_plan(selection, &content_baseline, &attachments);
+    let mut plan_digest = digest_plan(selection, &content_baseline, &attachments)?;
     // Bind rendered map content too, including unsaved presentation changes.
     let mut map_hash = 0xcbf29ce484222325u64;
+    // clone 编译可能补载原 Project 尚未跟踪的 include；必须绑定实际消费的源码。
+    for (path, source) in &compiled.sources {
+        let relative = path
+            .strip_prefix(&project.root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        mix(&mut map_hash, relative.as_bytes());
+        mix(&mut map_hash, source.as_bytes());
+    }
     for page in &pages {
+        mix(&mut map_hash, page.title.as_bytes());
         mix(&mut map_hash, page.body_html.as_bytes());
+        mix(&mut map_hash, page.searchable_text.as_bytes());
+        mix(&mut map_hash, page.kind.as_bytes());
+        for alias in &page.aliases {
+            mix(&mut map_hash, alias.as_bytes());
+        }
+        for anchor in &page.anchors {
+            mix(&mut map_hash, anchor.id.as_bytes());
+            mix(&mut map_hash, anchor.label.as_bytes());
+            mix(&mut map_hash, anchor.text.as_bytes());
+        }
+        mix(
+            &mut map_hash,
+            super::portable_output_path(&page.output_path)?.as_bytes(),
+        );
     }
     plan_digest.push_str(&format!("-{map_hash:016x}"));
     let preview = ReaderExportPreview {
-        content: if selection.schema_version == READER_FIELDS_SCHEMA_VERSION {
+        content: if selection.schema_version >= READER_FIELDS_SCHEMA_VERSION {
             pages
                 .iter()
-                .map(|page| ReaderContentPreview {
-                    title: page.title.clone(),
-                    output_path: page.output_path.to_string_lossy().into_owned(),
-                    text: page.searchable_text.clone(),
-                    empty_content: page.searchable_text.trim().is_empty(),
+                .map(|page| {
+                    Ok(ReaderContentPreview {
+                        title: page.title.clone(),
+                        output_path: super::portable_output_path(&page.output_path)?,
+                        text: page.searchable_text.clone(),
+                        empty_content: page.empty_content,
+                    })
                 })
-                .collect()
+                .collect::<Result<Vec<_>, String>>()?
         } else {
             Vec::new()
         },
@@ -317,13 +416,14 @@ fn prepare(project: &Project, selection: &ReaderExportSelection) -> Result<Prepa
         pages,
         attachments,
         site_title: selection.site_title.clone(),
+        world_site: selection.schema_version == READER_SITE_SCHEMA_VERSION,
     })
 }
 
 fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
     if !matches!(
         selection.schema_version,
-        READER_EXPORT_SCHEMA_VERSION | READER_FIELDS_SCHEMA_VERSION
+        READER_EXPORT_SCHEMA_VERSION | READER_FIELDS_SCHEMA_VERSION | READER_SITE_SCHEMA_VERSION
     ) {
         return Err("不支持的阅读包选择版本".into());
     }
@@ -331,11 +431,24 @@ fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
     if selection.site_title.trim().is_empty() || selection.site_title.chars().count() > 160 {
         return Err("站点标题必须为 1 至 160 个字符".into());
     }
-    if selection.objects.len() > MAX_OBJECTS
+    let object_limit = if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+        MAX_SITE_OBJECTS
+    } else {
+        MAX_OBJECTS
+    };
+    if selection.objects.len() > object_limit
         || selection.manuscripts.len() > MAX_MANUSCRIPTS
         || selection.attachments.len() > MAX_ATTACHMENTS
     {
         return Err("阅读包选择超过数量限制".into());
+    }
+    if selection.maps.len() > 100
+        || selection
+            .maps
+            .iter()
+            .any(|map| map.placements.len() > 5000 || map.raster_layers.len() > 128)
+    {
+        return Err("公开地图选择超过数量限制".into());
     }
     let mut selected_chapters = 0usize;
     for manuscript in &selection.manuscripts {
@@ -369,7 +482,7 @@ fn has_duplicates<'a, T: Ord + 'a>(items: impl Iterator<Item = &'a T>) -> bool {
     items.into_iter().any(|item| !seen.insert(item))
 }
 
-fn public_object_kind(kind: &str) -> bool {
+pub(super) fn public_object_kind(kind: &str) -> bool {
     matches!(
         kind,
         "event"
@@ -420,64 +533,11 @@ fn validate_manuscript(
     Ok(())
 }
 
-fn read_public_asset(
-    project: &Project,
-    asset: &AssetInfo,
-    workspace_paths: &[PathBuf],
-) -> Result<(String, Vec<u8>, PathBuf), String> {
-    if !asset.available {
-        return Err(format!("附件不可用：{}", asset.id));
-    }
-    let source = Path::new(&asset.resolved_path);
-    let source = crate::file_access::within(&project.root, source)
-        .map_err(|_| format!("附件必须位于当前工作区内：{}", asset.id))?;
-    if !workspace_paths.contains(&source) {
-        return Err(format!("附件不在当前工作区快照中：{}", asset.id));
-    }
-    let extension = source
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    // No HTML, SVG, script, CSS, or other active-content formats are copied.
-    if !matches!(
-        extension.as_str(),
-        "png"
-            | "jpg"
-            | "jpeg"
-            | "webp"
-            | "gif"
-            | "bmp"
-            | "wav"
-            | "mp3"
-            | "ogg"
-            | "flac"
-            | "m4a"
-            | "aac"
-            | "mp4"
-            | "webm"
-    ) {
-        return Err(format!("附件格式不在静态阅读包白名单中：{}", asset.id));
-    }
-    let bytes = crate::file_access::read_limited(&source, MAX_ATTACHMENT_BYTES)
-        .map_err(|error| format!("附件不可读或超过 16 MiB 限制：{} ({error})", asset.id))?;
-    Ok((extension, bytes, source))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn output_entry_exists(path: &Path) -> Result<bool, String> {
-    match std::fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("无法检查导出目标：{error}")),
-    }
-}
-
 fn digest_plan(
     selection: &ReaderExportSelection,
     baseline: &str,
     attachments: &[PublicAttachment],
-) -> String {
+) -> Result<String, String> {
     let mut hash = 0xcbf29ce484222325u64;
     mix(&mut hash, b"worldline-reader-export-v1");
     mix(&mut hash, baseline.as_bytes());
@@ -487,9 +547,14 @@ fn digest_plan(
     );
     for attachment in attachments {
         mix(&mut hash, attachment.id.as_bytes());
+        mix(&mut hash, attachment.display.as_bytes());
+        mix(
+            &mut hash,
+            super::portable_output_path(&attachment.output_path)?.as_bytes(),
+        );
         mix(&mut hash, &attachment.bytes);
     }
-    format!("reader-v1-{hash:016x}")
+    Ok(format!("reader-v1-{hash:016x}"))
 }
 
 fn mix(hash: &mut u64, bytes: &[u8]) {
@@ -497,74 +562,4 @@ fn mix(hash: &mut u64, bytes: &[u8]) {
         *hash ^= u64::from(*byte);
         *hash = hash.wrapping_mul(0x100000001b3);
     }
-}
-
-fn build_exclusions(input: ExclusionInput<'_>) -> Vec<ReaderExportExclusion> {
-    let mut exclusions = Vec::new();
-    for object in &input.compiled.analysis.catalog.objects {
-        if !input.selected_objects.contains(&object.target) {
-            exclusions.push(ReaderExportExclusion {
-                target: Some(object.target.clone()),
-                manuscript_id: None,
-                chapter_id: None,
-                source_path: Some(object.file.clone()),
-                reason_code: "target_not_selected".into(),
-            });
-        }
-    }
-    for (id, asset) in &input.compiled.analysis.catalog.assets {
-        if !input.selected_assets.contains(id) {
-            exclusions.push(ReaderExportExclusion {
-                target: Some(TargetRef::new("asset", id)),
-                manuscript_id: None,
-                chapter_id: None,
-                source_path: Some(asset.resolved_path.clone()),
-                reason_code: "attachment_not_selected".into(),
-            });
-        }
-    }
-    for (book_id, index) in input.indexes {
-        for entry in &index.entries {
-            if entry.kind == ManuscriptEntryKind::Chapter
-                && !input
-                    .selected_chapters
-                    .contains(&(book_id.clone(), entry.id.clone()))
-            {
-                exclusions.push(ReaderExportExclusion {
-                    target: None,
-                    manuscript_id: Some(book_id.clone()),
-                    chapter_id: Some(entry.id.clone()),
-                    source_path: None,
-                    reason_code: "chapter_not_selected".into(),
-                });
-            }
-        }
-    }
-    for path in input.workspace_paths {
-        let canonical = crate::compiler::source_path(path);
-        if input.selected_asset_paths.contains(&canonical) {
-            continue;
-        }
-        let relative = path
-            .strip_prefix(&input.project.root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .into_owned();
-        exclusions.push(ReaderExportExclusion {
-            target: None,
-            manuscript_id: None,
-            chapter_id: None,
-            source_path: Some(relative),
-            reason_code: "workspace_file_not_selected".into(),
-        });
-    }
-    exclusions.sort_by(|left, right| {
-        left.reason_code
-            .cmp(&right.reason_code)
-            .then(left.source_path.cmp(&right.source_path))
-            .then(left.target.cmp(&right.target))
-            .then(left.manuscript_id.cmp(&right.manuscript_id))
-            .then(left.chapter_id.cmp(&right.chapter_id))
-    });
-    exclusions
 }

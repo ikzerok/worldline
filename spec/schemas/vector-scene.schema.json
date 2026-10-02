@@ -1,0 +1,736 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MapScene v1（工具0.15）",
+  "description": "性能和数值硬预算见presentation.md第11节；层级/全地图ID/矩阵/安全style语义由core验证。",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "view_box": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "preserve_aspect_ratio": {
+      "type": "string"
+    },
+    "root_order": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "view_box",
+    "preserve_aspect_ratio",
+    "root_order",
+    "nodes"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "target_ref": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "fill": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stroke": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fill_rule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_cap": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_join": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_family": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_weight": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_style": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text_anchor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stroke_width": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "opacity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fill_opacity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stroke_opacity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "miter_limit": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "font_size": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "segment": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "move"
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "to"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "line"
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "to"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cubic"
+            },
+            "control1": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "control2": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "control1",
+            "control2",
+            "to"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "quadratic"
+            },
+            "control": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "control",
+            "to"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "arc"
+            },
+            "rx": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ry": {
+              "type": "number",
+              "minimum": 0
+            },
+            "rotation": {
+              "type": "number"
+            },
+            "large_arc": {
+              "type": "boolean"
+            },
+            "sweep": {
+              "type": "boolean"
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "rx",
+            "ry",
+            "rotation",
+            "large_arc",
+            "sweep",
+            "to"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "close"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "x": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "y": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "dx": {
+          "type": "number"
+        },
+        "dy": {
+          "type": "number"
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "geometry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "group"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "children"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "point"
+            },
+            "position": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "kind",
+            "position"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "polyline"
+            },
+            "points": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "points"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "polygon"
+            },
+            "points": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "points"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "rect"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number"
+            },
+            "height": {
+              "type": "number"
+            },
+            "rx": {
+              "type": "number"
+            },
+            "ry": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y",
+            "width",
+            "height",
+            "rx",
+            "ry"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ellipse"
+            },
+            "cx": {
+              "type": "number"
+            },
+            "cy": {
+              "type": "number"
+            },
+            "rx": {
+              "type": "number"
+            },
+            "ry": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "cx",
+            "cy",
+            "rx",
+            "ry"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "path"
+            },
+            "segments": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/segment"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "segments"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "runs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/run"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y",
+            "runs"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "layer_id": {
+          "type": "string"
+        },
+        "parent_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "geometry": {
+          "$ref": "#/$defs/geometry"
+        },
+        "transform": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "clip_rect": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "id"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "annotation": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "label_override": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "navigation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "map_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "map_id"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "id",
+        "layer_id",
+        "geometry"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "clip_rect"
+            ],
+            "properties": {
+              "clip_rect": {
+                "type": "array"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "svg_root"
+            ],
+            "properties": {
+              "svg_root": {
+                "const": true
+              },
+              "geometry": {
+                "properties": {
+                  "kind": {
+                    "const": "group"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

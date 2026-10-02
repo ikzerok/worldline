@@ -11,7 +11,10 @@ mod document_buffers;
 mod export;
 mod lifecycle;
 mod save;
+mod snapshot;
 mod source_navigation;
+
+pub use snapshot::{SnapshotDocument, SnapshotState};
 
 pub use crate::checkpoints::{
     CheckpointFileChange, CheckpointFileOperation, CheckpointLimits, CheckpointRestorePlan,

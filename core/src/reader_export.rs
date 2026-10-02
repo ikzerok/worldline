@@ -1,14 +1,36 @@
 //! 显式授权的静态阅读包；与完整工程备份保持独立。
 
+mod audit;
 mod fields;
+mod inputs;
+mod map_geometry;
 mod maps;
+mod native;
+#[cfg(not(target_arch = "wasm32"))]
+mod native_rename;
+mod paths;
 mod plan;
+mod profile;
+mod profile_api;
+mod profile_io;
+mod progress;
 mod render;
+mod routes;
+mod semantic_pages;
+mod semantics;
+mod serde_target;
 mod site;
+mod site_assets;
+mod story;
 use crate::catalog::TargetRef;
 use crate::manuscript::ManuscriptIndex;
 use crate::project::Project;
 use crate::CompileResult;
+pub use paths::portable_output_path;
+pub use profile::{
+    ReaderProfileMigrationPlan, ReaderProfileRoute, ReaderProfileSavePlan, ReaderPublicationProfile,
+};
+pub use progress::ReaderExportProgress;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -16,7 +38,14 @@ use std::path::PathBuf;
 pub const READER_EXPORT_SCHEMA_VERSION: u32 = 1;
 pub const READER_FIELDS_SCHEMA_VERSION: u32 = 2;
 pub const READER_FIELDS_FEATURE: &str = "reader.fields.v1";
+pub const READER_SITE_SCHEMA_VERSION: u32 = 3;
+pub const READER_SITE_FEATURE: &str = "reader.world_site.v1";
+pub const READER_STORY_FEATURE: &str = "reader.story_details.v1";
+pub const READER_PROFILE_SCHEMA_VERSION: u32 = 1;
+pub const READER_PROFILES_FEATURE: &str = "reader.profiles.v1";
 const MAX_OBJECTS: usize = 500;
+const MAX_SITE_OBJECTS: usize = 2_000;
+const MAX_OUTPUT_FILES: usize = 10_000;
 const MAX_MANUSCRIPTS: usize = 100;
 const MAX_CHAPTERS: usize = 5_000;
 const MAX_ATTACHMENTS: usize = 128;
@@ -43,6 +72,7 @@ pub struct ReaderMapSelection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReaderFieldSelection {
+    #[serde(deserialize_with = "serde_target::deserialize")]
     pub target: TargetRef,
     pub keys: Vec<String>,
 }
@@ -54,7 +84,7 @@ pub struct ReaderFieldCandidate {
     pub preview: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderContentPreview {
     pub title: String,
     pub output_path: String,
@@ -72,6 +102,7 @@ pub struct ReaderExportSelection {
     pub fields: Vec<ReaderFieldSelection>,
     pub schema_version: u32,
     pub site_title: String,
+    #[serde(deserialize_with = "serde_target::deserialize_vec")]
     pub objects: Vec<TargetRef>,
     pub manuscripts: Vec<ReaderManuscriptSelection>,
     pub attachments: Vec<String>,
@@ -79,7 +110,7 @@ pub struct ReaderExportSelection {
     pub maps: Vec<ReaderMapSelection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportIncluded {
     pub target: Option<TargetRef>,
     pub manuscript_id: Option<String>,
@@ -89,7 +120,7 @@ pub struct ReaderExportIncluded {
 }
 
 /// 作者预览中的排除报告；该结构只从 preview API 返回，绝不写入站点。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportExclusion {
     pub target: Option<TargetRef>,
     pub manuscript_id: Option<String>,
@@ -98,7 +129,7 @@ pub struct ReaderExportExclusion {
     pub reason_code: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportPreview {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub content: Vec<ReaderContentPreview>,
@@ -115,6 +146,17 @@ struct PublicPage {
     output_path: PathBuf,
     body_html: String,
     searchable_text: String,
+    kind: String,
+    aliases: Vec<String>,
+    anchors: Vec<PublicAnchor>,
+    empty_content: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PublicAnchor {
+    id: String,
+    label: String,
+    text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +173,7 @@ struct PreparedExport {
     pages: Vec<PublicPage>,
     attachments: Vec<PublicAttachment>,
     site_title: String,
+    world_site: bool,
 }
 
 struct ExclusionInput<'a> {

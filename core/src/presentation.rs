@@ -10,6 +10,7 @@ pub use measurement::{
     measurement_distance, validate_measurement, MapMeasurement, MEASUREMENT_FEATURE,
 };
 mod placement_parse;
+mod scene_parse;
 
 use crate::catalog::{AssetInfo, Catalog, TargetRef};
 use crate::diagnostic::{sort_diagnostics, Diagnostic, Span};
@@ -145,6 +146,7 @@ pub struct MapDocument {
     pub layer_order: Vec<String>,
     pub layers: BTreeMap<String, MapLayer>,
     pub placements: BTreeMap<String, MapPlacement>,
+    pub scene: Option<crate::vector_scene::MapScene>,
     pub extensions: Map<String, Value>,
     /// 根层未知可选字段；完整原文（含所有嵌套字段）见 source。
     pub extra: Map<String, Value>,
@@ -265,6 +267,20 @@ pub(crate) fn build_map_index(project: &Project, content: &CompileResult) -> Map
                         map_id: map.id.clone(),
                         placement_id: placement.id.clone(),
                     });
+            }
+        }
+        if let Some(scene) = &map.scene {
+            for node in scene.nodes.values() {
+                if let Some(target) = &node.target_ref {
+                    index
+                        .placements_by_target
+                        .entry(target.clone())
+                        .or_default()
+                        .push(MapPlacementRef {
+                            map_id: map.id.clone(),
+                            placement_id: node.id.clone(),
+                        });
+                }
             }
         }
         index.maps.insert(map.id.clone(), map);

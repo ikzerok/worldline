@@ -12,8 +12,32 @@ pub(super) fn render_object_body(
     file_routes: &BTreeMap<String, String>,
     selection: &super::ReaderExportSelection,
 ) -> Result<(String, String), String> {
+    render_object_body_at(
+        compiled,
+        target,
+        routes,
+        file_routes,
+        selection,
+        &routes[target],
+    )
+}
+
+pub(super) fn render_object_body_at(
+    compiled: &CompileResult,
+    target: &TargetRef,
+    routes: &BTreeMap<TargetRef, String>,
+    file_routes: &BTreeMap<String, String>,
+    selection: &super::ReaderExportSelection,
+    current_path: &str,
+) -> Result<(String, String), String> {
+    let projection = super::story::Projection::new(compiled, routes, selection, target);
     let mut html = String::new();
     let mut plain = String::new();
+    if selection.schema_version == super::READER_SITE_SCHEMA_VERSION
+        && matches!(target.kind.as_str(), "event" | "fragment" | "scene")
+    {
+        append_description(&mut html, &mut plain, "静态分支阅读，不执行条件或状态");
+    }
     match target.kind.as_str() {
         "event" => {
             let event = compiled
@@ -22,13 +46,17 @@ pub(super) fn render_object_body(
                 .iter()
                 .find(|event| event.name == target.id)
                 .ok_or_else(|| "选中的事件无法读取".to_string())?;
+            for description in projection.event(event) {
+                append_description(&mut html, &mut plain, &description);
+            }
             let (body_html, body_text) = render_statements(
                 &event.body,
                 &event.name,
-                &routes[target],
+                current_path,
                 compiled,
                 routes,
                 file_routes,
+                &projection,
             );
             html.push_str(&body_html);
             plain.push_str(&body_text);
@@ -73,10 +101,11 @@ pub(super) fn render_object_body(
             let (body_html, body_text) = render_statements(
                 &fragment.body,
                 "",
-                &routes[target],
+                current_path,
                 compiled,
                 routes,
                 file_routes,
+                &projection,
             );
             html.push_str(&body_html);
             plain.push_str(&body_text);
@@ -87,10 +116,11 @@ pub(super) fn render_object_body(
             let (body_html, body_text) = render_statements(
                 body,
                 &event.name,
-                &routes[target],
+                current_path,
                 compiled,
                 routes,
                 file_routes,
+                &projection,
             );
             html.push_str(&body_html);
             plain.push_str(&body_text);
@@ -127,7 +157,15 @@ pub(super) fn render_object_body(
         }
         _ => {}
     }
-    super::fields::append_fields(compiled, target, routes, selection, &mut html, &mut plain)?;
+    super::fields::append_fields(
+        compiled,
+        target,
+        routes,
+        selection,
+        &mut html,
+        &mut plain,
+        current_path,
+    )?;
     if html.is_empty() {
         html.push_str("<p>该对象没有静态阅读正文。</p>");
     }
@@ -173,10 +211,14 @@ fn render_statements(
     compiled: &CompileResult,
     routes: &BTreeMap<TargetRef, String>,
     file_routes: &BTreeMap<String, String>,
+    projection: &super::story::Projection<'_>,
 ) -> (String, String) {
     let mut html = String::new();
     let mut plain = String::new();
     for statement in statements {
+        for description in projection.statement(statement) {
+            append_description(&mut html, &mut plain, &description);
+        }
         match statement {
             Stmt::Text(text) => {
                 let (text_html, text_plain) =
@@ -220,13 +262,21 @@ fn render_statements(
                     compiled,
                     routes,
                     file_routes,
+                    projection,
                 );
                 html.push_str(&body_html);
                 plain.push_str(&body_text);
             }
             Stmt::If(condition) => {
                 // Conditions are intentionally not evaluated or disclosed in a reader package.
-                for (_, branch) in &condition.branches {
+                for (condition, branch) in &condition.branches {
+                    if projection.enabled {
+                        let label = condition
+                            .as_ref()
+                            .map(|value| format!("分支条件：{}", projection.condition(value)))
+                            .unwrap_or_else(|| "否则分支".into());
+                        append_description(&mut html, &mut plain, &label);
+                    }
                     let (branch_html, branch_text) = render_statements(
                         branch,
                         current_event,
@@ -234,6 +284,7 @@ fn render_statements(
                         compiled,
                         routes,
                         file_routes,
+                        projection,
                     );
                     html.push_str(&branch_html);
                     plain.push_str(&branch_text);
@@ -280,6 +331,7 @@ fn render_statements(
                     compiled,
                     routes,
                     file_routes,
+                    projection,
                 );
                 html.push_str(&body_html);
                 plain.push_str(&body_text);

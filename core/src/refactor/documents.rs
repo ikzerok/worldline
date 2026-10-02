@@ -25,6 +25,30 @@ pub(super) fn rewrite_registered(
                 count += references(placement.get_mut("scope_refs"), target, new_id);
             }
         }
+        if let Some(nodes) = value
+            .get_mut("scene")
+            .and_then(|v| v.get_mut("nodes"))
+            .and_then(Value::as_object_mut)
+        {
+            for node in nodes.values_mut() {
+                count += reference(node.get_mut("target_ref"), target, new_id);
+                count += references(node.get_mut("scope_refs"), target, new_id);
+            }
+        }
+    } else if has(&registry.reader_profiles) {
+        if let Some(selection) = value.get_mut("selection") {
+            count += references(selection.get_mut("objects"), target, new_id);
+            if let Some(fields) = selection.get_mut("fields").and_then(Value::as_array_mut) {
+                for field in fields {
+                    count += reference(field.get_mut("target"), target, new_id);
+                }
+            }
+        }
+        if let Some(routes) = value.get_mut("routes").and_then(Value::as_array_mut) {
+            for route in routes {
+                count += reference(route.get_mut("target"), target, new_id);
+            }
+        }
     } else if has(&registry.graph_views) {
         count += reference(value.get_mut("focus"), target, new_id);
         if let Some(positions) = value.get_mut("positions").and_then(Value::as_object_mut) {

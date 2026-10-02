@@ -87,7 +87,16 @@ pub(super) fn apply_layer(
                         placement.get("layer_id").and_then(Value::as_str) == Some(layer_id)
                     })
                 });
-            if has_placements {
+            let has_scene = object
+                .get("scene")
+                .and_then(|v| v.get("nodes"))
+                .and_then(Value::as_object)
+                .is_some_and(|nodes| {
+                    nodes
+                        .values()
+                        .any(|node| node.get("layer_id").and_then(Value::as_str) == Some(layer_id))
+                });
+            if has_placements || has_scene {
                 return Err(EditError::ReadOnlyFeature {
                     message: format!("图层 `{layer_id}` 仍包含标记，请先移动或删除标记"),
                 });
@@ -95,6 +104,13 @@ pub(super) fn apply_layer(
             layers_mut(object)?.remove(layer_id);
             let order = layer_order_mut(object)?;
             order.retain(|value| value.as_str() != Some(layer_id));
+            if let Some(order) = object
+                .get_mut("scene")
+                .and_then(|scene| scene.get_mut("root_order"))
+                .and_then(Value::as_object_mut)
+            {
+                order.remove(layer_id);
+            }
         }
         _ => unreachable!("layer dispatcher only receives layer commands"),
     }

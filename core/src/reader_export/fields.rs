@@ -61,8 +61,30 @@ pub(super) fn validate_version(selection: &ReaderExportSelection) -> Result<(), 
         if !selection.fields.is_empty() || !selection.required_features.is_empty() {
             return Err("字段公开需要选择 DTO v2 与 reader.fields.v1 能力".into());
         }
-    } else if selection.required_features != [READER_FIELDS_FEATURE] {
-        return Err("阅读包 v2 必须且只能声明 reader.fields.v1 能力".into());
+    } else if selection.schema_version == READER_FIELDS_SCHEMA_VERSION {
+        if selection.required_features != [READER_FIELDS_FEATURE] {
+            return Err("阅读包 v2 必须且只能声明 reader.fields.v1 能力".into());
+        }
+    } else if selection.schema_version == READER_SITE_SCHEMA_VERSION {
+        let features: BTreeSet<_> = selection
+            .required_features
+            .iter()
+            .map(String::as_str)
+            .collect();
+        if features.len() != selection.required_features.len()
+            || !features.contains(READER_SITE_FEATURE)
+            || (!selection.fields.is_empty() && !features.contains(READER_FIELDS_FEATURE))
+            || features.iter().any(|feature| {
+                !matches!(
+                    *feature,
+                    READER_SITE_FEATURE | READER_FIELDS_FEATURE | READER_STORY_FEATURE
+                )
+            })
+        {
+            return Err("阅读站 v3 缺少必需能力或含有未知、重复能力".into());
+        }
+    } else {
+        return Err("不支持的阅读包选择版本".into());
     }
     Ok(())
 }
@@ -99,6 +121,7 @@ pub(super) fn append_fields(
     selection: &ReaderExportSelection,
     html: &mut String,
     plain: &mut String,
+    current_path: &str,
 ) -> Result<(), String> {
     let Some(selected) = selection.fields.iter().find(|f| f.target == *target) else {
         return Ok(());
@@ -129,7 +152,7 @@ pub(super) fn append_fields(
                     (
                         format!(
                             "<a href=\"{}\">{}</a>",
-                            html_escape(&relative_url(&routes[target], route)),
+                            html_escape(&relative_url(current_path, route)),
                             html_escape(&object.display)
                         ),
                         object.display.clone(),
@@ -146,4 +169,21 @@ pub(super) fn append_fields(
         plain.push_str(&format!("\n{key}：{value_text}\n"));
     }
     Ok(())
+}
+
+pub(super) fn public_references(
+    compiled: &CompileResult,
+    selection: &ReaderExportSelection,
+) -> BTreeSet<(TargetRef, TargetRef)> {
+    let mut references = BTreeSet::new();
+    for field in &selection.fields {
+        for property in properties(compiled, &field.target).unwrap_or_default() {
+            if field.keys.contains(&property.name) {
+                if let PropertyValue::Ref(target) = &property.value {
+                    references.insert((field.target.clone(), target.clone()));
+                }
+            }
+        }
+    }
+    references
 }

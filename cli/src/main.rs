@@ -27,6 +27,9 @@ fn main() -> ExitCode {
             );
             eprintln!("      wl catalog-query <目录或入口> --query '<JSON DTO>' [--offset N] [--page-size N] [--max-candidates N] [--cursor '<JSON 游标>'] [--json]");
             eprintln!("      wl reader-export preview|apply <工程目录> --selection-json '<JSON DTO>' [apply: --plan-digest 摘要 --out 新目录] [--json]");
+            eprintln!("      wl scene svg-preview --source '<SVG>' [--json]");
+            eprintln!("      wl scene preview|apply <工程目录> --request-json '<SceneBatch>' [apply: --baseline 基线 --plan-digest 摘要] [--json]");
+            eprintln!("      wl scene export <工程目录> --map-id ID [--json]");
             eprintln!("      wl localization export preview <工程目录> --selection-json '<JSON DTO>' --json");
             eprintln!("      wl localization export apply <工程目录> --selection-json '<JSON DTO>' --plan-digest 摘要 --out 新包.json --json");
             eprintln!("      wl localization import preview <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --json");

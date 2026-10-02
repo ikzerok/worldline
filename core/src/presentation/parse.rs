@@ -190,6 +190,17 @@ pub(crate) fn parse_map_document(
     }
     let extensions = parse_extensions(object.get("extensions"), &file, &mut diagnostics);
     structural_error |= extensions.is_none();
+    let scene = super::scene_parse::parse_scene(
+        object,
+        &layers,
+        &placements.clone().unwrap_or_default(),
+        catalog,
+        map_ids,
+        options,
+        &file,
+        &mut diagnostics,
+    );
+    structural_error |= scene.is_err();
 
     let known = [
         "schema_version",
@@ -202,6 +213,7 @@ pub(crate) fn parse_map_document(
         "layer_order",
         "layers",
         "placements",
+        "scene",
         "extensions",
         "required_features",
     ];
@@ -222,6 +234,7 @@ pub(crate) fn parse_map_document(
         layer_order,
         layers,
         placements: placements.unwrap_or_default(),
+        scene: scene.ok().flatten(),
         extensions: extensions.unwrap_or_default(),
         extra,
     });

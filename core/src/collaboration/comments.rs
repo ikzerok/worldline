@@ -54,10 +54,13 @@ pub fn anchor_status(
         CommentAnchor::MapPlacement {
             map_id,
             placement_id,
-        } => maps
-            .maps
-            .get(map_id)
-            .is_some_and(|map| map.placements.contains_key(placement_id)),
+        } => maps.maps.get(map_id).is_some_and(|map| {
+            map.placements.contains_key(placement_id)
+                || map
+                    .scene
+                    .as_ref()
+                    .is_some_and(|scene| scene.nodes.contains_key(placement_id))
+        }),
         CommentAnchor::TextRange {
             path,
             start_line,

@@ -21,8 +21,14 @@ impl Server {
             baseline,
             project.authoring_diagnostics(),
         );
-        self.projects
-            .insert(project_id, ProjectUnit { project, entry });
+        self.projects.insert(
+            project_id,
+            ProjectUnit {
+                project,
+                entry,
+                scene_revision: Default::default(),
+            },
+        );
         Ok(response)
     }
 

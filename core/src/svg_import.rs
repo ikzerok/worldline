@@ -4,6 +4,7 @@ mod path;
 mod transaction;
 mod transform;
 use crate::presentation::MapGeometry;
+pub use crate::vector_scene::SvgScenePreview;
 use quick_xml::{events::Event, Reader};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
@@ -20,6 +21,8 @@ pub struct SvgPreview {
     pub width: f64,
     pub height: f64,
 }
+/// 旧采样 placement 兼容入口，不承诺新版可编辑曲线保真。
+/// 新作者入口请使用 preview_scene 与 vector_scene::SceneBatch。
 /// 解析上限约束 CPU/内存；不解析实体、CSS、链接或嵌入内容。
 pub fn preview(source: &str) -> Result<SvgPreview, String> {
     if source.len() > 2 * 1024 * 1024 {
@@ -232,4 +235,20 @@ fn style_value(style: &BTreeMap<String, String>) -> Result<Map<String, Value>, S
         out.insert(key.replace('-', "_"), json!(alpha));
     }
     Ok(out)
+}
+
+/// 完整受控 SVG profile 的只读预览；曲线和根 viewport 裁剪保留为 typed scene。
+pub fn preview_scene(
+    source: &str,
+) -> Result<crate::vector_scene::SvgScenePreview, crate::vector_scene::SceneError> {
+    crate::vector_scene::preview_scene(source)
+}
+
+/// 有预算与取消进度的只读场景预检；false 取消，原输入由调用方保留。
+pub fn preview_scene_with_control(
+    source: &str,
+    limits: &crate::vector_scene::SceneLimits,
+    progress: &mut dyn FnMut(crate::vector_scene::SceneProgress) -> bool,
+) -> Result<crate::vector_scene::SvgScenePreview, crate::vector_scene::SceneError> {
+    crate::vector_scene::preview_scene_with_control(source, limits, progress)
 }
