@@ -34,6 +34,7 @@ cargo build --workspace --release --locked
 - [语言规范索引](spec/README.md)：语法、语义、诊断、关系、状态、目录与协议的唯一真源。
 - [API 与工具接入](docs/api.md)：CLI、JSON-RPC、Rust Project 与运行时入口。
 - [工作区契约](spec/workspace.md)：递归索引、引用边界、刷新冲突与完整导出。
+- [安全源码组织](docs/source-lifecycle.md)：源码新建、引用和单文件安全移动；core、CLI 与 agent 共用逐处预览和保存恢复边界。
 - [发布说明](docs/release.md)：源码仓库、构建、打包与产物。
 
 ## 0.11.0 可信流程与修订

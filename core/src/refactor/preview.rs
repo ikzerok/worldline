@@ -20,13 +20,13 @@ pub struct RefactorOccurrence {
     pub after_context: String,
 }
 
-pub(super) struct Edit {
+pub(crate) struct Edit {
     pub range: Range<usize>,
     pub replacement: String,
     pub field: String,
 }
 
-pub(super) fn apply(
+pub(crate) fn apply(
     source: &str,
     mut edits: Vec<Edit>,
 ) -> Result<(String, Vec<RefactorOccurrence>), String> {
@@ -88,7 +88,7 @@ fn context(source: &str, start: usize, end: usize) -> &str {
 }
 
 /// 旧语言类型保持原改写语义；逐处提取旧/新身份的完整 token。
-pub(super) fn legacy_edits(before: &str, after: &str, old: &str, new: &str) -> Vec<Edit> {
+pub(crate) fn legacy_edits(before: &str, after: &str, old: &str, new: &str) -> Vec<Edit> {
     let mut edits = Vec::new();
     let common = old
         .bytes()

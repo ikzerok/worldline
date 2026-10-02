@@ -55,7 +55,8 @@ impl Element {
         if error.field.is_none() {
             error.field = Some(field.into());
         }
-        located(source, self.offset, error)
+        let offset = super::svg_location::attribute_offset(self, source, error.field.as_deref());
+        located(source, offset, error)
     }
     pub fn children(&self) -> impl Iterator<Item = usize> + '_ {
         self.content.iter().filter_map(|item| match item {

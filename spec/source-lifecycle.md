@@ -27,7 +27,8 @@
 
 只在正式 lexer/parser 提供的原始 UTF-8 token 范围内修改路径：
 - 所有源码的 include.path
-- alias/mark/attach/anchor_link/state 的 file TargetRef；relation 的正式 scope_ref
+- alias/mark/attach/state 的 file TargetRef；relation 的正式 scope_ref
+- anchor_link 当前不支持 file kind，沿现行语法拒绝，不扩大目标种类
 - 正文、choice/once 标签、say 的正式 file 链接
 - 被移动文件的 asset 声明 path
 
@@ -42,13 +43,14 @@ file TargetRef 的 id 沿用 core 目录的既有绝对路径身份（不改协�
 批注正文来源与共享查询范围使用既有工作区相对路径。按原始 JSON 字符串 token 修改：
 - maps：placements.*.target_ref/scope_refs；scene.nodes.*.target_ref/scope_refs
 - graph_views：focus，positions 的 file:<path> 键
-- comments：object anchor.target；text_range anchor.path（若引用行正文也被重基，保留原 quote/hash，不得伪造重新确认）
+- comments：object anchor.target；text_range anchor.path（保留原 quote/hash；若引用行正文重基改变批注附着状态，拒绝移动，不伪造重新确认）
 - presets：scope_refs
-- manuscripts：entries[].target_ref/perspective
 - saved_queries：query.filters 中 relation.values[].related，以及 author_scope.source_files
-- reader_profiles：selection.objects/fields[].target，routes[].target
+- reader_profiles：selection.objects/fields[].target（仍受既有选择格式校验；routes[].target 现有契约不支持 file，拒绝此类无效路由）
 - manifest：source_config.active/archived
 
+manuscripts 的 entries[].target_ref 只允许 event/scene/entity/fragment；正式 POV 字段为
+entries[].pov 且只允许 character，不存在 file 迁移，未知可选 perspective 保持原样。
 templates 的 object_ref defaults 只允许现有 entity/relation/character，不存在 file
 迁移；localization 的运行身份与本版允许的源码路径无关，不猜测改写。proposals 含
 已捕获源码路径/摘要和基线，无法证明迁移等价时拒绝整个移动。任何已登记文档有未知
@@ -98,3 +100,9 @@ explicit add/include 假成功；legacy 创建；中文多级/空格；注释与
 出站 include/file/asset；同名不同 kind；所有已登记 JSON 字段；活动/归档/未活动成员；
 目标碰撞、大小写、路径/链接、缺资源；过期/外改/取消/篡改/未知能力零改；无 include
 排序拒绝；状态 file 身份指纹拒绝；一次 restore 往返；save/reopen 和恢复日志沿用。
+
+### 有界检查
+
+单次组织最多检查 4096 个工作区文件、64 MiB 源码、16384 处正式路径；单资源最多
+64 MiB、去重后资源验证总量最多 256 MiB。超限显式拒绝且不截断证明。提交前重新检查
+目的缺失、完整保存基线和资源摘要；取消回调返回后也执行这一步。

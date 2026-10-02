@@ -9,11 +9,12 @@ mod native;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_rename;
 mod paths;
-mod plan;
+pub(crate) mod plan;
 mod profile;
 mod profile_api;
 mod profile_io;
 mod progress;
+mod relation_graph;
 mod render;
 mod routes;
 mod semantic_pages;

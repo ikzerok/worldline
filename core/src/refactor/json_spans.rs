@@ -7,7 +7,7 @@ use std::ops::Range;
 
 type Spans = BTreeMap<(String, bool), Range<usize>>;
 
-pub(super) fn edits(
+pub(crate) fn edits(
     source: &str,
     before: &Value,
     after: &Value,

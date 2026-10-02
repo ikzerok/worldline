@@ -55,11 +55,11 @@ group 的 children 顺序与各节点 parent_id 必须一致；每节点恰好�
 
 数组与 offset 分别继承；SVG 的显式 `inherit` 等价于字段缺失，inline style 优先于 presentation attribute。SVG 数列接受严格逗号/ASCII 空白分隔的十进制及科学计数法；每项仅可无单位或 `px`，归一为本地 user unit；offset 接受单个同类数值，允许正负，保留原值，沿周期取模的相位语义交由 SVG。拒绝空列表文本、负数组项、非有限/超数值预算、百分比、其它单位、`calc`/变量/表达式、坏分隔符及 `pathLength`。正长度若转换到渲染后端 f32 后为零或非正规数也拒绝，不得下溢为实线。
 
-dash 与 offset 使用图形本地坐标；Affine、viewBox、zoom/DPI 共同变换完整描边，不预乘数组、不改曲线、不引入 non-scaling-stroke。每条子路径独立重启同一相位；Close、曲线、层序、组 opacity、矩形 viewport 裁剪与既有合成契约保持。为避免无法在 core 证明字体轮廓预算，首版拒绝 text/tspan 最终有效的非零虚线数组，不论是否暂时隐藏或 stroke 为 none；报 `SCENE_STYLE` 并说明文字需显式实线。文字自身或全部片段显式 `none`/全零覆盖可保持实线；不静默降级文字、不启用外部字体。
+dash 与 offset 使用图形本地坐标；Affine、viewBox、zoom/DPI 共同变换完整描边，不预乘数组、不改曲线、不引入 non-scaling-stroke。安全 SVG 的 Arc 旋转仅在输出时按 core 相同的度数减周顺序归一到一周内，避免极大角度转弧度时的后端数值偏差放大椭圆半径；持久曲线仍保留原 rotation。每条子路径独立重启同一相位；Close、曲线、层序、组 opacity、矩形 viewport 裁剪与既有合成契约保持。为避免无法在 core 证明字体轮廓预算，首版拒绝 text/tspan 最终有效的非零虚线数组，不论是否暂时隐藏或 stroke 为 none；报 `SCENE_STYLE` 并说明文字需显式实线。文字自身或全部片段显式 `none`/全零覆盖可保持实线；不静默降级文字、不启用外部字体。
 
 只要存储任意显式 dash 字段（包括 `[]`、全零、offset 0），地图和 `MapScene.extra.required_features` 均必须声明 `presentation.vector_stroke_dash.v1`。读取缺少声明的字段拒绝解释并只读保留原字节，不把旧未知样式隐式升级。新 SVG 预览建立带声明的 typed scene；显式 SceneBatch 的 Insert/Update/Import 增加所需声明并保留其它已有声明与未知 extra。打开、普通非虚线编辑不写入新字段/新能力；清空最后一项后已有能力不自动降级。旧客户端因未知必需能力只能只读，不能吞字段后写回。独立 scene 校验和 serializer 同样核验能力，worker 的 typed ImportScene 不得绕过。
 
-导入、编辑、整图/选择 SVG、native/worker raster 与 reader 层输出都在分配虚线派生路径前调用同一 core 校验。数列长度、单 scene 虚线转换工作量在 [presentation.md §11](presentation.md#11-阈值登记单源) 唯一登记。工作量保守计入所有节点（包括隐藏、透明、无 stroke）、有效继承、零项、奇数逻辑重复、各子路径的相位重启和几何段数；长度上界使用直线长度、贝塞尔控制多边形、修正半径的整椭圆周长上界，不能用有限采样低估弧长。offset 正负及大小不能减少预算。超限在 SVG 序列化和渲染展开前返回 `SCENE_LIMIT`，不截短、不跳过、不变实线。预算字段允许调用方收紧，不允许放宽硬上限。
+导入、编辑、整图/选择 SVG、native/worker raster 与 reader 层输出都在分配虚线派生路径前调用同一 core 校验。数列长度、单 scene 虚线转换工作量在 [presentation.md §11](presentation.md#11-阈值登记单源) 唯一登记。工作量保守计入所有节点（包括隐藏、透明、无 stroke）、有效继承、零项、奇数逻辑重复、各子路径的相位重启和几何段数；长度上界使用直线长度、贝塞尔控制多边形、修正半径的整椭圆周长上界，不能用有限采样低估弧长。长度预算另加入后端 f32 局部坐标舍入余量（几何规模乘段数与总弧长合计，乘阈值表中的误差系数），防止大坐标附近很短的 f64 线在后端变长而逃过预算。offset 正负及大小不能减少预算。超限在 SVG 序列化和渲染展开前返回 `SCENE_LIMIT`，不截短、不跳过、不变实线。预算字段允许调用方收紧，不允许放宽硬上限。
 
 SVG 错误提供节点、具体 `stroke-dasharray`/`stroke-dashoffset` 属性及可用 XML 行列；inline 属性定位到所在 style 属性。未知/危险输入、超限、取消或 stale 均整批拒绝、零修改、原输入保留。编辑器提供继承/实线/虚线预设、最多预算项的逐项自定义数列、独立继承/自定义 offset；仍用原 SceneBatch 预览、失败保留检查器输入和一个 undo，不另建解析器。
 

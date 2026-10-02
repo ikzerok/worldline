@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use worldline_core::{project::Project, reader_export::*, TargetRef};
 
+#[path = "reader_world_site/graph_labels.rs"]
+mod graph_labels;
 #[path = "reader_world_site/maps.rs"]
 mod maps;
 #[path = "reader_world_site/performance.rs"]

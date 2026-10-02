@@ -12,6 +12,7 @@ mod export;
 mod lifecycle;
 mod save;
 mod snapshot;
+mod source_lifecycle;
 mod source_navigation;
 
 pub use snapshot::{SnapshotDocument, SnapshotState};

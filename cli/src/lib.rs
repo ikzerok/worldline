@@ -333,6 +333,8 @@ mod relation_query;
 mod scene;
 #[path = "lib/source_edit.rs"]
 mod source_edit;
+#[path = "lib/source_lifecycle.rs"]
+mod source_lifecycle;
 #[path = "lib/story.rs"]
 mod story;
 #[path = "lib/support.rs"]
@@ -378,6 +380,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "catalog" => catalog::cmd_catalog(&catalog::parse_catalog_args(rest)?, out),
         "catalog-query" => catalog_query::cmd_catalog_query(&catalog_query::parse_catalog_query_args(rest)?, out),
         "source-edit" => source_edit::command(rest, out),
+        "source-lifecycle" => source_lifecycle::command(rest, out),
         "schema-index" => source_edit::schema_index(rest, out),
         "schema-preview" => source_edit::schema_command(rest, out, false),
         "schema-apply" => source_edit::schema_command(rest, out, true),
@@ -394,7 +397,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / reader-export / localization / markdown / authoring-intent / source-edit / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

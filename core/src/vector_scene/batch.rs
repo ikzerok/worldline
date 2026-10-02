@@ -185,7 +185,11 @@ pub fn preview_batch_with_control(
             return Err(super::validate::limit("场景节点数"));
         }
     }
-    let scene = scene.ok_or_else(|| SceneError::new("SCENE_FEATURE", "缺少scene"))?;
+    let mut scene = scene.ok_or_else(|| SceneError::new("SCENE_FEATURE", "缺少scene"))?;
+    super::dash::declare_scene(&mut scene)?;
+    if super::dash::uses_dash(&scene) {
+        super::dash::declare_feature(root)?;
+    }
     pulse(
         progress,
         "validate",

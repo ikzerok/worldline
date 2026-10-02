@@ -8,6 +8,8 @@ use worldline_core::{
     svg_import,
     vector_scene::*,
 };
+#[path = "vector_scene/dashes.rs"]
+mod dashes;
 #[path = "vector_scene/migration.rs"]
 mod migration;
 #[path = "vector_scene/performance.rs"]

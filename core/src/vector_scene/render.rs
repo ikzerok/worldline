@@ -308,6 +308,7 @@ fn matrix_attr(out: &mut String, matrix: Affine) {
 }
 
 fn append_style(out: &mut String, style: &SceneStyle) {
+    super::dash::append_svg(out, style);
     for (key, value) in [
         ("fill", &style.fill),
         ("stroke", &style.stroke),
@@ -407,6 +408,8 @@ fn geometry_svg(out: &mut String, geometry: &SceneGeometry) {
                         sweep,
                         to,
                     } => {
+                        // 与 core 的弧长/包络采用相同减周顺序，避免极大角度在后端产生偏差。
+                        let rotation = rotation.rem_euclid(360.0);
                         let _ = write!(
                             out,
                             "A{rx} {ry} {rotation} {} {} {} {}",
