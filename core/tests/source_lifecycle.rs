@@ -13,6 +13,9 @@ impl Workspace {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+        std::fs::create_dir_all(&root).unwrap();
+        // 复用 compiler::source_path 的正式身份，消除 Windows 临时目录的 8.3 别名。
+        let root = Project::new(&root).root;
         for (path, text) in files {
             let path = root.join(path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

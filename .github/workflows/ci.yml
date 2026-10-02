@@ -12,5 +12,5 @@ jobs:
       - run: cargo fmt --all -- --check
       - name: Windows 资源句柄与独立发布回归
         run: cargo test -p worldline-core --lib source_lifecycle::resources::open::tests --locked
-      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --locked --no-fail-fast
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings

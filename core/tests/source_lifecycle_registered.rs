@@ -21,6 +21,8 @@ impl Fixture {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join(".world")).unwrap();
+        // Project::new 复用 compiler::source_path：展开 8.3 别名且不保留 verbatim 前缀。
+        let root = Project::new(&root).root;
         fs::write(
             root.join("world.wl"),
             "include \"old.wl\"\nevent start\n  正文。\n  -> END\n",
@@ -146,6 +148,23 @@ fn all_supported_registered_path_slots_move_without_reformatting_extensions() {
     let manuscript_before = fs::read(&manuscript).unwrap();
     let locale_before = fs::read(&locale).unwrap();
     let mut project = fixture.open();
+    assert_eq!(
+        fixture.root, project.root,
+        "fixture IDs must use the canonical Project root"
+    );
+    let baseline_content = project.compile();
+    assert!(
+        !baseline_content.has_errors(),
+        "{:?}",
+        baseline_content.diagnostics
+    );
+    let baseline_graphs =
+        worldline_core::graph_views::build_graph_view_index(&project, &baseline_content);
+    assert!(
+        baseline_graphs.diagnostics.is_empty(),
+        "baseline graph refs must resolve before preview: {:?}",
+        baseline_graphs.diagnostics
+    );
     let plan = project.preview_source_lifecycle(&request()).unwrap();
     assert_eq!(
         plan.changes

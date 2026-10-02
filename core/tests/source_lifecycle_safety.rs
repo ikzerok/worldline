@@ -13,6 +13,8 @@ impl Workspace {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&root).unwrap();
+        // 复用 compiler::source_path 的正式身份，消除 Windows 临时目录的 8.3 别名。
+        let root = Project::new(&root).root;
         std::fs::write(
             root.join("world.wl"),
             "include\"old.wl\"\nevent start\n  -> END\n",

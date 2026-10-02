@@ -52,7 +52,12 @@ fn safe_source_move_keeps_old_save_checkpoint_and_entry_trace_loadable() {
     assert_eq!(before.program.entry, after.program.entry);
     let mut restored = Story::load(&after.program, &after.analysis, &save).unwrap();
     assert_eq!(restored.state_view(), state);
-    assert_eq!(restored.save().unwrap(), save);
+    // 完整 JSON 值相等，保留全部存档字段与数组顺序；仅忽略 HashMap 对象键的序列化顺序。
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&restored.save().unwrap()).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&save).unwrap(),
+        "restored save must preserve every field; partial state comparisons are insufficient"
+    );
     let from_checkpoint =
         Story::from_checkpoint(&after.program, &after.analysis, &checkpoint).unwrap();
     assert_eq!(from_checkpoint.state_view(), state);
