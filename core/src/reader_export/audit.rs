@@ -1,15 +1,18 @@
 use super::*;
-use std::path::{Component, Path};
 
 pub(super) fn audit(
     files: &BTreeMap<PathBuf, Vec<u8>>,
     progress: &mut dyn FnMut(&ReaderExportProgress) -> bool,
 ) -> Result<(), String> {
-    let mut ids = BTreeMap::<PathBuf, BTreeSet<String>>::new();
-    let mut references = Vec::<(PathBuf, String)>::new();
+    let mut ids = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut references = Vec::<(String, String)>::new();
+    let mut names = BTreeSet::new();
     for (index, (path, bytes)) in files.iter().enumerate() {
         super::progress::report(progress, "audit", index, files.len())?;
-        super::site::validate_output_path(path)?;
+        let name = super::portable_output_path(path)?;
+        if !names.insert(name.clone()) {
+            return Err("阅读包输出路径正规化后重复".into());
+        }
         let extension = path.extension().and_then(|ext| ext.to_str());
         if !matches!(extension, Some("html" | "css")) {
             continue;
@@ -17,17 +20,17 @@ pub(super) fn audit(
         let text = std::str::from_utf8(bytes).map_err(|_| "生成文本不是有效 UTF-8")?;
         if extension == Some("css") {
             for url in css_urls(text)? {
-                references.push((path.clone(), url));
+                references.push((name.clone(), url));
             }
             continue;
         }
         let mut page_ids = BTreeSet::new();
-        for (name, attributes) in tags(text)? {
+        for (tag, attributes) in tags(text)? {
             if matches!(
-                name.as_str(),
+                tag.as_str(),
                 "iframe" | "object" | "embed" | "base" | "style"
             ) {
-                return Err(format!("阅读包含有禁止的 HTML 元素：{name}"));
+                return Err(format!("阅读包含有禁止的 HTML 元素：{tag}"));
             }
             for (key, value) in attributes {
                 if key.starts_with("on") {
@@ -37,21 +40,21 @@ pub(super) fn audit(
                     return Err("生成页面包含重复 anchor".into());
                 }
                 if matches!(key.as_str(), "href" | "src" | "xlink:href") {
-                    references.push((path.clone(), value.clone()));
+                    references.push((name.clone(), value.clone()));
                 }
                 if key == "style" || key == "clip-path" || key == "fill" || key == "stroke" {
                     for url in css_urls(&value)? {
-                        references.push((path.clone(), url));
+                        references.push((name.clone(), url));
                     }
                 }
             }
         }
-        ids.insert(path.clone(), page_ids);
+        ids.insert(name, page_ids);
     }
     for (from, url) in references {
         let (path, anchor) = resolve(&from, &url)?;
-        if !files.contains_key(&path) {
-            return Err(format!("阅读包链接资源不存在：{}", path.display()));
+        if !names.contains(&path) {
+            return Err(format!("阅读包链接资源不存在：{path}"));
         }
         if let Some(anchor) = anchor {
             if !ids.get(&path).is_some_and(|ids| ids.contains(&anchor)) {
@@ -62,7 +65,7 @@ pub(super) fn audit(
     Ok(())
 }
 
-fn resolve(from: &Path, url: &str) -> Result<(PathBuf, Option<String>), String> {
+fn resolve(from: &str, url: &str) -> Result<(String, Option<String>), String> {
     if url.is_empty()
         || url.starts_with('/')
         || url.contains(['\\', ':', '?', '%', '&'])
@@ -74,30 +77,9 @@ fn resolve(from: &Path, url: &str) -> Result<(PathBuf, Option<String>), String> 
         .split_once('#')
         .map(|(path, id)| (path, Some(id.to_owned())))
         .unwrap_or((url, None));
-    let mut parts: Vec<_> = if relative.is_empty() {
-        from.components()
-            .filter_map(|part| {
-                if let Component::Normal(value) = part {
-                    Some(value.to_os_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    } else {
-        from.parent()
-            .unwrap_or(Path::new(""))
-            .components()
-            .filter_map(|part| {
-                if let Component::Normal(value) = part {
-                    Some(value.to_os_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
+    let mut parts: Vec<String> = from.split('/').map(str::to_owned).collect();
     if !relative.is_empty() {
+        parts.pop();
         for part in relative.split('/') {
             match part {
                 "" | "." => return Err("阅读包链接含有空路径或当前目录段".into()),
@@ -110,8 +92,7 @@ fn resolve(from: &Path, url: &str) -> Result<(PathBuf, Option<String>), String> 
             }
         }
     }
-    let path: PathBuf = parts.into_iter().collect();
-    super::site::validate_output_path(&path)?;
+    let path = super::paths::portable_text(&parts.join("/"), false)?;
     if anchor
         .as_ref()
         .is_some_and(|id| id.is_empty() || id.contains('#'))
@@ -263,6 +244,35 @@ mod tests {
             ),
         ]);
         assert!(audit(&files, &mut |_| true).is_ok());
+    }
+
+    #[test]
+    fn native_path_keys_and_portable_urls_share_one_resource_namespace() {
+        let files = BTreeMap::from([
+            (
+                PathBuf::from("index.html"),
+                b"<a href=\"objects/index.html\">objects</a>".to_vec(),
+            ),
+            (
+                PathBuf::from("objects").join("index.html"),
+                b"<a href=\"../index.html\">home</a>".to_vec(),
+            ),
+        ]);
+        assert!(audit(&files, &mut |_| true).is_ok());
+        // URL 字面量不能借 Windows 原生路径规则放宽。
+        for url in [
+            "objects\\index.html",
+            "C:/index.html",
+            "//host/index.html",
+            "../../index.html",
+            "objects//index.html",
+            "objects/NUL",
+        ] {
+            assert!(
+                resolve("index.html", url).is_err(),
+                "接受了不安全 URL {url:?}"
+            );
+        }
     }
 
     #[test]

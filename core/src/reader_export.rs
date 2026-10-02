@@ -8,6 +8,7 @@ mod maps;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_rename;
+mod paths;
 mod plan;
 mod profile;
 mod profile_api;
@@ -25,6 +26,7 @@ use crate::catalog::TargetRef;
 use crate::manuscript::ManuscriptIndex;
 use crate::project::Project;
 use crate::CompileResult;
+pub use paths::portable_output_path;
 pub use profile::{
     ReaderProfileMigrationPlan, ReaderProfileRoute, ReaderProfileSavePlan, ReaderPublicationProfile,
 };

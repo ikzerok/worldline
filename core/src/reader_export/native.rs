@@ -86,7 +86,7 @@ fn publish(
         let total = files.len();
         for (index, (relative, bytes)) in files.into_iter().enumerate() {
             super::progress::report(progress, "write", index, total)?;
-            super::site::validate_output_path(&relative)?;
+            let relative = super::portable_output_path(&relative)?;
             let target = staging.join(relative);
             std::fs::create_dir_all(target.parent().ok_or("输出路径缺少父目录")?)
                 .map_err(|e| e.to_string())?;

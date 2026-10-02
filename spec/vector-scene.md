@@ -110,7 +110,7 @@ to_safe_svg_layers_with_links(&MapDocument, Option<&BTreeSet<String>>,
 
 `to_safe_svg` 仅 scene；`map_to_safe_svg` 包括旧 geometry 与 scene，提供完整矢量交换。raster 与作者语义元数据仍需原生工程备份。`scene_to_safe_svg` 无 map layer_order，UI 必须按地图顺序逐层投影；reader 的 layers 入口一次校验并返回各层同 viewport SVG，按每层旧图元→scene 组合，不能把所有 scene 统一放到所有旧图元上方。
 
-selected=None 尊重作者显隐；Some 是精确公开白名单，忽略作者临时隐藏状态，不因选中 group 自动公开后代，仅保留显示被选节点必要的 ancestor 几何结构。所有来源文字与属性转义，原节点 ID/name/target/extra 不进入公开 SVG。
+selected=None 尊重作者显隐；Some 是精确公开白名单，忽略作者临时隐藏状态，不因选中 group 自动公开后代，仅保留显示被选节点必要的 ancestor 几何结构。所有来源文字与属性转义，原节点 ID/name/target/extra 不进入公开 SVG。精确公开选择不输出无关空图层；内部 clip 编号仅在必需祖先集合内分配，未选私有节点不改变公开编号。
 
 `ScenePublicLink{href:Option<String>,anchor:String,label:String}` 由 reader 提供已授权显示文字与包内链接。href 拒绝冒号、反斜杠、控制字符或 `/` 起始；anchor 只含小写 ASCII 字母、数字、连字符且不重复。链接只应用于明确选中的对应节点，不从 target_ref 自动扩发布闭包。
 

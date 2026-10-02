@@ -1,6 +1,6 @@
 # worldline 共同契约：对象、展示文档与修改边界
 
-版本0.2，设计草案（0.2修订：M1矢量画布——地图自有坐标系、栅格图层化、基础线面前移；阈值单源登记）。除明确标注为后续票据的部分外，本文的 M2 实体契约已由 worldline-core 实现；其余新增文件、类型、CLI和语法仍不能直接当成当前0.2.0的已支持能力。需求来源见[需求清单](../docs/design/shared/REQUIREMENTS.md)，事实依据编号见[研究记录](../docs/design/shared/RESEARCH.md)。
+工具0.15共同契约。本文规定内容、展示文档、身份引用和修改边界；历史 M1–M4 标签表示功能组织，不代替当前能力声明或语言版本。新矢量模型与交换 profile 见 [vector-scene.md](vector-scene.md)，数值阈值统一维护于第11节。已标注为后续设计的项目不构成已交付能力；实际读取与写入始终遵守 core 的 schema 与 required_features 校验。
 
 ## 1. 不变量
 
@@ -79,7 +79,7 @@ M1支持现有kind；M2增加`entity`，实体的place/organization/culture等�
 
 ## 4. MapDocument
 
-详细机器约束见`schemas/map.schema.json`；样例见`examples/map_harbor.json`。这些文件检查设计契约，并不意味着当前编辑器能够打开它们。
+详细机器约束见`schemas/map.schema.json`；样例见`examples/map_harbor.json`。schema 检查结构形状，不能代替 core 的能力、引用、数值和工作区边界校验。
 
 M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument` 与
 `MapIndex`：地图 JSON 的格式、ID、坐标、图层、TargetRef、素材声明和导航
@@ -114,7 +114,7 @@ M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument`
 
 ### 4.1 坐标
 
-坐标系属于地图文档自身：原点在canvas extent左上，x向右，y向下。持久坐标为归一化二维值`[u,v]`，均相对地图extent取[0,1]。标记、折线、多边形与未来矢量图元共用这一坐标系；更换、裁剪或删除栅格图层不改变任何已保存坐标。未知位置不用[0,0]占位，而是不建立标记。
+坐标系属于地图文档自身：原点在canvas extent左上，x向右，y向下。旧 placements 的持久坐标为归一化二维值`[u,v]`，均相对地图extent取[0,1]；scene 则使用自身 view_box 的逻辑坐标，再映到同一canvas。更换、裁剪或删除栅格图层不改变任何已保存坐标。未知位置不用[0,0]占位，而是不建立标记。
 
 栅格图层（PNG/JPEG等位图素材）是放置在该坐标系中的展示图层：每层声明asset引用与放置矩形`[u0,v0,u1,v1]`，默认整幅铺满extent。首次导入位图时extent默认取该图像素尺寸、放置矩形为[0,0,1,1]，作者随后可显式调整extent或各层放置。矢量图元（点标记、折线、多边形）是格式的原生成员。工具0.15新增显式能力保护的原生 scene：完整曲线、控制点、组、文本、样式和2D仿射持久保留，根viewport矩形裁剪与安全SVG交换共同保真，见[vector-scene.md](vector-scene.md)。旧Rust `svg_import::preview/apply` 仍保留历史采样placement兼容契约；新的可编辑SVG作者入口使用 `preview_scene` 与原子SceneBatch，不把兼容采样宣称为可编辑曲线。旧placements继续使用本节normalized坐标；scene使用自己的view_box逻辑坐标，由core唯一变换映到同一canvas，不自动迁移旧地图。
 

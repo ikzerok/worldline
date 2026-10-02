@@ -184,3 +184,30 @@ fn nested_real_viewport_groups_keep_both_clips() {
     );
     assert_eq!(p.scene.nodes.len(), 3);
 }
+
+#[test]
+fn numeric_styles_trim_whitespace_and_do_not_treat_opacity_as_a_length() {
+    let parsed = preview_scene(&svg(
+        "<rect width='10' height='10' fill=' red ' stroke-width=' 2px ' opacity=' 0.5 '/>",
+    ))
+    .unwrap();
+    let node = parsed
+        .scene
+        .nodes
+        .values()
+        .find(|n| matches!(n.geometry, SceneGeometry::Rect { .. }))
+        .unwrap();
+    assert_eq!(node.style.fill.as_deref(), Some("red"));
+    assert_eq!(node.style.stroke_width, Some(2.0));
+    assert_eq!(node.style.opacity, Some(0.5));
+    for attribute in [
+        "opacity='0.5px'",
+        "fill-opacity='0.5px'",
+        "stroke-opacity='0.5px'",
+        "stroke-miterlimit='4px'",
+    ] {
+        assert!(
+            preview_scene(&svg(&format!("<rect width='10' height='10' {attribute}/>"))).is_err()
+        );
+    }
+}

@@ -199,6 +199,7 @@ fn typed_pages_search_manifest_and_canary_isolation_are_consistent() {
     let search: serde_json::Value =
         serde_json::from_slice(&files[Path::new("search-index.json")]).unwrap();
     for page in &preview.content {
+        assert!(!page.output_path.contains('\\'), "公开预览路径必须portable");
         let entries: Vec<_> = search
             .as_array()
             .unwrap()
@@ -215,6 +216,7 @@ fn typed_pages_search_manifest_and_canary_isolation_are_consistent() {
     assert_eq!(resources.len(), files.len() - 1);
     for resource in resources {
         let bytes = &files[Path::new(resource["path"].as_str().unwrap())];
+        assert!(!resource["path"].as_str().unwrap().contains('\\'));
         assert_eq!(resource["bytes"].as_u64(), Some(bytes.len() as u64));
         assert_eq!(resource["hash"].as_str(), Some(hash(bytes).as_str()));
     }

@@ -68,6 +68,14 @@ pub fn to_safe_svg_layers_with_links(
         if selected.is_none() && map.layers.get(layer).is_some_and(|l| !l.visible_default) {
             continue;
         }
+        if selected.is_some()
+            && scene
+                .root_order
+                .get(layer)
+                .is_none_or(|roots| roots.iter().all(|id| !context.needed.contains(id)))
+        {
+            continue;
+        }
         let mut output = root(scene, width, height);
         context.defs(&mut output, Some(layer), None);
         if let Some(roots) = scene.root_order.get(layer) {
@@ -176,7 +184,7 @@ impl<'a> Context<'a> {
         let clips = scene
             .nodes
             .values()
-            .filter(|n| n.clip_rect.is_some())
+            .filter(|n| n.clip_rect.is_some() && (selected.is_none() || needed.contains(&n.id)))
             .enumerate()
             .map(|(i, n)| (n.id.clone(), i))
             .collect();

@@ -211,12 +211,14 @@ pub(super) fn append_object(
     }
     related.extend(structural_backlinks(compiled, target, routes));
     for relation in compiled.analysis.catalog.relations.values() {
-        let relation_target = TargetRef::new("relation", &relation.id);
-        if routes.contains_key(&relation_target)
-            && (relation.from_ref == *target
-                || relation.to_ref == *target
-                || relation.scope_refs.contains(target))
+        if relation.from_ref != *target
+            && relation.to_ref != *target
+            && !relation.scope_refs.contains(target)
         {
+            continue;
+        }
+        let relation_target = TargetRef::new("relation", &relation.id);
+        if routes.contains_key(&relation_target) {
             related.insert(relation_target);
         }
     }
@@ -246,10 +248,6 @@ fn structural_backlinks(
 ) -> BTreeSet<TargetRef> {
     let mut related = BTreeSet::new();
     for event in &compiled.program.events {
-        let source = TargetRef::new("event", &event.name);
-        if !routes.contains_key(&source) {
-            continue;
-        }
         let references_target = match target.kind.as_str() {
             "character" => event.characters.contains(&target.id),
             "period" => event.period.as_deref() == Some(target.id.as_str()),
@@ -258,18 +256,27 @@ fn structural_backlinks(
             _ => false,
         };
         if references_target {
-            related.insert(source);
+            let source = TargetRef::new("event", &event.name);
+            if routes.contains_key(&source) {
+                related.insert(source);
+            }
         }
     }
     for state in compiled.analysis.catalog.states.values() {
+        if state.target != *target {
+            continue;
+        }
         let source = TargetRef::new("state", &state.id);
-        if state.target == *target && routes.contains_key(&source) {
+        if routes.contains_key(&source) {
             related.insert(source);
         }
     }
     for anchor in compiled.analysis.catalog.anchors.values() {
+        if !anchor.links.iter().any(|link| link.target == *target) {
+            continue;
+        }
         let source = TargetRef::new("anchor", &anchor.id);
-        if routes.contains_key(&source) && anchor.links.iter().any(|link| link.target == *target) {
+        if routes.contains_key(&source) {
             related.insert(source);
         }
     }

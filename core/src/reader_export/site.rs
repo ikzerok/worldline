@@ -11,7 +11,7 @@ pub(super) fn render_package(
     let mut search = Vec::<Value>::new();
     for (index, page) in prepared.pages.iter().enumerate() {
         super::progress::report(progress, "render", index, prepared.pages.len())?;
-        let url = page.output_path.to_string_lossy().into_owned();
+        let url = super::portable_output_path(&page.output_path)?;
         let mut entry = json!({"title":page.title,"url":url,"text":page.searchable_text});
         if prepared.world_site {
             entry["kind"] = json!(page.kind);
@@ -111,7 +111,7 @@ pub(super) fn render_package(
     for attachment in &prepared.attachments {
         home.push_str(&format!(
             "<li><a href=\"{}\">{}</a></li>",
-            html_escape(&attachment.output_path.to_string_lossy()),
+            html_escape(&super::portable_output_path(&attachment.output_path)?),
             html_escape(&attachment.display)
         ));
     }
@@ -187,18 +187,20 @@ pub(super) fn render_package(
     let pages: Vec<_> = prepared
         .pages
         .iter()
-        .map(|page| json!({"title":page.title,"url":page.output_path}))
-        .collect();
+        .map(|page| {
+            Ok(json!({"title":page.title,"url":super::portable_output_path(&page.output_path)?}))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let attachments: Vec<_> = prepared
         .attachments
         .iter()
-        .map(|asset| json!({"title":asset.display,"url":asset.output_path}))
-        .collect();
+        .map(|asset| Ok(json!({"title":asset.display,"url":super::portable_output_path(&asset.output_path)?})))
+        .collect::<Result<Vec<_>, String>>()?;
     for (index, attachment) in prepared.attachments.into_iter().enumerate() {
         super::progress::report(progress, "render", index, attachments.len())?;
         insert_output(&mut files, attachment.output_path, attachment.bytes)?;
     }
-    let resources: Vec<_> = files.iter().map(|(path, bytes)| json!({"path":path,"bytes":bytes.len(),"hash":super::routes::hash_bytes(bytes)})).collect();
+    let resources: Vec<_> = files.iter().map(|(path, bytes)| Ok(json!({"path":super::portable_output_path(path)?,"bytes":bytes.len(),"hash":super::routes::hash_bytes(bytes)}))).collect::<Result<Vec<_>, String>>()?;
     let manifest = json!({"schema_version":if prepared.world_site {READER_SITE_SCHEMA_VERSION} else {READER_EXPORT_SCHEMA_VERSION},
         "title":prepared.site_title,"pages":pages,"attachments":attachments,"hash_algorithm":"fnv1a64","resources":resources});
     insert_output(
@@ -268,7 +270,7 @@ fn insert_output(
     bytes: Vec<u8>,
 ) -> Result<(), String> {
     let path = path.into();
-    validate_output_path(&path)?;
+    let path = PathBuf::from(super::portable_output_path(&path)?);
     let total = files
         .values()
         .try_fold(bytes.len(), |total, value| total.checked_add(value.len()))
@@ -278,19 +280,6 @@ fn insert_output(
     }
     if files.insert(path.clone(), bytes).is_some() {
         return Err(format!("阅读包内部输出路径冲突：{}", path.display()));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_output_path(path: &Path) -> Result<(), String> {
-    if path.to_string_lossy().contains(['\\', ':', '?', '#'])
-        || path.as_os_str().is_empty()
-        || path.is_absolute()
-        || path
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return Err(format!("阅读包输出路径无效：{}", path.display()));
     }
     Ok(())
 }

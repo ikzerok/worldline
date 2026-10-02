@@ -132,14 +132,14 @@ pub(super) fn prepare_with_routes(
     for attachment in &attachments {
         routes.insert(
             TargetRef::new("asset", &attachment.id),
-            attachment.output_path.to_string_lossy().into_owned(),
+            super::portable_output_path(&attachment.output_path)?,
         );
         included.push(ReaderExportIncluded {
             target: Some(TargetRef::new("asset", &attachment.id)),
             manuscript_id: None,
             chapter_id: None,
             title: attachment.display.clone(),
-            output_path: attachment.output_path.to_string_lossy().into_owned(),
+            output_path: super::portable_output_path(&attachment.output_path)?,
         });
     }
 
@@ -357,7 +357,7 @@ pub(super) fn prepare_with_routes(
         project,
     });
     let content_baseline = project.content_baseline();
-    let mut plan_digest = digest_plan(selection, &content_baseline, &attachments);
+    let mut plan_digest = digest_plan(selection, &content_baseline, &attachments)?;
     // Bind rendered map content too, including unsaved presentation changes.
     let mut map_hash = 0xcbf29ce484222325u64;
     // clone 编译可能补载原 Project 尚未跟踪的 include；必须绑定实际消费的源码。
@@ -383,20 +383,25 @@ pub(super) fn prepare_with_routes(
             mix(&mut map_hash, anchor.label.as_bytes());
             mix(&mut map_hash, anchor.text.as_bytes());
         }
-        mix(&mut map_hash, page.output_path.to_string_lossy().as_bytes());
+        mix(
+            &mut map_hash,
+            super::portable_output_path(&page.output_path)?.as_bytes(),
+        );
     }
     plan_digest.push_str(&format!("-{map_hash:016x}"));
     let preview = ReaderExportPreview {
         content: if selection.schema_version >= READER_FIELDS_SCHEMA_VERSION {
             pages
                 .iter()
-                .map(|page| ReaderContentPreview {
-                    title: page.title.clone(),
-                    output_path: page.output_path.to_string_lossy().into_owned(),
-                    text: page.searchable_text.clone(),
-                    empty_content: page.empty_content,
+                .map(|page| {
+                    Ok(ReaderContentPreview {
+                        title: page.title.clone(),
+                        output_path: super::portable_output_path(&page.output_path)?,
+                        text: page.searchable_text.clone(),
+                        empty_content: page.empty_content,
+                    })
                 })
-                .collect()
+                .collect::<Result<Vec<_>, String>>()?
         } else {
             Vec::new()
         },
@@ -532,7 +537,7 @@ fn digest_plan(
     selection: &ReaderExportSelection,
     baseline: &str,
     attachments: &[PublicAttachment],
-) -> String {
+) -> Result<String, String> {
     let mut hash = 0xcbf29ce484222325u64;
     mix(&mut hash, b"worldline-reader-export-v1");
     mix(&mut hash, baseline.as_bytes());
@@ -545,11 +550,11 @@ fn digest_plan(
         mix(&mut hash, attachment.display.as_bytes());
         mix(
             &mut hash,
-            attachment.output_path.to_string_lossy().as_bytes(),
+            super::portable_output_path(&attachment.output_path)?.as_bytes(),
         );
         mix(&mut hash, &attachment.bytes);
     }
-    format!("reader-v1-{hash:016x}")
+    Ok(format!("reader-v1-{hash:016x}"))
 }
 
 fn mix(hash: &mut u64, bytes: &[u8]) {

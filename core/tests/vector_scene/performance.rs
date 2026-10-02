@@ -41,10 +41,39 @@ fn scene_import_release_budget() {
     );
     for trial in 0..5 {
         let (mut p, mut r) = project(&format!("perf-{trial}"));
+        let operations = vec![
+            SceneOp::EnableScene,
+            SceneOp::ImportSvg {
+                layer_id: "svg".into(),
+                title: "性能".into(),
+                source: source.clone(),
+            },
+        ];
+        let request = batch(&p, r, operations);
         let start = std::time::Instant::now();
-        apply(
-            &mut p,
-            &mut r,
+        let mut last = start;
+        let mut max_gap = std::time::Duration::ZERO;
+        {
+            let mut progress = |_| {
+                let now = std::time::Instant::now();
+                max_gap = max_gap.max(now.duration_since(last));
+                last = now;
+                true
+            };
+            let plan =
+                preview_batch_with_control(&p, r, request, &SceneLimits::default(), &mut progress)
+                    .unwrap();
+            apply_batch_with_control(&mut p, &mut r, &plan, &mut progress).unwrap();
+        }
+        max_gap = max_gap.max(last.elapsed());
+        let elapsed = start.elapsed();
+        assert!(elapsed <= std::time::Duration::from_secs(3));
+        assert!(max_gap <= std::time::Duration::from_millis(250));
+        let (cancel_project, cancel_revision) = project(&format!("perf-cancel-{trial}"));
+        let before = cancel_project.content_baseline();
+        let request = batch(
+            &cancel_project,
+            cancel_revision,
             vec![
                 SceneOp::EnableScene,
                 SceneOp::ImportSvg {
@@ -54,8 +83,27 @@ fn scene_import_release_budget() {
                 },
             ],
         );
-        let elapsed = start.elapsed();
-        eprintln!("1000 SVG parse+plan+apply trial {trial}: {elapsed:?}");
-        assert!(elapsed <= std::time::Duration::from_secs(3));
+        let cancel_start = std::time::Instant::now();
+        let mut requested = None;
+        let result = preview_batch_with_control(
+            &cancel_project,
+            cancel_revision,
+            request,
+            &SceneLimits::default(),
+            &mut |progress| {
+                if progress.stage == "svg_import" && progress.completed >= 64 {
+                    requested = Some(std::time::Instant::now());
+                    false
+                } else {
+                    true
+                }
+            },
+        );
+        let cancel_end = std::time::Instant::now();
+        assert_eq!(result.unwrap_err().code, "SCENE_CANCELLED");
+        let response = cancel_end.duration_since(requested.expect("必须在解析后实际取消"));
+        assert!(response <= std::time::Duration::from_millis(500));
+        assert_eq!(cancel_project.content_baseline(), before);
+        eprintln!("1000 SVG trial {trial}: parse_plan_apply_ms={:.3} max_progress_gap_ms={:.3} cancel_total_ms={:.3} cancel_response_ms={:.3}", elapsed.as_secs_f64()*1000.0, max_gap.as_secs_f64()*1000.0, cancel_end.duration_since(cancel_start).as_secs_f64()*1000.0, response.as_secs_f64()*1000.0);
     }
 }

@@ -76,6 +76,8 @@ v3 搜索条目为 `{title,url,text,kind,aliases}`；v1/v2 保留 `{title,url,te
 
 所有 HTML、CSS、脚本与资源采用包内相对路径。搜索数据通过本地 script 载入，不使用 fetch、CDN、远程字体或服务器。深层页面和双击 file:// 打开遵守同一相对路径规则。搜索 DOM 使用 textContent，不把输入或索引正文当 HTML。
 
+原生文件路径与公开 URL 分别验证。`reader_export::portable_output_path(&Path) -> Result<String,String>` 只对已经作为原生相对输出路径处理的值进行校验和 `/` 正规化：Windows 的原生反斜线分隔符可正规化；Linux/Unix 的字面反斜线文件名拒绝。所有平台继续拒绝盘符/UNC/设备名、绝对路径、父目录、空段、点段、控制字符及不安全的 URL 标点。公开 URL 和 profile 路由字符串始终只接受 `/`，不能调用原生正规化绕过其反斜线拒绝。包的键、manifest/search/preview 的公开路径及 profile.routes.output_path 序列化与 native 写入使用同一正规化规则；资源审计在 portable 字符串命名空间解析相对 URL，不再先构造带系统分隔符的 PathBuf 再当 URL 检查。此规则不适用于完整工程快照或 profile 配置原文的工作区文件名；合法的 a&b.json 等普通工程文件仍按原工作区契约保留。
+
 manifest 包含 schema_version、title、pages、attachments，并增加 `hash_algorithm:"fnv1a64"` 与 `resources:[{path,bytes,hash}]`。resources 覆盖除 manifest 自身外全部文件；不包含作者专用 exclusions、源路径或未选 ID。hash 记录文件完整字节。生成后审计每个 HTML href/src、CSS url 和片段 ID：拒绝远程/绝对路径、逃逸、缺资源与缺 anchor，禁止 iframe/object/embed/base、内联 style 元素和 CSS import；SVG namespace 不是外部依赖。
 
 ## 5. 发布 profile 文档
@@ -163,6 +165,6 @@ native export 只允许工程外、尚不存在的新目标，父目录必须存
 
 超限尽早失败；在对象、章节、地图及资源生成中持续检查字节预算，避免最后才发现大包。进度/取消检查覆盖验证、编译后、逐对象/章节、每 64 个地图 primitives、render/audit/write 与发布前；同步编译的真实取消延迟必须由性能门禁验证。
 
-release 性能回归固定 2000 对象、合理中英正文/alias，五次 fresh fixture 同机每轮 preview+build ≤5 秒，打印每轮毫秒、文件数、bytes、机器信息与原工程 hash。取消请求到返回 ≤500ms，目标/暂存均无输出。profile create+preview_save 独立测时，同步 UI 超过 250ms 必须转后台。不得用 debug 结果冒充 release。
+release 性能回归固定 2000 对象、合理中英正文/alias，五次 fresh fixture 同机每轮 preview+build ≤5 秒，打印每轮毫秒、文件数、bytes、机器信息与原工程 hash。取消请求到返回 ≤500ms，目标/暂存均无输出。profile create+preview_save 和实际 apply_save 分别独立测时；同步 UI 路径超过 250ms 必须转后台，不能只后台化规划却把同样耗时的完整重算留在主线程。应用仍须完整重新校验，不能以反序列化 token 或候选字节代替校验。不得用 debug 结果冒充 release。
 
 行为回归覆盖 v1/v2 兼容、CANARY 全资源隔离、选属性反链边界、typed/timeline/局部图、静态条件隐藏、地图精确白名单及跨层顺序、章节次序、稳定路由/重构迁移、未知字段保留、失效项不裁剪、陈旧/篡改计划、取消、目的目录竞态与完整备份。真实 file:// 浏览器验收与静态资源自动审计分别记录；工具拒绝访问时不绕过限制，也不声称已验证浏览器。

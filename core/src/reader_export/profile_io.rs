@@ -11,11 +11,7 @@ impl Project {
         self.checkpoint_disk_baselines_match()?;
         let profile = super::profile_api::fill_routes(self, profile)?;
         let path = profile_path(self, &profile.id);
-        let document_path = path
-            .strip_prefix(&self.root)
-            .map_err(|_| "发布配置路径越出工程")?
-            .to_string_lossy()
-            .replace('\\', "/");
+        let document_path = authoring_relative_path(self, &path)?;
         let document_before_hash = self
             .authoring_document(&path)
             .ok()
@@ -129,11 +125,7 @@ fn write_profile(project: &mut Project, profile: &ReaderPublicationProfile) -> R
         if entries.contains_key(&profile.id) {
             return Err("发布配置注册已存在但无效，保留原文".into());
         }
-        let relative = path
-            .strip_prefix(&project.root)
-            .map_err(|_| "发布配置路径越出工程")?
-            .to_string_lossy()
-            .replace('\\', "/");
+        let relative = authoring_relative_path(project, &path)?;
         entries.insert(profile.id.clone(), Value::String(relative));
         project.set_authoring_document(
             &manifest,
@@ -153,5 +145,22 @@ fn write_profile(project: &mut Project, profile: &ReaderPublicationProfile) -> R
         project.set_authoring_document(&path, bytes)
     } else {
         project.create_authoring_document(&path, bytes)
+    }
+}
+
+// 配置原文是工程文档，不是公开 URL；保留合法的普通文件名（例如 a&b.json）。
+fn authoring_relative_path(project: &Project, path: &std::path::Path) -> Result<String, String> {
+    let raw = path
+        .strip_prefix(&project.root)
+        .map_err(|_| "发布配置路径越出工程")?
+        .to_str()
+        .ok_or("发布配置相对路径必须为 UTF-8")?;
+    #[cfg(windows)]
+    {
+        Ok(raw.replace('\\', "/"))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(raw.to_owned())
     }
 }

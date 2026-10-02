@@ -280,3 +280,67 @@ fn deleting_an_empty_scene_layer_removes_its_root_order_entry() {
     assert!(index.maps.contains_key("map"), "{:?}", index.diagnostics);
     assert!(!scene(&p).root_order.contains_key("places"));
 }
+
+#[test]
+fn public_svg_omits_unselected_layers_and_private_clip_numbering() {
+    let (mut p, mut r) = project("public-skeleton");
+    let create = presentation_commands::CommandEnvelope {
+        expected_revision: r,
+        expected_documents: baseline(&p),
+        command: presentation_commands::Command::CreateLayer {
+            map_id: "map".into(),
+            layer_id: "private_layer".into(),
+            title: "私有层".into(),
+            visible_default: true,
+            locked: false,
+        },
+    };
+    presentation_commands::apply(&mut p, &mut r, create).unwrap();
+    let mut private = SceneNode::new(
+        "a_private",
+        "private_layer",
+        SceneGeometry::Group {
+            children: Vec::new(),
+        },
+    );
+    private.extra.insert("svg_root".into(), true.into());
+    private.clip_rect = Some([0.0, 0.0, 100.0, 100.0]);
+    let mut public = SceneNode::new(
+        "z_public",
+        "places",
+        SceneGeometry::Group {
+            children: Vec::new(),
+        },
+    );
+    public.extra.insert("svg_root".into(), true.into());
+    public.clip_rect = Some([0.0, 0.0, 100.0, 100.0]);
+    let mut child = point("child", 10.0);
+    child.parent_id = Some("z_public".into());
+    apply(
+        &mut p,
+        &mut r,
+        vec![
+            SceneOp::EnableScene,
+            SceneOp::Insert {
+                node: private,
+                index: None,
+            },
+            SceneOp::Insert {
+                node: public,
+                index: None,
+            },
+            SceneOp::Insert {
+                node: child,
+                index: None,
+            },
+        ],
+    );
+    let selected = BTreeSet::from(["child".into()]);
+    let m = map(&p);
+    let layers = to_safe_svg_layers_with_links(&m, Some(&selected), &BTreeMap::new()).unwrap();
+    assert_eq!(layers.keys().cloned().collect::<Vec<_>>(), vec!["places"]);
+    let svg = to_safe_svg(&m, Some(&selected)).unwrap();
+    assert!(svg.contains("wl-viewport-0"));
+    assert!(!svg.contains("wl-viewport-1"));
+    assert!(!svg.contains("private"));
+}

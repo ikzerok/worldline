@@ -184,11 +184,14 @@ pub(super) fn parse_style(attributes: &BTreeMap<String, String>) -> Result<Scene
     }
     let mut style = SceneStyle::default();
     for (key, value) in values {
+        let value = value.trim().to_owned();
         let num = || {
-            value
-                .strip_suffix("px")
-                .unwrap_or(&value)
-                .parse::<f64>()
+            let text = if matches!(key.as_str(), "stroke-width" | "font-size") {
+                value.strip_suffix("px").unwrap_or(&value)
+            } else {
+                &value
+            };
+            text.parse::<f64>()
                 .map_err(|_| SceneError::new("SCENE_STYLE", format!("样式数字无效：{key}")))
         };
         match key.as_str() {

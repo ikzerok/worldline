@@ -160,14 +160,16 @@ pub(super) fn relation_graph(
         .relations
         .values()
         .filter(|relation| {
+            if focus.is_some_and(|target| {
+                relation.from_ref != *target
+                    && relation.to_ref != *target
+                    && !(target.kind == "relation" && target.id == relation.id)
+            }) {
+                return false;
+            }
             routes.contains_key(&TargetRef::new("relation", &relation.id))
                 && routes.contains_key(&relation.from_ref)
                 && routes.contains_key(&relation.to_ref)
-                && focus.is_none_or(|target| {
-                    relation.from_ref == *target
-                        || relation.to_ref == *target
-                        || *target == TargetRef::new("relation", &relation.id)
-                })
         })
         .collect();
     if relations.is_empty() {

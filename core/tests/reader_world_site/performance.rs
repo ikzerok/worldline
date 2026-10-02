@@ -87,15 +87,21 @@ fn release_reader_2000_preview_build_five_fresh_fixtures() {
             .unwrap();
         let create_time = profile_start.elapsed();
         let save_start = Instant::now();
-        project.preview_save_reader_profile(&profile).unwrap();
+        let save_plan = project.preview_save_reader_profile(&profile).unwrap();
         let save_time = save_start.elapsed();
         let sync = profile_start.elapsed();
+        let mut apply_candidate = project.clone();
+        let apply_start = Instant::now();
+        apply_candidate
+            .apply_save_reader_profile(&save_plan)
+            .unwrap();
+        let apply_time = apply_start.elapsed();
         let cancel_time = measure_cancel(&project, &choice, &preview.plan_digest);
         assert_eq!(project.export_files().unwrap(), before);
         assert_eq!(project.content_baseline(), baseline);
         assert_eq!(project.is_dirty(), dirty);
         let source_hash = hash(&serde_json::to_vec(&before).unwrap());
-        println!("reader round={} preview_ms={} build_ms={} total_ms={} files={} bytes={} workspace_hash={} cancel_ms={} create_profile_ms={} preview_save_profile_ms={} profile_sync_ms={} sync_exceeds_250ms={}",round+1,preview_time.as_millis(),build_time.as_millis(),total.as_millis(),files.len(),bytes,source_hash,cancel_time.as_millis(),create_time.as_millis(),save_time.as_millis(),sync.as_millis(),sync>Duration::from_millis(250));
+        println!("reader round={} preview_ms={} build_ms={} total_ms={} files={} bytes={} workspace_hash={} cancel_ms={} create_profile_ms={} preview_save_profile_ms={} profile_sync_ms={} sync_exceeds_250ms={} apply_profile_ms={} apply_exceeds_250ms={}",round+1,preview_time.as_millis(),build_time.as_millis(),total.as_millis(),files.len(),bytes,source_hash,cancel_time.as_millis(),create_time.as_millis(),save_time.as_millis(),sync.as_millis(),sync>Duration::from_millis(250),apply_time.as_millis(),apply_time>Duration::from_millis(250));
         timings.push(total.as_millis());
         if round == 4 {
             write_qa_output(&fixture, &before, &files);
