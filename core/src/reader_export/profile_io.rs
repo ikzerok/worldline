@@ -7,6 +7,14 @@ impl Project {
         &self,
         profile: &ReaderPublicationProfile,
     ) -> Result<ReaderProfileSavePlan, String> {
+        Ok(self.prepare_save_reader_profile(profile)?.0)
+    }
+
+    // The rehearsal belongs only to this invocation and is never an input token.
+    fn prepare_save_reader_profile(
+        &self,
+        profile: &ReaderPublicationProfile,
+    ) -> Result<(ReaderProfileSavePlan, Self), String> {
         self.ensure_workspace_writable()?;
         self.checkpoint_disk_baselines_match()?;
         let profile = super::profile_api::fill_routes(self, profile)?;
@@ -34,7 +42,7 @@ impl Project {
         };
         let mut rehearsal = self.clone();
         write_profile(&mut rehearsal, &plan.profile)?;
-        Ok(plan)
+        Ok((plan, rehearsal))
     }
 
     pub fn apply_save_reader_profile(
@@ -42,15 +50,57 @@ impl Project {
         plan: &ReaderProfileSavePlan,
     ) -> Result<(), String> {
         self.checkpoint_disk_baselines_match()?;
-        if self.preview_save_reader_profile(&plan.profile)? != *plan {
+        let (current_plan, candidate) = self.prepare_save_reader_profile(&plan.profile)?;
+        self.finish_save_reader_profile(plan, current_plan, candidate)
+    }
+
+    fn finish_save_reader_profile(
+        &mut self,
+        plan: &ReaderProfileSavePlan,
+        current_plan: ReaderProfileSavePlan,
+        candidate: Self,
+    ) -> Result<(), String> {
+        if current_plan != *plan {
             return Err("发布配置保存预览已过期或被改动，请重新核对".into());
         }
-        let mut candidate = self.clone();
-        write_profile(&mut candidate, &plan.profile)?;
+        // Recheck late disk changes, including saved=None for a newly created
+        // profile, before adopting this invocation's fully validated rehearsal.
+        candidate.checkpoint_disk_baselines_match()?;
+        // Equal bytes do not prove distinct file identity. Retain the registry's
+        // live path/alias checks from the former second write_profile call.
+        let paths = candidate.reader_profile_paths();
+        let path = paths
+            .get(&plan.profile.id)
+            .ok_or("发布配置注册已失效，未应用")?;
+        if authoring_relative_path(&candidate, path)? != plan.document_path {
+            return Err("发布配置路径已改变，未应用".into());
+        }
+        for (path, document) in &candidate.authoring_documents {
+            if document.is_deleted()
+                || self
+                    .authoring_documents
+                    .get(path)
+                    .is_some_and(|previous| !previous.is_deleted())
+            {
+                continue;
+            }
+            // File enumeration omits directories. Preserve create's direct-read
+            // refusal if a file or directory has appeared at a new target.
+            crate::file_access::within(&self.root, path)?;
+            match crate::file_access::read(path) {
+                Ok(_) => return Err("目标文件已存在，不能覆盖未载入的文件".into()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
         *self = candidate;
         Ok(())
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "profile_io_tests.rs"]
+mod tests;
 
 fn profile_path(project: &Project, id: &str) -> PathBuf {
     project

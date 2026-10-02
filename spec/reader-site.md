@@ -136,6 +136,14 @@ fn apply_reader_profile_migration(&self, plan: &ReaderProfileMigrationPlan)
 
 `ReaderProfileSavePlan={profile:ReaderPublicationProfile,content_baseline:String,document_path:String,document_before_hash:Option<String>,plan_digest:String}`。document_path 是工作区相对路径，None hash 与空文件不同。保存预览验证选择/路由，在 clone 上排演，应用重新检查磁盘基线并重算整个 plan，精确一致才替换内存 Project。它不自行磁盘保存，也不生成站点；UI 沿已有 Project 保存与历史流程处理。
 
+一次 apply 内可直接采用本次完整重验中成功排演的 Project，避免丢弃后再次克隆、解析和
+合并同一配置。此候选不跨调用保留、不序列化为授权；仍从当前 Project 完整编译、验证
+选择与公开投影、补全路由并重建全部计划字段及摘要，再进行整个 plan 的精确比较。
+采纳前再次检查候选的全部磁盘保存基线，包含新建配置的明确不存在基线，并保留新建
+路径的直接读取检查，拒绝排演期间出现的目标文件、目录或外部修改；重新解析注册路径，
+保留同内容硬链接等文件身份检查。未知可选字段、只读保护、保存基线、未保存内容及完整
+Project 撤销语义保持不变；公开预览仍只返回原 DTO，不返回可应用的候选字节。
+
 `ReaderProfileMigrationPlan={before:ReaderPublicationProfile,after:ReaderPublicationProfile,authorization_changes:Vec<String>,content_baseline:String,plan_digest:String}`。应用重新计算并比较整个 plan，修改文案、候选、基线或路径均不能授权写入。
 
 只读 ReaderExportPreview/ContentPreview/Included/Exclusion 和 progress 可 Serialize/Deserialize 供 worker 展示。profile、save/migration DTO 亦可传输，但反序列化本身不是授权；apply 必须重算候选，绝不接受任意来源文件字节。preview 的 content 继续只含 title/output_path/text/empty_content，v1 不增加 content；v2/v3 为空正文提供提示。
