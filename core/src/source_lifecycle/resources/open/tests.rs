@@ -77,14 +77,21 @@ fn held_ancestors_allow_independent_sibling_publication() {
     assert_eq!(resource, b"inside resource");
 }
 
-fn rename_no_replace(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+fn rename_no_replace(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn MoveFileW(source: *const u16, destination: *const u16) -> i32;
     }
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     // SAFETY: 独立测试夹具生成的路径无内嵌 NUL，两份 UTF-16 缓冲在调用期间存活且已终止。
     if unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) } == 0 {
         Err(std::io::Error::last_os_error())
