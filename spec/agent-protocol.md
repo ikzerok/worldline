@@ -601,3 +601,10 @@ Rust `Project::plan_rename_target -> Result<RenamePlan, String>` 与既有序列
 entity/relation 改名仅在运行指纹不变时成功。尤其 state 所属 entity 的稳定 ID 改名安全拒绝，返回中文错误，包含受影响 state ID/文件/行、旧/候选 fingerprint、旧 Story save/检查点的指纹不匹配原因、入口 replay 需按当前稿重新受控验证的边界，以及仅修改实体显示名的路径。实体定义本身排除于运行指纹不意味着对它的所有运行引用也排除。
 
 旧计数字段仍表示实际身份引用数，不要求与 occurrences 项数相等。旧类型的字符串语法重编码可将整条实际变更行投影为 `field:"source.syntax"`，明确不是单个身份 token；entity/relation 计划始终每个身份 token 一项。
+
+## 安全源码生命周期（工具 0.16）
+
+`project.source_lifecycle_preview` / `project.source_lifecycle_apply` 与 CLI
+`wl source-lifecycle preview|apply` 使用相同 core SourceLifecycleRequest 和
+SourceLifecyclePlan；apply 必须回传预览摘要，成功后保存。请求、逐处预览、活动源码
+成员语义、明确拒绝和零修改边界见 [source-lifecycle.md](source-lifecycle.md)。

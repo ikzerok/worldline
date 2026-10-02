@@ -86,3 +86,10 @@ entity/relation 改名仍要求运行指纹完全相同；其中作为 state 所
 关系定义不采用实体的 `as` 显示名语法；如需变更关系称呼，可保留稳定 ID、编辑对象别名。当前状态分析不接受 relation 作为有效所属对象，仍报告原有 A216，不因本轮重构扩大语言支持。
 
 既有 rule/fragment/character/tag/state 改名保留原语法改写与 `reference_count` / `explicit_references` 身份引用计数。若旧语法必须重编码整条引号语句，逐处项以 `field: "source.syntax"` 标识真实整行语法变更范围；一项可包含多个身份引用，不能把逐处项数冒充旧引用计数。entity/relation 始终投影精准身份 token，不使用该回退。
+
+## 安全源码新建、引用与路径移动（工具 0.16）
+
+新建活动源码与引用既有源码是不同操作；显式 source_sets 新建同时加入 active，引用
+归档/非活动源码须拒绝且不自动启用。单个非入口源码路径移动使用统一只读计划、整体
+重校验、一次内存事务及既有保存 journal；正式字段清单、等价证明、拒绝边界和机器
+DTO 见 [source-lifecycle.md](source-lifecycle.md)。
