@@ -106,6 +106,8 @@ route 身份要么是 target（包括 asset/map），要么是同时存在的 ma
 
 已保存 profile 的失效对象、字段、map/placement/raster、章节和附件不能在候选刷新时自动裁剪；未知 required_features 不能丢弃。直到作者显式移除失效项之前，预览/保存报错。保持 selection 原数组顺序，尤其章节顺序；新章节按明确候选顺序追加。
 
+补全路由时可临时借用 `(target, manuscript_id, chapter_id)` 建立有序集合索引，将 R 条已存路由与 N 条预览条目的身份查重成本从重复线性扫描降为 `O((R+N) log(R+N))`。索引只用于成员判断，原 routes 向量不重排，新身份仍按预览条目顺序追加；已有 output_path、完整字段和哈希规则保持不变。此项不是整站或保存过程的总复杂度承诺，也不是跨调用信任缓存；保存 apply 仍完整重算并复核所有基线与计划。
+
 v1/v2 selection 向 v3 迁移保持 routes，并列出 aliases 和 typed 结构的新增公开授权；不自动添加 story_details、fields 或 attachments。apply migration 仅返回校验后的候选，不保存或发布。已有 v3 不重复扩大能力。
 
 ## 6. 公开 core API

@@ -167,12 +167,6 @@ pub(super) fn route_from_included(entry: &ReaderExportIncluded) -> ReaderProfile
     }
 }
 
-pub(super) fn same_identity(left: &ReaderProfileRoute, right: &ReaderProfileRoute) -> bool {
-    left.target == right.target
-        && left.manuscript_id == right.manuscript_id
-        && left.chapter_id == right.chapter_id
-}
-
 pub(super) fn validate_profile_routes(routes: &[ReaderProfileRoute]) -> Result<(), String> {
     let mut paths = BTreeSet::new();
     let mut identities = BTreeSet::new();

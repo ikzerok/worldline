@@ -1,6 +1,124 @@
 use super::*;
 
 #[test]
+fn route_completion_matches_linear_semantics_and_preserves_public_bytes() {
+    let fixture = Fixture::new("route-identity-index", SOURCE, "1.10");
+    let manifest_path = fixture.root.join(".world/project.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["required_features"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!("presentation.manuscripts.v1"));
+    manifest["manuscripts"] = serde_json::json!({
+        "alpha":".world/alpha.json", "beta":".world/beta.json"
+    });
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    for (book, event) in [("alpha", "opening"), ("beta", "arrival")] {
+        fs::write(
+            fixture.root.join(format!(".world/{book}.json")),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version":1,"id":book,"title":book,"entries":[
+                    {"id":"same","kind":"chapter","title":"同名章节",
+                     "target_ref":{"kind":"event","id":event}}
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    let project = fixture.project();
+    let before = project.export_files().unwrap();
+    for version in [1, 2, 3] {
+        let mut choice = selection();
+        choice.schema_version = version;
+        if version < 3 {
+            choice.required_features = if version == 2 {
+                vec![READER_FIELDS_FEATURE.into()]
+            } else {
+                choice.fields.clear();
+                Vec::new()
+            };
+        }
+        choice.manuscripts = ["beta", "alpha"]
+            .into_iter()
+            .map(|book| ReaderManuscriptSelection {
+                id: book.into(),
+                chapters: vec!["same".into()],
+            })
+            .collect();
+        let object = |kind: &str, id: &str, path: &str| ReaderProfileRoute {
+            target: Some(TargetRef::new(kind, id)),
+            manuscript_id: None,
+            chapter_id: None,
+            output_path: path.into(),
+        };
+        let chapter = |book: &str, id: &str, path: &str| ReaderProfileRoute {
+            target: None,
+            manuscript_id: Some(book.into()),
+            chapter_id: Some(id.into()),
+            output_path: path.into(),
+        };
+        let profile = ReaderPublicationProfile {
+            schema_version: READER_PROFILE_SCHEMA_VERSION,
+            required_features: vec![READER_PROFILES_FEATURE.into()],
+            id: "identity_index".into(),
+            title: choice.site_title.clone(),
+            selection: choice,
+            routes: vec![
+                object("asset", "picture", "assets/a0087.png"),
+                chapter("alpha", "later", "manuscripts/m0077-c0044.html"),
+                object("entity", "mei", "objects/o0888.html"),
+                object("entity", "harbor", "objects/o0876.html"),
+                chapter("alpha", "same", "manuscripts/m0077-c0033.html"),
+            ],
+        };
+        let preview = project.preview_reader_profile(&profile).unwrap();
+        let original_files = project
+            .build_reader_profile(&profile, &preview.plan_digest)
+            .unwrap();
+        let mut linear = profile.clone();
+        for entry in &preview.included {
+            if !linear.routes.iter().any(|old| {
+                old.target == entry.target
+                    && old.manuscript_id == entry.manuscript_id
+                    && old.chapter_id == entry.chapter_id
+            }) {
+                linear.routes.push(ReaderProfileRoute {
+                    target: entry.target.clone(),
+                    manuscript_id: entry.manuscript_id.clone(),
+                    chapter_id: entry.chapter_id.clone(),
+                    output_path: entry.output_path.clone(),
+                });
+            }
+        }
+        let plan = project.preview_save_reader_profile(&profile).unwrap();
+        assert_eq!(plan.profile, linear, "v{version} 路由补全改变线性语义");
+        assert_eq!(
+            &plan.profile.routes[..profile.routes.len()],
+            &profile.routes
+        );
+        assert_eq!(plan, project.preview_save_reader_profile(&linear).unwrap());
+        let updated = project.preview_reader_profile(&plan.profile).unwrap();
+        assert_eq!(updated, preview, "v{version} 预览或digest改变");
+        assert_eq!(
+            project
+                .build_reader_profile(&plan.profile, &updated.plan_digest)
+                .unwrap(),
+            original_files
+        );
+        let mut candidate = project.clone();
+        let mut tampered = plan.clone();
+        tampered.profile.routes[0].output_path = "assets/a0088.png".into();
+        assert!(candidate.apply_save_reader_profile(&tampered).is_err());
+        assert_eq!(candidate.export_files().unwrap(), before);
+        candidate.apply_save_reader_profile(&plan).unwrap();
+        assert_eq!(candidate.reader_profiles().unwrap(), vec![linear]);
+    }
+    assert_eq!(project.export_files().unwrap(), before);
+}
+
+#[test]
 fn profile_save_reopen_migrate_preserves_routes_and_unknown_fields() {
     let fixture = Fixture::new("profile", SOURCE, "1.10");
     let mut project = fixture.project();

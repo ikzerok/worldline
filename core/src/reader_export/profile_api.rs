@@ -148,14 +148,16 @@ pub(super) fn fill_routes(
     validate_profile(profile)?;
     let preview = project.preview_reader_profile(profile)?;
     let mut updated = profile.clone();
-    for entry in preview.included {
-        let route = super::routes::route_from_included(&entry);
-        if !updated
-            .routes
-            .iter()
-            .any(|existing| super::routes::same_identity(existing, &route))
-        {
-            updated.routes.push(route);
+    let mut identities: BTreeSet<_> = profile
+        .routes
+        .iter()
+        .map(|route| (&route.target, &route.manuscript_id, &route.chapter_id))
+        .collect();
+    for entry in &preview.included {
+        if identities.insert((&entry.target, &entry.manuscript_id, &entry.chapter_id)) {
+            updated
+                .routes
+                .push(super::routes::route_from_included(entry));
         }
     }
     validate_profile(&updated)?;
