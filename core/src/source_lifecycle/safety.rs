@@ -2,23 +2,39 @@ use crate::project::Project;
 use std::path::{Component, Path, PathBuf};
 
 pub(crate) fn relative(path: &Path) -> Result<(), String> {
+    if path.to_string_lossy().contains('\\') {
+        return Err("源码请求路径须使用 /，不能含反斜杠".into());
+    }
+    native_relative(path)
+}
+
+/// Rust 调用方的 Path::join 使用平台分隔符；请求字符串另由 relative 检查可移植格式。
+pub(crate) fn native_relative(path: &Path) -> Result<(), String> {
     if path.as_os_str().is_empty()
         || path
             .components()
             .any(|part| !matches!(part, Component::Normal(_)))
         || path.extension().is_none_or(|extension| extension != "wl")
         || path.to_str().is_none()
-        || path.to_string_lossy().contains(['\\', ':'])
+        || path.to_string_lossy().contains(':')
+        || (!cfg!(windows) && path.to_string_lossy().contains('\\'))
         || path.to_string_lossy().chars().any(char::is_control)
     {
-        return Err("源码路径须为工作区内相对 .wl，不能含上级跳转、反斜杠或控制字符".into());
+        return Err("源码路径须为工作区内相对 .wl，不能含上级跳转、非法分隔符或控制字符".into());
     }
-    let portable = path.to_string_lossy().to_lowercase();
+    let portable = portable_identity(path);
     if portable.starts_with(".world/.transactions/") || portable.starts_with(".world/.checkpoints/")
     {
         return Err("源码不能使用保存事务或本地检查点保留目录".into());
     }
     Ok(())
+}
+
+fn portable_identity(path: &Path) -> String {
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub(crate) fn inventory(project: &Project) -> Result<Vec<PathBuf>, String> {
@@ -76,16 +92,24 @@ pub(crate) fn buffer_budget(project: &Project) -> Result<(), String> {
 
 pub(crate) fn destination(project: &Project, relative_path: &Path) -> Result<PathBuf, String> {
     relative(relative_path)?;
+    native_destination(project, relative_path)
+}
+
+pub(crate) fn native_destination(
+    project: &Project,
+    relative_path: &Path,
+) -> Result<PathBuf, String> {
+    native_relative(relative_path)?;
     let files = inventory(project)?;
     let path = project.root.join(relative_path);
     crate::file_access::within(&project.root, &path)?;
-    let folded = path.to_string_lossy().to_lowercase();
+    let folded = portable_identity(&path);
     for existing in files
         .iter()
         .chain(project.documents.keys())
         .chain(project.authoring_documents.keys())
     {
-        let identity = existing.to_string_lossy().to_lowercase();
+        let identity = portable_identity(existing);
         if identity == folded
             || folded.starts_with(&format!("{identity}/"))
             || identity.starts_with(&format!("{folded}/"))

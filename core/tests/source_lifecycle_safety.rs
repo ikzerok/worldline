@@ -70,12 +70,21 @@ fn destinations_cannot_be_ancestors_or_case_aliases_of_buffer_only_paths() {
     let ws = Workspace::new();
     let mut project = ws.open();
     project
-        .add_file(std::path::Path::new("folder.wl/child.wl"))
+        .add_file(&PathBuf::from("folder.wl").join("child.wl"))
         .unwrap();
     project
-        .add_file(std::path::Path::new("Dir/keep.wl"))
+        .add_file(&PathBuf::from("Dir").join("keep.wl"))
         .unwrap();
+    project.add_file(std::path::Path::new("buffer.wl")).unwrap();
     let baseline = project.content_baseline();
+    for relative in [
+        PathBuf::from("folder.wl"),
+        PathBuf::from("buffer.wl").join("child.wl"),
+        PathBuf::from("dir").join("new.wl"),
+    ] {
+        assert!(project.add_file(&relative).is_err(), "{relative:?}");
+        assert_eq!(project.content_baseline(), baseline);
+    }
     for destination in ["folder.wl", "dir/new.wl", "DIR/other.wl"] {
         assert!(
             project
@@ -97,10 +106,86 @@ fn destinations_cannot_be_ancestors_or_case_aliases_of_buffer_only_paths() {
 fn direct_legacy_include_can_load_an_existing_untracked_normal_source() {
     let ws = Workspace::new();
     let mut project = ws.open();
-    std::fs::write(ws.0.join("added.wl"), "// added outside after opening\n").unwrap();
-    project.include_file(&ws.0.join("added.wl")).unwrap();
-    assert!(project.document(&ws.0.join("added.wl")).is_ok());
+    let path = ws.0.join("native").join("added.wl");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "// added outside after opening\n").unwrap();
+    project.include_file(&path).unwrap();
+    assert!(project.document(&path).is_ok());
+    assert!(project
+        .document(&project.entry)
+        .unwrap()
+        .contains("include \"native/added.wl\""));
     assert!(!project.compile().has_errors());
+}
+
+#[test]
+fn direct_create_and_include_accept_native_joined_relative_paths() {
+    let ws = Workspace::new();
+    let mut project = ws.open();
+    let relative = PathBuf::from("native").join("章节").join("new.wl");
+    #[cfg(windows)]
+    assert!(relative.to_string_lossy().contains('\\'));
+    let path = project.add_file(&relative).unwrap();
+    assert_eq!(path, project.root.join(&relative));
+    project.include_file(&path).unwrap();
+    assert!(project
+        .document(&project.entry)
+        .unwrap()
+        .contains("include \"native/章节/new.wl\""));
+    assert!(!project.compile().has_errors());
+    project.save().unwrap();
+    assert!(ws.open().document(&path).is_ok());
+}
+
+#[test]
+fn native_path_validation_preserves_relative_and_reserved_boundaries() {
+    let ws = Workspace::new();
+    let mut project = ws.open();
+    let baseline = project.content_baseline();
+    for relative in [
+        PathBuf::from("..").join("outside.wl"),
+        PathBuf::from("nested").join("..").join("outside.wl"),
+        ws.0.join("absolute.wl"),
+        PathBuf::from("nested").join("bad\tname.wl"),
+        PathBuf::from(".world").join(".transactions").join("bad.wl"),
+        PathBuf::from(".world").join(".checkpoints").join("bad.wl"),
+    ] {
+        assert!(project.add_file(&relative).is_err(), "{relative:?}");
+        assert_eq!(project.content_baseline(), baseline);
+    }
+}
+
+#[test]
+fn lifecycle_request_paths_keep_portable_slash_format() {
+    let ws = Workspace::new();
+    let project = ws.open();
+    for request in [
+        Request::Create {
+            path: r"native\new.wl".into(),
+        },
+        Request::Include {
+            path: r"native\old.wl".into(),
+        },
+        moved(r"native\moved.wl"),
+    ] {
+        assert!(project.preview_source_lifecycle(&request).is_err());
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn direct_native_paths_reject_non_windows_backslash_names() {
+    let ws = Workspace::new();
+    let mut project = ws.open();
+    let baseline = project.content_baseline();
+    for relative in [r"native\new.wl", r"..\outside.wl"] {
+        assert!(project.add_file(std::path::Path::new(relative)).is_err());
+        assert_eq!(project.content_baseline(), baseline);
+    }
+    let misleading = ws.0.join(r"native\existing.wl");
+    std::fs::write(&misleading, "// literal backslash filename\n").unwrap();
+    assert!(project.include_file(&misleading).is_err());
+    assert_eq!(project.content_baseline(), baseline);
 }
 
 #[cfg(unix)]

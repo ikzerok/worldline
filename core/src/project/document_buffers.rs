@@ -123,8 +123,7 @@ impl Project {
     pub fn add_file(&mut self, relative: &Path) -> Result<PathBuf, String> {
         self.ensure_workspace_writable()?;
         self.source_lifecycle_disk_baselines_match()?;
-        validate_relative(relative)?;
-        let path = crate::source_lifecycle::safety::destination(self, relative)?;
+        let path = crate::source_lifecycle::safety::native_destination(self, relative)?;
         let mut candidate = self.clone();
         candidate.documents.insert(
             path.clone(),
@@ -165,7 +164,7 @@ impl Project {
         let relative = path
             .strip_prefix(&self.root)
             .map_err(|_| "请先把文件放入工程文件夹,再添加引用")?;
-        validate_relative(relative)?;
+        crate::source_lifecycle::safety::native_relative(relative)?;
         if path == self.entry {
             return Err("总入口不能引用自身".into());
         }
