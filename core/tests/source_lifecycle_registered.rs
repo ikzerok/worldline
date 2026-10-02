@@ -156,9 +156,10 @@ fn all_supported_registered_path_slots_move_without_reformatting_extensions() {
         14
     );
     project.apply_source_lifecycle_plan(&plan).unwrap();
-    let new = fixture
+    let new = project
         .root
-        .join("章节/新 稿.wl")
+        .join("章节")
+        .join("新 稿.wl")
         .to_string_lossy()
         .into_owned();
     let mapped = json!({"kind":"file","id":new});

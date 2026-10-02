@@ -101,8 +101,8 @@ pub(crate) fn native_destination(
 ) -> Result<PathBuf, String> {
     native_relative(relative_path)?;
     let files = inventory(project)?;
-    let path = project.root.join(relative_path);
-    crate::file_access::within(&project.root, &path)?;
+    // within 与 compiler 使用同一原生身份，不能丢弃它并将请求的混合分隔符存入缓冲。
+    let path = crate::file_access::within(&project.root, &project.root.join(relative_path))?;
     let folded = portable_identity(&path);
     for existing in files
         .iter()

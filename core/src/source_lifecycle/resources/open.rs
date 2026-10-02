@@ -117,6 +117,16 @@ fn stat_at(parent: &File, name: &std::ffi::OsStr) -> io::Result<libc::stat> {
 
 #[cfg(windows)]
 pub(super) fn open(root: &Path, path: &Path, max_bytes: u64) -> io::Result<PinnedFile> {
+    open_before_leaf(root, path, max_bytes, || {})
+}
+
+#[cfg(windows)]
+fn open_before_leaf(
+    root: &Path,
+    path: &Path,
+    max_bytes: u64,
+    before_leaf: impl FnOnce(),
+) -> io::Result<PinnedFile> {
     use std::os::windows::fs::OpenOptionsExt;
     if !path.starts_with(root) || path == root || !path.is_absolute() {
         return Err(invalid("素材越出工作区"));
@@ -129,12 +139,13 @@ pub(super) fn open(root: &Path, path: &Path, max_bytes: u64) -> io::Result<Pinne
     ancestors.reverse();
     let mut directories = Vec::new();
     for directory in ancestors {
-        // BACKUP_SEMANTICS | OPEN_REPARSE_POINT；仅共享读取，固定父目录的写入/删除/替换权限。
+        // BACKUP_SEMANTICS | OPEN_REPARSE_POINT；允许独立子目录发布所需的写访问，
+        // 但不共享 DELETE，阻止祖先删除/改名；重定向防线是下方读取前最终句柄路径校验。
         // 保留普通读取访问：access_mode(FILE_READ_ATTRIBUTES) 会覆盖 read(true)，
         // 而属性专用访问不受 CreateFile 共享约束，不能据此证明父目录已固定。
         let handle = std::fs::OpenOptions::new()
             .read(true)
-            .share_mode(0x0001)
+            .share_mode(0x0001 | 0x0002)
             .custom_flags(0x0200_0000 | 0x0020_0000)
             .open(directory)?;
         let metadata = handle.metadata()?;
@@ -144,6 +155,8 @@ pub(super) fn open(root: &Path, path: &Path, max_bytes: u64) -> io::Result<Pinne
         verify_final_path(&handle, directory)?;
         directories.push(handle);
     }
+    // 私有同步测试缝隙；生产调用恒为空，用于真实制造检查父目录后、打开叶文件前的竞态。
+    before_leaf();
     let file = std::fs::OpenOptions::new()
         .read(true)
         .share_mode(0x0001)
@@ -156,7 +169,7 @@ pub(super) fn open(root: &Path, path: &Path, max_bytes: u64) -> io::Result<Pinne
     {
         return Err(invalid("素材必须是 64 MiB 内的非 reparse 普通文件"));
     }
-    // 即使某驱动允许通过属性句柄变更 reparse，读取字节前还要确认已打开文件的最终解析路径。
+    // 目录可以被并发设为 reparse；读取字节前确认已打开叶句柄没有被重定向到外部。
     verify_final_path(&file, path)?;
     Ok(PinnedFile { file, directories })
 }

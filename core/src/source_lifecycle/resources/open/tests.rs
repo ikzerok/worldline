@@ -1,5 +1,5 @@
 //! Windows 保护句柄的实际系统回归；不模拟所有并发 reparse 变更。
-use super::{open, verify_final_path};
+use super::{open, open_before_leaf, verify_final_path};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::os::windows::fs::OpenOptionsExt;
@@ -36,9 +36,11 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         // 显式移除本测试建立的 junction 本身，不依赖递归删除是否跟随 reparse。
-        let junction = self.root.join("junction");
-        if fs::symlink_metadata(&junction).is_ok() {
-            let _ = fs::remove_dir(&junction);
+        for name in ["junction", "race"] {
+            let junction = self.root.join(name);
+            if fs::symlink_metadata(&junction).is_ok() {
+                let _ = fs::remove_dir(&junction);
+            }
         }
         let _ = fs::remove_dir_all(&self.home);
     }
@@ -141,7 +143,7 @@ fn existing_test_owned_junction_is_rejected_before_any_content_read() {
     let junction = fixture.root.join("junction");
     let output = std::process::Command::new("cmd.exe")
         .args(["/D", "/C", "mklink", "/J"])
-        .arg(fixture.home.join("workspace/junction"))
+        .arg(fixture.home.join("workspace").join("junction"))
         .arg(fixture.home.join("outside"))
         .output()
         .expect("Windows regression requires cmd.exe and directory-junction support");
@@ -166,4 +168,107 @@ fn final_handle_path_rejects_outside_file_against_inside_expectation_before_read
     // 只取得已授权测试夹具的句柄与最终路径，不调用任何文件内容读取。
     assert!(verify_final_path(&handle, &fixture.root.join("canary.txt")).is_err());
     verify_final_path(&handle, &outside).unwrap();
+}
+
+#[test]
+fn junction_added_after_parent_checks_is_rejected_before_any_content_read() {
+    let fixture = Fixture::new();
+    let race = fixture.root.join("race");
+    fs::create_dir(&race).unwrap();
+    fs::write(
+        fixture.outside.join("canary.txt"),
+        b"synthetic outside canary",
+    )
+    .unwrap();
+    let mut redirected = false;
+    let result = open_before_leaf(&fixture.root, &race.join("canary.txt"), 1024, || {
+        set_junction(&race, &fixture.outside)
+            .expect("mid-open junction mutation capability unavailable; regression NOT validated");
+        assert!(crate::file_access::is_link_or_junction(
+            &fs::symlink_metadata(&race).unwrap()
+        ));
+        redirected = true;
+    });
+    assert!(
+        redirected,
+        "the real reparse mutation must run after parent checks"
+    );
+    let error = result
+        .err()
+        .expect("redirected outside handle must not escape the protected opener");
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("最终解析路径变化"), "{error}");
+    // open_before_leaf 不读取内容，且没有向调用方返回可读取的外部叶句柄。
+}
+
+fn set_junction(directory: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn DeviceIoControl(
+            device: *mut std::ffi::c_void,
+            code: u32,
+            input: *const std::ffi::c_void,
+            input_size: u32,
+            output: *mut std::ffi::c_void,
+            output_size: u32,
+            returned: *mut u32,
+            overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    let target = target.to_str().expect("test-owned target must be Unicode");
+    let target = target.strip_prefix(r"\\?\").unwrap_or(target);
+    let substitute: Vec<u16> = format!(r"\??\{target}").encode_utf16().collect();
+    let print: Vec<u16> = target.encode_utf16().collect();
+    let sub_bytes = u16::try_from(substitute.len() * 2).unwrap();
+    let print_bytes = u16::try_from(print.len() * 2).unwrap();
+    // REPARSE_DATA_BUFFER 的 mount-point 分支：公共头 8 字节，偏移/长度 8 字节，UTF-16 路径。
+    let data_len = 8u16
+        .checked_add(sub_bytes)
+        .unwrap()
+        .checked_add(print_bytes)
+        .unwrap()
+        .checked_add(4)
+        .unwrap();
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(&0xA000_0003u32.to_le_bytes()); // IO_REPARSE_TAG_MOUNT_POINT
+    for value in [data_len, 0, 0, sub_bytes, sub_bytes + 2, print_bytes] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for unit in substitute
+        .into_iter()
+        .chain(Some(0))
+        .chain(print)
+        .chain(Some(0))
+    {
+        buffer.extend_from_slice(&unit.to_le_bytes());
+    }
+    assert!(
+        buffer.len() <= 16 * 1024,
+        "fixture exceeds reparse buffer limit"
+    );
+    let handle = OpenOptions::new()
+        .write(true)
+        .share_mode(0x0001 | 0x0002 | 0x0004)
+        .custom_flags(0x0200_0000 | 0x0020_0000)
+        .open(directory)?;
+    let mut returned = 0;
+    // SAFETY: 测试独占目录的有效句柄；有界 buffer 在同步调用期间存活，输出为空且长度为 0。
+    let result = unsafe {
+        DeviceIoControl(
+            handle.as_raw_handle(),
+            0x0009_00A4,
+            buffer.as_ptr().cast(),
+            buffer.len() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }

@@ -138,6 +138,43 @@ fn direct_create_and_include_accept_native_joined_relative_paths() {
 }
 
 #[test]
+fn slash_move_request_uses_the_same_native_identity_as_compiler_load_order() {
+    let ws = Workspace::new();
+    let mut project = ws.open();
+    let before = project.compile();
+    let old = project.root.join("old.wl").to_string_lossy().into_owned();
+    let expected = project.root.join("native").join("章节").join("new.wl");
+    let expected_id = expected.to_string_lossy().into_owned();
+    let plan = project
+        .preview_source_lifecycle(&moved("native/章节/new.wl"))
+        .unwrap();
+    // Path equality 已按组件忽略 Windows 分隔符差异；这里必须比较用于目录/加载顺序的字符串。
+    assert_eq!(
+        plan.destination_path.as_ref().unwrap().to_string_lossy(),
+        expected_id
+    );
+    let expected_order: Vec<_> = before
+        .program
+        .files
+        .iter()
+        .map(|file| {
+            if file == &old {
+                expected_id.clone()
+            } else {
+                file.clone()
+            }
+        })
+        .collect();
+    assert_eq!(plan.load_order_before, before.program.files);
+    assert_eq!(plan.load_order_after, expected_order);
+    assert_eq!(plan.entry_before, "start");
+    assert_eq!(plan.entry_after, plan.entry_before);
+    project.apply_source_lifecycle_plan(&plan).unwrap();
+    assert_eq!(project.compile().program.files, expected_order);
+    assert!(project.document(&expected).is_ok());
+}
+
+#[test]
 fn native_path_validation_preserves_relative_and_reserved_boundaries() {
     let ws = Workspace::new();
     let mut project = ws.open();
