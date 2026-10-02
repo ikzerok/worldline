@@ -55,6 +55,45 @@ fn normal_nested_file_opens_and_reads_its_original_bytes() {
 }
 
 #[test]
+fn held_ancestors_allow_independent_sibling_publication() {
+    let fixture = Fixture::new();
+    let path = fixture.source();
+    let staging = fixture.home.join("publish-staging");
+    let destination = fixture.home.join("published");
+    // 先分配暂存目录，使持锁阶段只检查独立文件写入和生产同款 no-replace 发布。
+    fs::create_dir(&staging).unwrap();
+    let mut protected = open(&fixture.root, &path, 1024).unwrap();
+    fs::write(staging.join("index.html"), b"independent publication").unwrap();
+    // home 既是资源的已持有祖先，也是独立发布的直接目标父目录；Temp 同样被持有。
+    rename_no_replace(&staging, &destination)
+        .expect("protected resource ancestors must not block independent sibling publication");
+    assert!(!staging.exists());
+    assert_eq!(
+        fs::read(destination.join("index.html")).unwrap(),
+        b"independent publication"
+    );
+    let mut resource = Vec::new();
+    protected.file.read_to_end(&mut resource).unwrap();
+    assert_eq!(resource, b"inside resource");
+}
+
+fn rename_no_replace(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn MoveFileW(source: *const u16, destination: *const u16) -> i32;
+    }
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: 独立测试夹具生成的路径无内嵌 NUL，两份 UTF-16 缓冲在调用期间存活且已终止。
+    if unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[test]
 fn held_ancestors_deny_rename_delete_access_and_leaf_write_until_drop() {
     let fixture = Fixture::new();
     let path = fixture.source();
