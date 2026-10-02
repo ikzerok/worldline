@@ -90,7 +90,21 @@ fn spans(
         };
         match &line.kind {
             LineKind::Include { path, .. } if paths => {
-                token(TargetRef::new("include_path", path), 1, "include.path");
+                // 正式 lexer 允许 include"路径"；通用目录 token 不定义这个边界。
+                let chars: Vec<_> = clean.chars().collect();
+                if let Some(start) = chars.iter().position(|ch| *ch == '"') {
+                    if let Ok((decoded, end)) =
+                        super::parse_quoted(&chars, start, file, line.no, &mut Vec::new())
+                    {
+                        if decoded == *path {
+                            push(
+                                TargetRef::new("include_path", path),
+                                start + 1..end - 1,
+                                "include.path",
+                            );
+                        }
+                    }
+                }
             }
             LineKind::Entity { name, .. } => {
                 token(TargetRef::new("entity", name), 1, "declaration.id")

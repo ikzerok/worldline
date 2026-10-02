@@ -2,6 +2,7 @@
 mod plan;
 mod proof;
 mod registered;
+pub(crate) mod resources;
 pub(crate) mod safety;
 mod source;
 use crate::project::Project;
@@ -124,3 +125,5 @@ fn check_cancelled(cancelled: &mut impl FnMut() -> bool) -> Result<(), String> {
 fn digest(bytes: &[u8]) -> String {
     crate::presentation_commands::document_hash(bytes)
 }
+
+use resources::resource_bytes;

@@ -52,19 +52,20 @@ pub(super) fn rewrite(
                 after_path.parent().ok_or("源码缺少目录")?,
                 &moved_target,
             )?;
+            if project
+                .documents
+                .get(&target)
+                .is_some_and(|document| document.is_deleted())
+            {
+                return Err(format!(
+                    "正式路径指向待删除源码，不能从旧磁盘内容补回：{}",
+                    target.display()
+                ));
+            }
             let content_digest = if let Some(digest) = digests.get(&target) {
                 digest.clone()
             } else {
-                let bytes = match project
-                    .documents
-                    .get(&target)
-                    .filter(|document| !document.is_deleted())
-                {
-                    Some(document) => document.text.as_bytes().to_vec(),
-                    None => crate::file_access::read_limited(&target, 64 * 1024 * 1024).map_err(
-                        |error| format!("路径资源无法读取：{}：{error}", target.display()),
-                    )?,
-                };
+                let bytes = super::resource_bytes(project, &target)?;
                 resource_bytes = resource_bytes.saturating_add(bytes.len());
                 if resource_bytes > 256 * 1024 * 1024 {
                     return Err("源码组织资源超过 256 MiB 验证预算，工程未修改".into());

@@ -122,7 +122,7 @@ impl Project {
     /// 新建活动源码、清单成员和入口引用一次提交；失败不保留孤立缓冲。
     pub fn add_file(&mut self, relative: &Path) -> Result<PathBuf, String> {
         self.ensure_workspace_writable()?;
-        self.checkpoint_disk_baselines_match()?;
+        self.source_lifecycle_disk_baselines_match()?;
         validate_relative(relative)?;
         let path = crate::source_lifecycle::safety::destination(self, relative)?;
         let mut candidate = self.clone();
@@ -136,6 +136,14 @@ impl Project {
         );
         candidate.add_active_source(relative)?;
         candidate.include_file_in_memory(&path)?;
+        crate::source_lifecycle::safety::writable_path(&self.entry)?;
+        crate::source_lifecycle::safety::writable_path(&path)?;
+        if self.source_selection.is_some() {
+            crate::source_lifecycle::safety::writable_path(
+                &crate::workspace_documents::manifest_path(&self.root),
+            )?;
+        }
+        crate::source_lifecycle::safety::buffer_budget(&candidate)?;
         *self = candidate;
         Ok(path)
     }
@@ -143,9 +151,11 @@ impl Project {
     /// 引用既有活动源码；归档或非活动文件不会被此操作暗中启用。
     pub fn include_file(&mut self, path: &Path) -> Result<(), String> {
         self.ensure_workspace_writable()?;
-        self.checkpoint_disk_baselines_match()?;
+        self.source_lifecycle_disk_baselines_match()?;
         let mut candidate = self.clone();
         candidate.include_file_in_memory(path)?;
+        crate::source_lifecycle::safety::writable_path(&self.entry)?;
+        crate::source_lifecycle::safety::buffer_budget(&candidate)?;
         *self = candidate;
         Ok(())
     }
@@ -170,7 +180,9 @@ impl Project {
             return Err("引用目标已标记删除，工程未修改".into());
         }
         if !self.documents.contains_key(&path) {
-            let text = crate::file_access::read_to_string(&path).map_err(|e| e.to_string())?;
+            let bytes = crate::source_lifecycle::resources::disk_bytes(self, &path)?;
+            let text =
+                String::from_utf8(bytes).map_err(|error| format!("引用源码不是 UTF-8：{error}"))?;
             self.documents.insert(
                 path.clone(),
                 Document {

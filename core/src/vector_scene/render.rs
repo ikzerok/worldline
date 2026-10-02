@@ -410,6 +410,7 @@ fn geometry_svg(out: &mut String, geometry: &SceneGeometry) {
                     } => {
                         // 与 core 的弧长/包络采用相同减周顺序，避免极大角度在后端产生偏差。
                         let rotation = rotation.rem_euclid(360.0);
+                        let rotation = if rotation == 0.0 { 0.0 } else { rotation };
                         let _ = write!(
                             out,
                             "A{rx} {ry} {rotation} {} {} {} {}",

@@ -8,9 +8,8 @@ pub(crate) fn relative(path: &Path) -> Result<(), String> {
             .any(|part| !matches!(part, Component::Normal(_)))
         || path.extension().is_none_or(|extension| extension != "wl")
         || path.to_str().is_none()
-        || path
-            .to_string_lossy()
-            .contains(['\\', ':', '\0', '\n', '\r'])
+        || path.to_string_lossy().contains(['\\', ':'])
+        || path.to_string_lossy().chars().any(char::is_control)
     {
         return Err("源码路径须为工作区内相对 .wl，不能含上级跳转、反斜杠或控制字符".into());
     }
@@ -23,11 +22,7 @@ pub(crate) fn relative(path: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn inventory(project: &Project) -> Result<Vec<PathBuf>, String> {
-    let files = match crate::file_access::workspace_files_limited(&project.root, 4096) {
-        Ok(files) => files,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => return Err(format!("无法检查源码工作区边界：{error}")),
-    };
+    let files = baseline_inventory(project)?;
     if let Some(path) = files.iter().find(|path| {
         path.extension().is_some_and(|extension| extension == "wl")
             && !project.documents.contains_key(*path)
@@ -37,7 +32,26 @@ pub(crate) fn inventory(project: &Project) -> Result<Vec<PathBuf>, String> {
             path.display()
         ));
     }
-    if files.len() > 4096 || project.documents.len() > 4096 {
+    Ok(files)
+}
+
+pub(crate) fn baseline_inventory(project: &Project) -> Result<Vec<PathBuf>, String> {
+    let files = match disk_inventory(&project.root) {
+        Ok(files) => files,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(format!("无法检查源码工作区边界：{error}")),
+    };
+    buffer_budget(project)?;
+    Ok(files)
+}
+
+pub(crate) fn buffer_budget(project: &Project) -> Result<(), String> {
+    if project
+        .documents
+        .len()
+        .saturating_add(project.authoring_documents.len())
+        > 4096
+    {
         return Err("源码组织工作区超过 4096 文件预算，工程未修改".into());
     }
     let bytes: usize = project
@@ -48,7 +62,16 @@ pub(crate) fn inventory(project: &Project) -> Result<Vec<PathBuf>, String> {
     if bytes > 64 * 1024 * 1024 {
         return Err("源码组织超过 64 MiB 源码预算，工程未修改".into());
     }
-    Ok(files)
+    let json_bytes = project
+        .authoring_documents
+        .values()
+        .fold(0usize, |sum, document| {
+            sum.saturating_add(document.bytes().len())
+        });
+    if json_bytes > 64 * 1024 * 1024 {
+        return Err("源码组织超过 64 MiB 已登记文档预算，工程未修改".into());
+    }
+    Ok(())
 }
 
 pub(crate) fn destination(project: &Project, relative_path: &Path) -> Result<PathBuf, String> {
@@ -63,11 +86,26 @@ pub(crate) fn destination(project: &Project, relative_path: &Path) -> Result<Pat
         .chain(project.authoring_documents.keys())
     {
         let identity = existing.to_string_lossy().to_lowercase();
-        if identity == folded || folded.starts_with(&format!("{identity}/")) {
+        if identity == folded
+            || folded.starts_with(&format!("{identity}/"))
+            || identity.starts_with(&format!("{folded}/"))
+        {
             return Err(format!(
                 "目标或父路径已存在/大小写冲突：{}",
                 existing.display()
             ));
+        }
+        // 即使父目录尚未落盘，缓冲树也不能建立 Dir/… 与 dir/… 两个可移植身份。
+        for (left, right) in existing.components().zip(path.components()) {
+            let left = left.as_os_str();
+            let right = right.as_os_str();
+            if left == right {
+                continue;
+            }
+            if left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase() {
+                return Err("目标与当前缓冲树的父路径存在大小写别名".into());
+            }
+            break;
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -107,7 +145,7 @@ pub(super) fn revalidate(
     project: &Project,
     plan: &super::SourceLifecyclePlan,
 ) -> Result<(), String> {
-    project.checkpoint_disk_baselines_match()?;
+    project.source_lifecycle_disk_baselines_match()?;
     writable_paths(&plan.changes)?;
     inventory(project)?;
     match &plan.request {
@@ -124,16 +162,7 @@ pub(super) fn revalidate(
         if !checked.insert(&resource.resolved_before) {
             continue;
         }
-        let bytes = if let Some(document) = project
-            .documents
-            .get(&resource.resolved_before)
-            .filter(|document| !document.is_deleted())
-        {
-            document.text.as_bytes().to_vec()
-        } else {
-            crate::file_access::read_limited(&resource.resolved_before, 64 * 1024 * 1024)
-                .map_err(|error| format!("提交前资源不可读：{error}"))?
-        };
+        let bytes = super::resource_bytes(project, &resource.resolved_before)?;
         if super::digest(&bytes) != resource.content_digest {
             return Err("提交前资源已变化，整批未提交，请重新预览".into());
         }
@@ -142,32 +171,84 @@ pub(super) fn revalidate(
 }
 
 pub(super) fn writable_paths(changes: &[super::SourceLifecycleChange]) -> Result<(), String> {
-    #[cfg(not(target_arch = "wasm32"))]
     for path in changes
         .iter()
         .flat_map(|change| [&change.path, &change.after_path])
     {
-        for ancestor in path.ancestors() {
-            match std::fs::symlink_metadata(ancestor) {
-                Ok(metadata) => {
-                    if crate::file_access::is_link_or_junction(&metadata)
-                        || metadata.permissions().readonly()
-                    {
-                        return Err(format!(
-                            "源码组织目标或父级为只读/链接：{}",
-                            ancestor.display()
-                        ));
-                    }
-                    if ancestor != path {
-                        break;
-                    }
+        writable_path(path)?;
+    }
+    Ok(())
+}
+
+/// 浏览器仅检查导入快照/能力；不伪造浏览器对宿主文件系统的权限访问。
+pub(crate) fn writable_path(path: &Path) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    for ancestor in path.ancestors() {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if crate::file_access::is_link_or_junction(&metadata)
+                    || metadata.permissions().readonly()
+                {
+                    return Err(format!(
+                        "源码组织目标或父级为只读/链接：{}",
+                        ancestor.display()
+                    ));
                 }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(format!("无法检查源码组织写入路径：{error}")),
+                if ancestor != path {
+                    break;
+                }
             }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("无法检查源码组织写入路径：{error}")),
         }
     }
     #[cfg(target_arch = "wasm32")]
-    let _ = changes;
+    let _ = path;
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn disk_inventory(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    crate::file_access::workspace_files_limited(root, 4096)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn disk_inventory(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let invalid = |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    let mut entries = 0usize;
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(directory)? {
+            entries += 1;
+            if entries > 4096 {
+                return Err(invalid("源码组织超过 4096 文件/目录扫描预算"));
+            }
+            let path = entry?.path();
+            let metadata = std::fs::symlink_metadata(&path)?;
+            if crate::file_access::is_link_or_junction(&metadata) {
+                return Err(invalid("源码组织不支持链接或目录联接"));
+            }
+            crate::file_access::within(root, &path).map_err(|message| invalid(&message))?;
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|_| invalid("源码组织路径越界"))?;
+            let text = relative.to_string_lossy().replace('\\', "/").to_lowercase();
+            if text == ".world/.transactions" || text == ".world/.checkpoints" {
+                if !metadata.is_dir() {
+                    return Err(invalid("本地存储路径不是目录"));
+                }
+                continue;
+            }
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if metadata.is_file() {
+                files.push(path);
+            } else {
+                return Err(invalid("源码组织工作区含有非普通文件"));
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
 }

@@ -1,6 +1,6 @@
 # worldline 共同契约：对象、展示文档与修改边界
 
-工具0.15共同契约。本文规定内容、展示文档、身份引用和修改边界；历史 M1–M4 标签表示功能组织，不代替当前能力声明或语言版本。新矢量模型与交换 profile 见 [vector-scene.md](vector-scene.md)，数值阈值统一维护于第11节。已标注为后续设计的项目不构成已交付能力；实际读取与写入始终遵守 core 的 schema 与 required_features 校验。
+工具0.16共同契约。本文规定内容、展示文档、身份引用和修改边界；历史 M1–M4 标签表示功能组织，不代替当前能力声明或语言版本。新矢量模型与交换 profile 见 [vector-scene.md](vector-scene.md)，数值阈值统一维护于第11节。已标注为后续设计的项目不构成已交付能力；实际读取与写入始终遵守 core 的 schema 与 required_features 校验。
 
 ## 1. 不变量
 

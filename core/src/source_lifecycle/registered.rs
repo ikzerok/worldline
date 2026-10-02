@@ -28,6 +28,7 @@ pub(super) fn rewrite(
     project: &Project,
     old: &Path,
     new: &Path,
+    mut remaining_paths: usize,
 ) -> Result<Vec<SourceLifecycleChange>, String> {
     let registry = checked_registry(project)?;
     validate_documents(project, &registry)?;
@@ -46,6 +47,10 @@ pub(super) fn rewrite(
             .map_err(|_| format!("已登记文档不是 UTF-8，无法安全迁移：{}", path.display()))?;
         let before = parse_unique_json(document.bytes()).map_err(|error| error.to_string())?;
         let inventory = inventory(project, &registry, path, &before)?;
+        if inventory.len() > remaining_paths {
+            return Err("源码与已登记文档正式路径合计超过 16384 项预算，工程未修改".into());
+        }
+        remaining_paths -= inventory.len();
         let mut after = before.clone();
         // 实际书稿 target_ref 不支持 file，POV 的 wire key 为 pov 且只支持 character。
         // 不能误改第三方可选字段 perspective；模板同样没有正式 file 引用。
@@ -419,6 +424,9 @@ fn add_slot(
         || (kind != PathKind::Relative && target != path)
     {
         return Err(format!("已登记 file 身份必须是工作区规范 .wl 路径：{at}"));
+    }
+    if slots.len() >= 16384 {
+        return Err("已登记文档正式路径超过 16384 项预算，工程未修改".into());
     }
     slots.insert(at.into(), PathSlot { target, kind });
     Ok(())

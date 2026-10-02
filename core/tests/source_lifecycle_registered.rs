@@ -87,7 +87,7 @@ fn all_supported_registered_path_slots_move_without_reformatting_extensions() {
         "canvas":{"width":100,"height":100,"unit":"normalized"},
         "layer_order":["objects"],"layers":{"objects":{"title":"对象","visible_default":true,"locked":false}},
         "placements":{"marker":{"layer_id":"objects","target_ref":target,"scope_refs":[target],
-            "geometry":{"kind":"point","position":[0.2,0.3]},"annotation":"old.wl","role":""}},
+            "geometry":{"kind":"point","position":[0.2,0.3]},"annotation":"old.wl","role":"chapter"}},
         "scene":{"schema_version":1,"view_box":[0,0,100,100],"preserve_aspect_ratio":"xMidYMid meet",
             "root_order":{"objects":["node"]},"nodes":{"node":{"id":"node","layer_id":"objects",
                 "geometry":{"kind":"point","position":[10,20]},"target_ref":target,"scope_refs":[target]}}}

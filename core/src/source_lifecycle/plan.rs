@@ -9,7 +9,7 @@ pub(super) fn prepare(
 ) -> Result<(Project, SourceLifecyclePlan), String> {
     check_cancelled(cancelled)?;
     project.ensure_workspace_writable()?;
-    project.checkpoint_disk_baselines_match()?;
+    project.source_lifecycle_disk_baselines_match()?;
     safety::inventory(project)?;
     let before = project.compile_current();
     let mut candidate = project.clone();
@@ -52,7 +52,12 @@ pub(super) fn prepare(
                 return Err("安全移动需要当前活动源码编译通过；新建/引用不受此限制".into());
             }
             let (mut changes, resources) = source::rewrite(project, &old, &new, cancelled)?;
-            changes.extend(registered::rewrite(project, &old, &new)?);
+            changes.extend(registered::rewrite(
+                project,
+                &old,
+                &new,
+                16384usize.saturating_sub(resources.len()),
+            )?);
             for change in &changes {
                 let bytes = change.after.as_ref().ok_or("移动候选缺少正文")?;
                 if change.kind == "source" {
@@ -65,6 +70,14 @@ pub(super) fn prepare(
                 }
             }
             candidate.relocate_source_buffer(&old, &new)?;
+            for resource in &resources {
+                if resource.field == "asset.path"
+                    && digest(&resource_bytes(&candidate, &resource.resolved_after)?)
+                        != resource.content_digest
+                {
+                    return Err("移动会改变被当作原始附件的源码/展示文档字节，无法证明素材保持不变，工程未修改".into());
+                }
+            }
             // 清单新路径与缓冲移动同时在私有候选中完成，再检查正式语义。
             proof::equivalent(project, &candidate, &before, &old, &new)?;
             registered::validate_candidate(project, &candidate)?;
@@ -76,6 +89,7 @@ pub(super) fn prepare(
         }
     };
     check_cancelled(cancelled)?;
+    safety::buffer_budget(&candidate)?;
     safety::writable_paths(&changes)?;
     let after = candidate.compile_current();
     let mut plan = SourceLifecyclePlan {

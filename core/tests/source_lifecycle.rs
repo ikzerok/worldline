@@ -432,3 +432,56 @@ fn read_only_source_refuses_before_any_buffer_changes() {
     assert!(error.contains("只读"), "{error}");
     assert_eq!(project.content_baseline(), baseline);
 }
+
+#[test]
+fn raw_attachment_of_an_inbound_rewritten_source_is_not_silently_changed() {
+    let ws = Workspace::new(&[
+        ("world.wl", "include \"old.wl\"\nevent start\n  -> END\n"),
+        ("old.wl", "asset manuscript file \"world.wl\"\n"),
+    ]);
+    let project = ws.open();
+    let baseline = project.content_baseline();
+    let error = project
+        .preview_source_lifecycle(&request("old.wl", "new.wl"))
+        .unwrap_err();
+    assert!(error.contains("原始附件"), "{error}");
+    assert_eq!(project.content_baseline(), baseline);
+}
+
+#[cfg(unix)]
+#[test]
+fn direct_create_and_include_readonly_entry_and_manifest_are_zero_change() {
+    use std::os::unix::fs::PermissionsExt;
+    let ws = Workspace::new(&[
+        ("world.wl", "event start\n  -> END\n"),
+        ("old.wl", "// source\n"),
+        ("archive.wl", "// archive\n"),
+        (".world/project.json", EXPLICIT),
+    ]);
+    let mut project = ws.open();
+    let baseline = project.content_baseline();
+    let entry = ws.0.join("world.wl");
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o444)).unwrap();
+    assert!(project
+        .add_file(Path::new("new.wl"))
+        .unwrap_err()
+        .contains("只读"));
+    assert_eq!(project.content_baseline(), baseline);
+    assert!(project
+        .include_file(&ws.0.join("old.wl"))
+        .unwrap_err()
+        .contains("只读"));
+    assert_eq!(project.content_baseline(), baseline);
+    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(
+        ws.0.join(".world/project.json"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    assert!(project
+        .add_file(Path::new("new.wl"))
+        .unwrap_err()
+        .contains("只读"));
+    assert_eq!(project.content_baseline(), baseline);
+    assert!(!ws.0.join("new.wl").exists());
+}
