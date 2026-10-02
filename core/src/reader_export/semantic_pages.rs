@@ -1,5 +1,4 @@
 use super::semantics::link;
-use super::site::html_escape;
 use super::*;
 
 pub(super) fn append_world_pages(
@@ -17,9 +16,9 @@ pub(super) fn append_world_pages(
     {
         append_link(&mut relations, compiled, routes, target);
     }
-    relations
-        .body_html
-        .push_str(&relation_graph(compiled, routes, None, "relations.html"));
+    let graph = super::relation_graph::relation_graph(compiled, routes, None, "relations.html");
+    relations.body_html.push_str(&graph.html);
+    relations.searchable_text.push_str(&graph.text);
     relations.empty_content = relations.searchable_text.trim().is_empty();
     pages.push(relations);
     let mut stories = page("静态故事目录", "stories.html", "stories");
@@ -146,56 +145,4 @@ fn timeline(compiled: &CompileResult, routes: &BTreeMap<TargetRef, String>) -> P
     page.body_html.push_str("</section>");
     page.empty_content = page.searchable_text.trim().is_empty();
     page
-}
-
-pub(super) fn relation_graph(
-    compiled: &CompileResult,
-    routes: &BTreeMap<TargetRef, String>,
-    focus: Option<&TargetRef>,
-    current: &str,
-) -> String {
-    let relations: Vec<_> = compiled
-        .analysis
-        .catalog
-        .relations
-        .values()
-        .filter(|relation| {
-            if focus.is_some_and(|target| {
-                relation.from_ref != *target
-                    && relation.to_ref != *target
-                    && !(target.kind == "relation" && target.id == relation.id)
-            }) {
-                return false;
-            }
-            routes.contains_key(&TargetRef::new("relation", &relation.id))
-                && routes.contains_key(&relation.from_ref)
-                && routes.contains_key(&relation.to_ref)
-        })
-        .collect();
-    if relations.is_empty() {
-        return String::new();
-    }
-    let height = relations.len().saturating_mul(80).saturating_add(30);
-    let mut html = format!("<section><h2>公开关系局部图</h2><svg role=\"img\" aria-label=\"公开关系局部图\" viewBox=\"0 0 800 {height}\" class=\"relation-graph\">");
-    for (index, relation) in relations.iter().enumerate() {
-        let y = index * 80 + 40;
-        let relation_target = TargetRef::new("relation", &relation.id);
-        html.push_str(&format!(
-            "<line x1=\"165\" y1=\"{y}\" x2=\"635\" y2=\"{y}\" stroke=\"#6d8495\"/>"
-        ));
-        for (x, target) in [
-            (20, &relation.from_ref),
-            (315, &relation_target),
-            (640, &relation.to_ref),
-        ] {
-            let Some(object) = compiled.analysis.catalog.object(target) else {
-                continue;
-            };
-            let href = super::site::relative_url(current, &routes[target]);
-            html.push_str(&format!("<a href=\"{}\"><rect x=\"{x}\" y=\"{}\" width=\"140\" height=\"40\" rx=\"6\" fill=\"#e6eef5\"/><text x=\"{}\" y=\"{}\" font-size=\"14\" fill=\"#172d3b\">{}</text></a>",
-                html_escape(&href), y - 20, x + 8, y + 5, html_escape(&object.display)));
-        }
-    }
-    html.push_str("</svg></section>");
-    html
 }

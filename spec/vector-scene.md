@@ -1,4 +1,4 @@
-# 原生矢量场景与安全 SVG（工具 0.15）
+# 原生矢量场景与安全 SVG（工具 0.16）
 
 本文是 scene 模型、编辑事务与 SVG 交换的共同契约；实现由 `worldline_core::vector_scene` 提供。作者 UI、读者发布、CLI/RPC 只调用同一 core，不另建 SVG 解析器或可编辑几何真源。本文不改变世界运行、故事存档、DSL 默认 1.9 或最高支持 1.13。
 
@@ -21,7 +21,7 @@ Rust 字段类型以 `core/src/vector_scene.rs` 与 `vector_scene/contract.rs` �
 | SceneNavigation | map_id 与未知可选 extra；可用性从当前注册地图查询派生 |
 | Affine | `[a,b,c,d,e,f]`，SVG 列向量约定；`then(rhs)` 是 `self × rhs` |
 | TextRun | text、可选绝对 x/y、相对 dx/dy、style、extra |
-| SceneStyle | 可选 fill/stroke/stroke_width/opacity/fill_opacity/stroke_opacity/fill_rule/line_cap/line_join/miter_limit/font_size/font_family/font_weight/font_style/text_anchor 与 extra |
+| SceneStyle | 可选 fill/stroke/stroke_width/stroke_dasharray/stroke_dashoffset/opacity/fill_opacity/stroke_opacity/fill_rule/line_cap/line_join/miter_limit/font_size/font_family/font_weight/font_style/text_anchor 与 extra |
 
 geometry 变体为 Group{children}、Point{position}、Polyline{points}、Polygon{points}、Rect{x,y,width,height,rx,ry}、Ellipse{cx,cy,rx,ry}、Path{segments}、Text{x,y,runs}。路径段为 Move{to}、Line{to}、Cubic{control1,control2,to}、Quadratic{control,to}、Arc{rx,ry,rotation,large_arc,sweep,to}、Close。圆与线分别归一为 ellipse 与 polyline，贝塞尔和圆弧仍保存为曲线。
 
@@ -49,7 +49,23 @@ group 的 children 顺序与各节点 parent_id 必须一致；每节点恰好�
 
 整批拒绝脚本、事件属性、DTD/entity declaration、外部资源/URL/href、foreignObject、style 元素、filter、mask、动画、未知元素/属性和 nested svg 子 viewport。nested svg 不能扁平化成 g 后假装成功。所有拒绝带原因、节点/属性及可用的 XML 行列，保留原输入，零项目变更。不宣称支持所有 SVG。
 
-### 4.1 自身生成的矩形裁剪交换
+### 4.1 有界虚线描边（工具 0.16）
+
+`SceneStyle.stroke_dasharray: Option<Vec<f64>>` 与 `stroke_dashoffset: Option<f64>` 是唯一样式真源；不把虚线拆成持久节点或采样线段。字段缺失/null 表示继承，根初值分别为实线和 0。`Some([])` 表示显式 `none`（覆盖父虚线）；非空列表保留作者顺序与奇偶，不在存储中扩写。奇数列表按 SVG 规则逻辑重复一遍再交替 dash/gap；全部为零与 `none` 同样绘制实线，但原数列仍持久保留。混合零项合法，零 dash 的端帽语义继续由同一 SVG 渲染器实现，不能过滤零项或把零 gap 改成其它值。
+
+数组与 offset 分别继承；SVG 的显式 `inherit` 等价于字段缺失，inline style 优先于 presentation attribute。SVG 数列接受严格逗号/ASCII 空白分隔的十进制及科学计数法；每项仅可无单位或 `px`，归一为本地 user unit；offset 接受单个同类数值，允许正负，保留原值，沿周期取模的相位语义交由 SVG。拒绝空列表文本、负数组项、非有限/超数值预算、百分比、其它单位、`calc`/变量/表达式、坏分隔符及 `pathLength`。正长度若转换到渲染后端 f32 后为零或非正规数也拒绝，不得下溢为实线。
+
+dash 与 offset 使用图形本地坐标；Affine、viewBox、zoom/DPI 共同变换完整描边，不预乘数组、不改曲线、不引入 non-scaling-stroke。安全 SVG 的 Arc 旋转仅在输出时按 core 相同的度数减周顺序归一到一周内，避免极大角度转弧度时的后端数值偏差放大椭圆半径；持久曲线仍保留原 rotation。每条子路径独立重启同一相位；Close、曲线、层序、组 opacity、矩形 viewport 裁剪与既有合成契约保持。为避免无法在 core 证明字体轮廓预算，首版拒绝 text/tspan 最终有效的非零虚线数组，不论是否暂时隐藏或 stroke 为 none；报 `SCENE_STYLE` 并说明文字需显式实线。文字自身或全部片段显式 `none`/全零覆盖可保持实线；不静默降级文字、不启用外部字体。
+
+只要存储任意显式 dash 字段（包括 `[]`、全零、offset 0），地图和 `MapScene.extra.required_features` 均必须声明 `presentation.vector_stroke_dash.v1`。读取缺少声明的字段拒绝解释并只读保留原字节，不把旧未知样式隐式升级。新 SVG 预览建立带声明的 typed scene；显式 SceneBatch 的 Insert/Update/Import 增加所需声明并保留其它已有声明与未知 extra。打开、普通非虚线编辑不写入新字段/新能力；清空最后一项后已有能力不自动降级。旧客户端因未知必需能力只能只读，不能吞字段后写回。独立 scene 校验和 serializer 同样核验能力，worker 的 typed ImportScene 不得绕过。
+
+导入、编辑、整图/选择 SVG、native/worker raster 与 reader 层输出都在分配虚线派生路径前调用同一 core 校验。数列长度、单 scene 虚线转换工作量在 [presentation.md §11](presentation.md#11-阈值登记单源) 唯一登记。工作量保守计入所有节点（包括隐藏、透明、无 stroke）、有效继承、零项、奇数逻辑重复、各子路径的相位重启和几何段数；长度上界使用直线长度、贝塞尔控制多边形、修正半径的整椭圆周长上界，不能用有限采样低估弧长。长度预算另加入后端 f32 局部坐标舍入余量（几何规模乘段数与总弧长合计，乘阈值表中的误差系数），防止大坐标附近很短的 f64 线在后端变长而逃过预算。offset 正负及大小不能减少预算。超限在 SVG 序列化和渲染展开前返回 `SCENE_LIMIT`，不截短、不跳过、不变实线。预算字段允许调用方收紧，不允许放宽硬上限。
+
+SVG 错误提供节点、具体 `stroke-dasharray`/`stroke-dashoffset` 属性及可用 XML 行列；inline 属性定位到所在 style 属性。未知/危险输入、超限、取消或 stale 均整批拒绝、零修改、原输入保留。编辑器提供继承/实线/虚线预设、最多预算项的逐项自定义数列、独立继承/自定义 offset；仍用原 SceneBatch 预览、失败保留检查器输入和一个 undo，不另建解析器。
+
+依据：[SVG 2 §13.5.6 Dashing strokes](https://www.w3.org/TR/SVG2/painting.html#StrokeDashing)。本节只定义上述有界子集，不扩大其它 SVG 白名单。
+
+### 4.2 自身生成的矩形裁剪交换
 
 唯一允许的 clip 扩展是 serializer 生成的本地根 viewport 矩形，形式为根 svg 下 defs 中的 `clipPath`，`clipPathUnits="userSpaceOnUse"`，内部恰好一个没有 transform/style/children 的 rect；clipPath ID 使用 `wl-viewport-` 加十进制编号。对应 g 具有 `data-worldline-viewport="1"` 和精确 `clip-path="url(#wl-viewport-N)"`。
 
@@ -57,7 +73,7 @@ parser 核验定义、局部引用、唯一性、位置、矩形字段和全部�
 
 安全 SVG 再导入不应不断添加无意义根组。只有无有效样式/变换/裁剪的 synthetic 根容器可透明消除；不能丢失真正的 group 或 viewport。
 
-### 4.2 旧 Rust API 兼容
+### 4.3 旧 Rust API 兼容
 
 `svg_import::preview/apply` 保留原 legacy 采样 placements 契约，不自动启用 scene、不静默替换旧持久结构。此接口不承诺新版可编辑曲线保真，新的作者入口须使用 `preview_scene` 与 SceneBatch。旧接口仅优化为一次候选构造/校验/提交，功能范围不被删除。未来改变旧接口需要独立版本契约，本轮不以 deprecated 警告破坏现有消费者。
 

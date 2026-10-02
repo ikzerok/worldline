@@ -482,7 +482,8 @@ pub(crate) fn document_read_only(bytes: &[u8], inherited: bool) -> bool {
         return true;
     }
     if let Some(scene) = object.get("scene") {
-        if scene.get("schema_version").and_then(Value::as_u64) != Some(1)
+        if crate::vector_scene::dash_document_read_only(object, scene)
+            || scene.get("schema_version").and_then(Value::as_u64) != Some(1)
             || scene
                 .get("required_features")
                 .is_some_and(|v| !features_supported(v))
@@ -531,6 +532,7 @@ fn supported_feature(feature: &str) -> bool {
         feature,
         "presentation.maps.v1"
             | "presentation.vector_scene.v1"
+            | "presentation.vector_stroke_dash.v1"
             | "reader.profiles.v1"
             | "content.entities.v1"
             | "content.choice_presentation.v1"

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "MapScene v1（工具0.15）",
+  "title": "MapScene v1（工具0.16）",
   "description": "性能和数值硬预算见presentation.md第11节；层级/全地图ID/矩阵/安全style语义由core验证。",
   "type": "object",
   "properties": {
@@ -32,6 +32,13 @@
       "additionalProperties": {
         "$ref": "#/$defs/node"
       }
+    },
+    "required_features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "含显式虚线样式时必须声明 presentation.vector_stroke_dash.v1；未知必需能力只读保留"
     }
   },
   "required": [
@@ -152,6 +159,27 @@
             "number",
             "null"
           ]
+        },
+        "stroke_dasharray": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 64,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "description": "null/缺失继承；[]显式none；奇数逻辑重复；全零按实线绘制"
+        },
+        "stroke_dashoffset": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -1000000000,
+          "maximum": 1000000000
         }
       },
       "required": [],

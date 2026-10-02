@@ -23,6 +23,7 @@ pub fn validate_scene(scene: &MapScene, limits: &SceneLimits) -> Result<(), Scen
             "scene 包含未知必需能力，只能只读保留",
         ));
     }
+    super::dash::validate_feature(scene)?;
     if scene.nodes.len() > limits.max_nodes {
         return Err(limit("场景节点数"));
     }
@@ -100,6 +101,8 @@ pub(super) fn check_limits(limits: &SceneLimits) -> Result<(), SceneError> {
         (limits.max_operations, hard.max_operations),
         (limits.max_document_bytes, hard.max_document_bytes),
         (limits.max_projection_points, hard.max_projection_points),
+        (limits.max_dash_entries, hard.max_dash_entries),
+        (limits.max_dash_work, hard.max_dash_work),
     ] {
         if value > max {
             return Err(limit("调用方不可放宽硬预算"));
@@ -116,6 +119,7 @@ pub(super) fn limit(name: &str) -> SceneError {
 struct Totals {
     segments: usize,
     text: usize,
+    dash_work: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -155,7 +159,22 @@ fn walk(
     })?;
     let world =
         viewport::checked_affine(matrix.then(node.transform)).map_err(|e| e.at(id, "transform"))?;
+    super::dash::check_array_limit(&node.style, limits.max_dash_entries)
+        .map_err(|e| e.at(id, "stroke-dasharray"))?;
+    if let SceneGeometry::Text { runs, .. } = &node.geometry {
+        for run in runs {
+            super::dash::check_array_limit(&run.style, limits.max_dash_entries)
+                .map_err(|e| e.at(id, "stroke-dasharray"))?;
+        }
+    }
     let effective = node.style.inherited(inherited);
+    totals.dash_work = totals.dash_work.saturating_add(
+        super::dash_budget::work(&node.geometry, &effective, limits.max_dash_work)
+            .map_err(|e| e.at(id, "stroke-dasharray"))?,
+    );
+    if totals.dash_work > limits.max_dash_work {
+        return Err(limit("虚线派生工作量").at(id, "stroke-dasharray"));
+    }
     super::world_bounds::node_bounds(node, world, &effective).map_err(|e| e.at(id, "geometry"))?;
     if let SceneGeometry::Group { children } = &node.geometry {
         for child in children {

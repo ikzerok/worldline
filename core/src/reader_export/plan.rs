@@ -420,7 +420,7 @@ pub(super) fn prepare_with_routes(
     })
 }
 
-fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
+pub(crate) fn validate_selection(selection: &ReaderExportSelection) -> Result<(), String> {
     if !matches!(
         selection.schema_version,
         READER_EXPORT_SCHEMA_VERSION | READER_FIELDS_SCHEMA_VERSION | READER_SITE_SCHEMA_VERSION

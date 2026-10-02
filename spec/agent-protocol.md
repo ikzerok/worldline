@@ -601,3 +601,31 @@ Rust `Project::plan_rename_target -> Result<RenamePlan, String>` 与既有序列
 entity/relation 改名仅在运行指纹不变时成功。尤其 state 所属 entity 的稳定 ID 改名安全拒绝，返回中文错误，包含受影响 state ID/文件/行、旧/候选 fingerprint、旧 Story save/检查点的指纹不匹配原因、入口 replay 需按当前稿重新受控验证的边界，以及仅修改实体显示名的路径。实体定义本身排除于运行指纹不意味着对它的所有运行引用也排除。
 
 旧计数字段仍表示实际身份引用数，不要求与 occurrences 项数相等。旧类型的字符串语法重编码可将整条实际变更行投影为 `field:"source.syntax"`，明确不是单个身份 token；entity/relation 计划始终每个身份 token 一项。
+
+## 安全源码生命周期（工具 0.16）
+
+`project.source_lifecycle_preview` / `project.source_lifecycle_apply` 与 CLI
+`wl source-lifecycle preview|apply` 使用相同 core SourceLifecycleRequest 和
+SourceLifecyclePlan；apply 必须回传预览摘要，成功后保存。请求、逐处预览、活动源码
+成员语义、明确拒绝和零修改边界见 [source-lifecycle.md](source-lifecycle.md)。
+
+CLI 完整形式为 `wl source-lifecycle preview|apply <目录或入口> --request-json
+'<SourceLifecycleRequest>' [apply: --plan-digest 摘要] [--json]`。RPC params 必须是对象，
+仅含 `path` 或 `project_id` 之一、`request`；apply 另外必须含非空字符串
+`plan_digest`，preview 不接受该字段。未知字段、重复 JSON key、无效 operation 或
+字段类型均拒绝，不猜测请求意图。CLI 重复或不适用参数为用法失败（退出码 2）；
+RPC 参数形状错误为 `-32602`，重复 JSON key 按既有消息解析规则为 `-32700`。
+
+两接口成功结果为 `{ok:true,operation,plan,baseline,applied,saved}`，`plan` 原样
+序列化 core DTO，`baseline` 是操作后当前 Project 内容基线。preview 不改缓冲或
+磁盘，`applied:false,saved:false`；apply 成功为 `applied:true,saved:true`。
+业务失败为 `{ok:false,operation,plan,baseline,applied:false,saved:false,
+error:{code:"SOURCE_LIFECYCLE_REJECTED",message,stage}}`，其中 `stage` 为 preview 或
+apply，`plan` 为 null。打开失败沿用 `IO_ERROR`、`stage:"open"`，baseline 为 null，
+CLI 退出码 2；其他业务失败退出码 1。
+
+内存应用后若保存失败，返回 `ok:false`、`stage:"save"`、`applied:true,saved:false`，
+保留实际 `plan`、应用后基线和当前 Project 缓冲，不恢复旧快照或删除 journal。
+`saved:false` 仅表示未确认保存完成，不表示磁盘零修改；磁盘可能已部分写入，须通过
+既有重新打开/刷新恢复事务。RPC 的 project_id 会话继续保留应用后的内容。只有
+`saved:true` 才能声明保存成功；本接口不承诺跨文件物理原子性。

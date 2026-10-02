@@ -234,9 +234,10 @@ pub(super) fn append_object(
             entry(page, &relation.label, &html, &text);
         }
     }
-    let graph = super::semantic_pages::relation_graph(compiled, routes, Some(target), &current);
-    if !graph.is_empty() {
-        page.body_html.push_str(&graph);
+    let graph = super::relation_graph::relation_graph(compiled, routes, Some(target), &current);
+    if !graph.html.is_empty() {
+        page.body_html.push_str(&graph.html);
+        page.searchable_text.push_str(&graph.text);
     }
     Ok(())
 }

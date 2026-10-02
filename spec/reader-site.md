@@ -136,6 +136,14 @@ fn apply_reader_profile_migration(&self, plan: &ReaderProfileMigrationPlan)
 
 `ReaderProfileSavePlan={profile:ReaderPublicationProfile,content_baseline:String,document_path:String,document_before_hash:Option<String>,plan_digest:String}`。document_path 是工作区相对路径，None hash 与空文件不同。保存预览验证选择/路由，在 clone 上排演，应用重新检查磁盘基线并重算整个 plan，精确一致才替换内存 Project。它不自行磁盘保存，也不生成站点；UI 沿已有 Project 保存与历史流程处理。
 
+一次 apply 内可直接采用本次完整重验中成功排演的 Project，避免丢弃后再次克隆、解析和
+合并同一配置。此候选不跨调用保留、不序列化为授权；仍从当前 Project 完整编译、验证
+选择与公开投影、补全路由并重建全部计划字段及摘要，再进行整个 plan 的精确比较。
+采纳前再次检查候选的全部磁盘保存基线，包含新建配置的明确不存在基线，并保留新建
+路径的直接读取检查，拒绝排演期间出现的目标文件、目录或外部修改；重新解析注册路径，
+保留同内容硬链接等文件身份检查。未知可选字段、只读保护、保存基线、未保存内容及完整
+Project 撤销语义保持不变；公开预览仍只返回原 DTO，不返回可应用的候选字节。
+
 `ReaderProfileMigrationPlan={before:ReaderPublicationProfile,after:ReaderPublicationProfile,authorization_changes:Vec<String>,content_baseline:String,plan_digest:String}`。应用重新计算并比较整个 plan，修改文案、候选、基线或路径均不能授权写入。
 
 只读 ReaderExportPreview/ContentPreview/Included/Exclusion 和 progress 可 Serialize/Deserialize 供 worker 展示。profile、save/migration DTO 亦可传输，但反序列化本身不是授权；apply 必须重算候选，绝不接受任意来源文件字节。preview 的 content 继续只含 title/output_path/text/empty_content，v1 不增加 content；v2/v3 为空正文提供提示。
@@ -170,3 +178,19 @@ native export 只允许工程外、尚不存在的新目标，父目录必须存
 release 性能回归固定 2000 对象、合理中英正文/alias，五次 fresh fixture 同机每轮 preview+build ≤5 秒，打印每轮毫秒、文件数、bytes、机器信息与原工程 hash。取消请求到返回 ≤500ms，目标/暂存均无输出。profile create+preview_save 和实际 apply_save 分别独立测时；同步 UI 路径超过 250ms 必须转后台，不能只后台化规划却把同样耗时的完整重算留在主线程。应用仍须完整重新校验，不能以反序列化 token 或候选字节代替校验。不得用 debug 结果冒充 release。
 
 行为回归覆盖 v1/v2 兼容、CANARY 全资源隔离、选属性反链边界、typed/timeline/局部图、静态条件隐藏、地图精确白名单及跨层顺序、章节次序、稳定路由/重构迁移、未知字段保留、失效项不裁剪、陈旧/篡改计划、取消、目的目录竞态与完整备份。真实 file:// 浏览器验收与静态资源自动审计分别记录；工具拒绝访问时不绕过限制，也不声称已验证浏览器。
+
+## 8. 关系图标签与文字等价呈现（工具 0.16）
+
+关系图继续只投影公开关系及其两端，不扩大选择。每条关系使用独立的三节点 SVG 行，
+避免大量关系共享一张过高 viewBox 后被整图缩小。每个节点具有完整的转义 title/aria-label、
+包内链接和明确裁切边界；可见标签按 Unicode grapheme 分为至多两行，有界摘要用省略号
+提示，不把任意 UTF-8 字节截断成坏文本，也不拆开组合字符/emoji。摘要只负责图中扫描，
+不等于删除公开内容。
+
+每个图行下面同时提供来源对象、关系、目标对象的完整普通 HTML 文本链接；长中文、长
+英文词、emoji和混合标点可换行，在窄屏与文本放大时仍可读。图中摘要、title和文字等价物
+只使用同一已授权显示名，不输出源路径、未公开端点或作者备注。没有公开关系时不生成
+空图。阅读站预览/搜索仍使用已有公共正文投影；重复图形标签不能变成额外私有数据入口。
+
+此项是既有 v3 reader 呈现修整，不改变选择 DTO、稳定路由或语言版本。静态SVG渲染和
+HTML闭包检查不能替代真实浏览器、键盘与读屏验收；实际覆盖须分别报告。

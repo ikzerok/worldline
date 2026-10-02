@@ -38,7 +38,7 @@ pub(super) fn preview_scene_with_control(
     };
     importer.reserve_ids()?;
     importer.read_clips()?;
-    let id = importer.build(0, None, false, Affine::IDENTITY)?;
+    let id = importer.build(0, None, false, Affine::IDENTITY, &SceneStyle::default())?;
     let clip = viewport::root_clip(importer.scene, width, height)
         .map_err(|e| root.error(source, e, "viewBox"))?;
     let node = importer.scene.nodes.get_mut(&id).unwrap();
@@ -68,6 +68,7 @@ pub(super) fn preview_scene_with_control(
         0,
         importer.scene.nodes.len(),
     )?;
+    super::dash::declare_scene(importer.scene)?;
     let check = validate::validate_scene(importer.scene, limits).and_then(|()| {
         let matrix = super::view_box_transform(
             importer.scene.view_box,
@@ -249,6 +250,7 @@ impl Importer<'_> {
         parent: Option<&str>,
         inherited_space: bool,
         inherited_matrix: Affine,
+        inherited_style: &SceneStyle,
     ) -> Result<String, SceneError> {
         let arena = self.arena;
         let element = &arena[index];
@@ -265,7 +267,9 @@ impl Importer<'_> {
             node.name = element.attrs.get("id").cloned().unwrap_or_default();
             node.parent_id = parent.map(str::to_owned);
             node.style = style::parse_style(&element.attrs).map_err(|mut e| {
-                e.field = Some("style".into());
+                if e.field.is_none() {
+                    e.field = Some("style".into());
+                }
                 e
             })?;
             node.transform = element
@@ -281,6 +285,13 @@ impl Importer<'_> {
             let world = viewport::checked_affine(inherited_matrix.then(node.transform))?;
             if let SceneGeometry::Text { runs, .. } = &mut node.geometry {
                 *runs = text_runs(self.arena, index, inherited_space, self.source)?;
+                super::svg_location::check_text_dashes(
+                    self.arena,
+                    index,
+                    runs,
+                    &node.style.inherited(inherited_style),
+                    self.source,
+                )?;
             }
             Ok::<_, SceneError>((node, world))
         };
@@ -355,6 +366,7 @@ impl Importer<'_> {
             self.scene.nodes.len(),
             self.arena.len(),
         )?;
+        let effective_style = node.style.inherited(inherited_style);
         self.positions.insert(id.clone(), index);
         self.scene.nodes.insert(id.clone(), node);
         if matches!(element.tag.as_str(), "svg" | "g") {
@@ -365,6 +377,7 @@ impl Importer<'_> {
                     Some(&id),
                     element.preserve(inherited_space),
                     world,
+                    &effective_style,
                 )?);
             }
             self.scene.nodes.get_mut(&id).unwrap().geometry = SceneGeometry::Group { children };

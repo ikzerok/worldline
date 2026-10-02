@@ -54,6 +54,8 @@ mod scene;
 mod sessions;
 #[path = "lib/source_edit.rs"]
 mod source_edit;
+#[path = "lib/source_lifecycle.rs"]
+mod source_lifecycle;
 
 /// 协议版本:方法表或错误语义发生不兼容变更时递增。
 pub const PROTOCOL: u64 = 1;
@@ -299,6 +301,8 @@ impl Server {
             "scene.export" => self.scene(params, "export"),
             "source.edit.preview" => self.source_edit(params, false),
             "source.edit.apply" => self.source_edit(params, true),
+            "project.source_lifecycle_preview" => self.source_lifecycle(params, false),
+            "project.source_lifecycle_apply" => self.source_lifecycle(params, true),
             "schema.index" => self.schema_index(params),
             "schema.edit.preview" => self.schema_edit(params, false),
             "schema.edit.apply" => self.schema_edit(params, true),

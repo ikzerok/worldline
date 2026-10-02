@@ -35,6 +35,7 @@ fn main() -> ExitCode {
             eprintln!("      wl localization import preview <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --json");
             eprintln!("      wl localization import apply <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --plan-digest 摘要 --json");
             eprintln!("      wl source-edit preview|apply <工程目录> --request-json '<DTO>' [apply: --plan-digest 摘要] [--json]");
+            eprintln!("      wl source-lifecycle preview|apply <目录或入口> --request-json '<DTO>' [apply: --plan-digest 摘要] [--json]");
             eprintln!("      wl schema-index <工程目录> [--json]");
             eprintln!("      wl schema-preview <工程目录> --request-json '<DTO>' [--json]");
             eprintln!("      wl schema-apply <工程目录> --request-json '<DTO>' --plan-digest 摘要 [--json]");

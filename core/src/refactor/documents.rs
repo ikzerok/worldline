@@ -1,7 +1,7 @@
 use crate::catalog::TargetRef;
 use serde_json::Value;
 
-pub(super) fn rewrite_registered(
+pub(crate) fn rewrite_registered(
     value: &mut Value,
     registry: &crate::workspace_documents::Registry,
     path: &std::path::Path,
@@ -133,7 +133,7 @@ fn ids(value: Option<&mut Value>, old: &str, new: &str) -> usize {
     count
 }
 
-pub(super) fn rewrite_manuscript_json(
+pub(crate) fn rewrite_manuscript_json(
     value: &mut Value,
     target: &TargetRef,
     new_id: &str,
@@ -153,7 +153,7 @@ pub(super) fn rewrite_manuscript_json(
     count
 }
 
-pub(super) fn rewrite_template_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
+pub(crate) fn rewrite_template_json(value: &mut Value, target: &TargetRef, new_id: &str) -> usize {
     let Some(fields) = value
         .as_object_mut()
         .and_then(|object| object.get_mut("fields"))

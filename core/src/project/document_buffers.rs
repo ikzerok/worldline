@@ -119,14 +119,13 @@ impl Project {
         Ok(())
     }
 
+    /// 新建活动源码、清单成员和入口引用一次提交；失败不保留孤立缓冲。
     pub fn add_file(&mut self, relative: &Path) -> Result<PathBuf, String> {
         self.ensure_workspace_writable()?;
-        validate_relative(relative)?;
-        let path = crate::file_access::within(&self.root, &self.root.join(relative))?;
-        if self.documents.contains_key(&path) || path.exists() {
-            return Err("文件已存在,请使用引用文件或更换名称".into());
-        }
-        self.documents.insert(
+        self.source_lifecycle_disk_baselines_match()?;
+        let path = crate::source_lifecycle::safety::native_destination(self, relative)?;
+        let mut candidate = self.clone();
+        candidate.documents.insert(
             path.clone(),
             Document {
                 text: "// 在此文件编写事件,ID 在工程内唯一。\n".into(),
@@ -134,22 +133,55 @@ impl Project {
                 deleted: false,
             },
         );
-        self.include_file(&path)?;
+        candidate.add_active_source(relative)?;
+        candidate.include_file_in_memory(&path)?;
+        crate::source_lifecycle::safety::writable_path(&self.entry)?;
+        crate::source_lifecycle::safety::writable_path(&path)?;
+        if self.source_selection.is_some() {
+            crate::source_lifecycle::safety::writable_path(
+                &crate::workspace_documents::manifest_path(&self.root),
+            )?;
+        }
+        crate::source_lifecycle::safety::buffer_budget(&candidate)?;
+        *self = candidate;
         Ok(path)
     }
 
+    /// 引用既有活动源码；归档或非活动文件不会被此操作暗中启用。
     pub fn include_file(&mut self, path: &Path) -> Result<(), String> {
         self.ensure_workspace_writable()?;
+        self.source_lifecycle_disk_baselines_match()?;
+        let mut candidate = self.clone();
+        candidate.include_file_in_memory(path)?;
+        crate::source_lifecycle::safety::writable_path(&self.entry)?;
+        crate::source_lifecycle::safety::buffer_budget(&candidate)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    fn include_file_in_memory(&mut self, path: &Path) -> Result<(), String> {
         let path = crate::file_access::within(&self.root, path)?;
         let relative = path
             .strip_prefix(&self.root)
             .map_err(|_| "请先把文件放入工程文件夹,再添加引用")?;
-        validate_relative(relative)?;
+        crate::source_lifecycle::safety::native_relative(relative)?;
         if path == self.entry {
             return Err("总入口不能引用自身".into());
         }
+        if self
+            .source_selection
+            .as_ref()
+            .is_some_and(|set| !set.is_active(&path))
+        {
+            return Err("引用目标为归档或非活动源码；请先另行明确启用，工程未修改".into());
+        }
+        if self.documents.get(&path).is_some_and(Document::is_deleted) {
+            return Err("引用目标已标记删除，工程未修改".into());
+        }
         if !self.documents.contains_key(&path) {
-            let text = crate::file_access::read_to_string(&path).map_err(|e| e.to_string())?;
+            let bytes = crate::source_lifecycle::resources::disk_bytes(self, &path)?;
+            let text =
+                String::from_utf8(bytes).map_err(|error| format!("引用源码不是 UTF-8：{error}"))?;
             self.documents.insert(
                 path.clone(),
                 Document {
@@ -161,10 +193,35 @@ impl Project {
         }
         let relative = relative.to_string_lossy().replace('\\', "/");
         let entry = self.documents.get_mut(&self.entry).ok_or("总入口未载入")?;
+        if entry.deleted {
+            return Err("总入口已标记删除，工程未修改".into());
+        }
         entry.text.push_str(&format!(
             "\ninclude {}\n",
             crate::authoring::quote(&relative)
         ));
         Ok(())
+    }
+
+    fn add_active_source(&mut self, relative: &Path) -> Result<(), String> {
+        if self.source_selection.is_none() {
+            return Ok(());
+        }
+        let manifest = crate::workspace_documents::manifest_path(&self.root);
+        let document = self.authoring_document(&manifest)?;
+        let mut value = crate::workspace_documents::parse_unique_json(document.bytes())?;
+        let active = value
+            .get_mut("source_config")
+            .and_then(|config| config.get_mut("active"))
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or("显式源码清单缺少 active 数组")?;
+        active.push(serde_json::Value::String(
+            relative.to_string_lossy().replace('\\', "/"),
+        ));
+        self.set_authoring_document(
+            &manifest,
+            serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?,
+        )?;
+        self.ensure_workspace_writable()
     }
 }

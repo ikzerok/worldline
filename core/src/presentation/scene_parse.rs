@@ -48,6 +48,23 @@ pub(super) fn parse_scene(
             ),
         ));
     })?;
+    if crate::vector_scene::dash_feature_required(&scene)
+        && !object
+            .get("required_features")
+            .and_then(Value::as_array)
+            .is_some_and(|features| {
+                features
+                    .iter()
+                    .any(|v| v.as_str() == Some(crate::vector_scene::SCENE_DASH_FEATURE))
+            })
+    {
+        diagnostics.push(map_error(
+            file,
+            "MAP002",
+            "虚线样式缺少 presentation.vector_stroke_dash.v1 必需能力声明",
+        ));
+        return Err(());
+    }
     let mut valid = true;
     for layer in scene.root_order.keys() {
         if !layers.contains_key(layer) {

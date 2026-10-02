@@ -1,8 +1,8 @@
 //! 跨源码与展示文档的稳定 TargetRef 重命名计划。
-mod documents;
-mod json_spans;
+pub(crate) mod documents;
+pub(crate) mod json_spans;
 mod language;
-mod preview;
+pub(crate) mod preview;
 pub use preview::{RefactorByteRange, RefactorOccurrence};
 mod property;
 mod text;

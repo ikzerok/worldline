@@ -123,6 +123,17 @@ pub struct SceneLimits {
     pub max_operations: usize,
     pub max_document_bytes: usize,
     pub max_projection_points: usize,
+    #[serde(default = "default_dash_entries")]
+    pub max_dash_entries: usize,
+    #[serde(default = "default_dash_work")]
+    pub max_dash_work: usize,
+}
+
+fn default_dash_entries() -> usize {
+    super::MAX_DASH_ENTRIES
+}
+fn default_dash_work() -> usize {
+    super::MAX_DASH_WORK
 }
 
 impl Default for SceneLimits {
@@ -137,6 +148,8 @@ impl Default for SceneLimits {
             max_operations: 10_000,
             max_document_bytes: 16 * 1024 * 1024,
             max_projection_points: 200_000,
+            max_dash_entries: default_dash_entries(),
+            max_dash_work: default_dash_work(),
         }
     }
 }

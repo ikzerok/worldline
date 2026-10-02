@@ -20,6 +20,24 @@ pub fn identity_source_spans(
     source: &str,
     options: CompileOptions,
 ) -> Vec<IdentitySourceSpan> {
+    spans(file, source, options, false)
+}
+
+/// 正式路径 token 投影复用身份词法器，包括所有 file 链接、include 和素材声明。
+pub(crate) fn path_source_spans(
+    file: &str,
+    source: &str,
+    options: CompileOptions,
+) -> Vec<IdentitySourceSpan> {
+    spans(file, source, options, true)
+}
+
+fn spans(
+    file: &str,
+    source: &str,
+    options: CompileOptions,
+    paths: bool,
+) -> Vec<IdentitySourceSpan> {
     let cleaned = super::strip_comments(source);
     let clean_lines: Vec<_> = cleaned.split_inclusive('\n').collect();
     let mut offset = 0;
@@ -42,7 +60,11 @@ pub fn identity_source_spans(
         };
         let tokens = tokenize_spanned(clean, file, line.no, &mut Vec::new());
         let mut push = |target: TargetRef, range: Range<usize>, field: &str| {
-            if !matches!(target.kind.as_str(), "entity" | "relation") {
+            if if paths {
+                !matches!(target.kind.as_str(), "file" | "include_path" | "asset_path")
+            } else {
+                !matches!(target.kind.as_str(), "entity" | "relation")
+            } {
                 return;
             }
             let start = char_byte(raw, range.start);
@@ -67,6 +89,23 @@ pub fn identity_source_spans(
             }
         };
         match &line.kind {
+            LineKind::Include { path, .. } if paths => {
+                // 正式 lexer 允许 include"路径"；通用目录 token 不定义这个边界。
+                let chars: Vec<_> = clean.chars().collect();
+                if let Some(start) = chars.iter().position(|ch| *ch == '"') {
+                    if let Ok((decoded, end)) =
+                        super::parse_quoted(&chars, start, file, line.no, &mut Vec::new())
+                    {
+                        if decoded == *path {
+                            push(
+                                TargetRef::new("include_path", path),
+                                start + 1..end - 1,
+                                "include.path",
+                            );
+                        }
+                    }
+                }
+            }
             LineKind::Entity { name, .. } => {
                 token(TargetRef::new("entity", name), 1, "declaration.id")
             }
@@ -83,6 +122,9 @@ pub fn identity_source_spans(
                 token(TargetRef::new(to_kind, to_id), 9, "to.id");
             }
             LineKind::Catalog(declaration) => match declaration {
+                CatalogDecl::Asset(asset) if paths => {
+                    token(TargetRef::new("asset_path", &asset.path), 3, "asset.path");
+                }
                 CatalogDecl::Alias(alias) => token(alias.target.clone(), 2, "alias.target.id"),
                 CatalogDecl::Mark(link) => token(link.target.clone(), 2, "mark.target.id"),
                 CatalogDecl::Attach(link) => token(link.target.clone(), 2, "attach.target.id"),

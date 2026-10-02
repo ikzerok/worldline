@@ -1,10 +1,12 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 语言工具链。0.15.0 开发候选增加原生矢量地图、受限 SVG 交换、完整静态世界站与对应 CLI / JSON-RPC 接口。默认语言仍为 1.9，最高 1.13；旧作品不自动升级，故事运行与存档契约不因地图或发布功能改变。
+面向世界设定与分支叙事创作的 Rust 工具链。0.16.0 开发候选新增 core 拥有的安全源码组织、有界 SVG 虚线描边与可读的离线关系图。默认语言仍为 1.9，最高既有显式版本 1.13；旧作品不自动升级。
 
-本轮 Linux 与精确提交的 Windows 自动检查、固定负载 release 性能测量已通过；真实离线网页与浏览器 Worker 仍未验。具体提交、测量范围和配对编辑器结果见 [0.15 验证摘要](docs/verification-0.15.md)。当前仍为未正式发行的开发候选，完整变更见 [CHANGELOG](CHANGELOG.md)，使用入口见 [文档索引](docs/README.md)。
+本候选尚未公开发行。当前与最终验证状态、平台覆盖分别见 [0.16 验证摘要](docs/verification-0.16.md)；完整变更见 [CHANGELOG](CHANGELOG.md)。早期 draft CI 不代表最终配对验收。
 
-## 0.15 使用入口
+## 使用入口
+
+- [安全源码组织](docs/source-lifecycle.md)：显式活动文件新建、受控单源码移动、语义/资源/存档证明与失败边界
 
 - [原生矢量与 SVG](spec/vector-scene.md)：保留曲线、文字、组与变换；预览、原子编辑、显式迁移及安全交换
 - [静态世界站](spec/reader-site.md)：按对象、字段、地图图元、章节和附件分别授权，生成多页离线内容；可保存发布配置
@@ -34,6 +36,7 @@ cargo build --workspace --release --locked
 - [语言规范索引](spec/README.md)：语法、语义、诊断、关系、状态、目录与协议的唯一真源。
 - [API 与工具接入](docs/api.md)：CLI、JSON-RPC、Rust Project 与运行时入口。
 - [工作区契约](spec/workspace.md)：递归索引、引用边界、刷新冲突与完整导出。
+- [安全源码组织](docs/source-lifecycle.md)：源码新建、引用和单文件安全移动；core、CLI 与 agent 共用逐处预览和保存恢复边界。
 - [发布说明](docs/release.md)：源码仓库、构建、打包与产物。
 
 ## 0.11.0 可信流程与修订

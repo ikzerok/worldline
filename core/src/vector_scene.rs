@@ -3,6 +3,8 @@
 mod affine;
 mod batch;
 mod contract;
+mod dash;
+mod dash_budget;
 mod edit_tree;
 mod entity;
 mod legacy;
@@ -13,6 +15,7 @@ mod render;
 mod structure;
 mod style;
 mod svg_elements;
+mod svg_location;
 mod svg_path;
 mod svg_scene;
 mod svg_transform;
@@ -47,6 +50,9 @@ pub(crate) fn preview_scene_with_control(
 ) -> Result<SvgScenePreview, SceneError> {
     svg_scene::preview_scene_with_control(source, limits, progress)
 }
+pub(crate) use dash::{
+    document_read_only as dash_document_read_only, uses_dash as dash_feature_required,
+};
 pub use validate::validate_scene;
 pub use viewport::{import_view_transform, view_box_transform};
 
@@ -56,6 +62,9 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
 pub const SCENE_FEATURE: &str = "presentation.vector_scene.v1";
+pub const SCENE_DASH_FEATURE: &str = "presentation.vector_stroke_dash.v1";
+pub const MAX_DASH_ENTRIES: usize = 64;
+pub const MAX_DASH_WORK: usize = 100_000;
 pub const SCENE_SCHEMA_VERSION: u64 = 1;
 pub const WORLD_LIMIT: f64 = 1_000_000_000.0;
 
@@ -249,6 +258,11 @@ pub struct SceneStyle {
     pub fill: Option<String>,
     pub stroke: Option<String>,
     pub stroke_width: Option<f64>,
+    /// None 继承；空数组显式实线；奇数数列按 SVG 逻辑重复。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke_dasharray: Option<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke_dashoffset: Option<f64>,
     pub opacity: Option<f64>,
     pub fill_opacity: Option<f64>,
     pub stroke_opacity: Option<f64>,
@@ -273,6 +287,11 @@ impl SceneStyle {
             fill: self.fill.clone().or_else(|| parent.fill.clone()),
             stroke: self.stroke.clone().or_else(|| parent.stroke.clone()),
             stroke_width: self.stroke_width.or(parent.stroke_width),
+            stroke_dasharray: self
+                .stroke_dasharray
+                .clone()
+                .or_else(|| parent.stroke_dasharray.clone()),
+            stroke_dashoffset: self.stroke_dashoffset.or(parent.stroke_dashoffset),
             opacity: self.opacity,
             fill_opacity: self.fill_opacity.or(parent.fill_opacity),
             stroke_opacity: self.stroke_opacity.or(parent.stroke_opacity),
