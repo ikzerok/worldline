@@ -329,6 +329,8 @@ mod reader_export;
 mod relation_edit;
 #[path = "lib/relation_query.rs"]
 mod relation_query;
+#[path = "lib/scene.rs"]
+mod scene;
 #[path = "lib/source_edit.rs"]
 mod source_edit;
 #[path = "lib/story.rs"]
@@ -345,6 +347,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     };
     let rest = &args[1..];
     match cmd.as_str() {
+        "scene" => scene::command(rest, out),
         "workspace" => workspace::cmd_workspace(&workspace::parse_workspace_args(rest)?, out),
         "maps" => workspace::cmd_maps(&workspace::parse_maps_args(rest)?, out),
         "relations" => {

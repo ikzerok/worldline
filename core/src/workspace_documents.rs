@@ -73,6 +73,7 @@ pub(crate) struct Registry {
     pub(crate) proposals: BTreeMap<String, PathBuf>,
     pub(crate) saved_queries: BTreeMap<String, PathBuf>,
     pub(crate) localizations: BTreeMap<String, PathBuf>,
+    pub(crate) reader_profiles: BTreeMap<String, PathBuf>,
     pub(crate) source_selection: Option<crate::source_config::SourceSelection>,
     pub(crate) diagnostics: Vec<crate::Diagnostic>,
     pub(crate) language_version: LanguageVersion,
@@ -106,6 +107,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
     let mut manifest_read_only = manifest_capability_is_read_only(manifest);
     let mut templates_feature_missing = false;
     let mut localization_feature_missing = false;
+    let mut reader_profiles_feature_missing = false;
     registry
         .documents
         .insert(manifest_path(root), manifest_read_only);
@@ -227,6 +229,20 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         );
     }
 
+    if object
+        .get("reader_profiles")
+        .and_then(Value::as_object)
+        .is_some_and(|profiles| !profiles.is_empty())
+        && !required_feature(object, "reader.profiles.v1")
+    {
+        reader_profiles_feature_missing = true;
+        registry.report(
+            root,
+            "WS003",
+            "清单注册 reader_profiles 时必须声明 required_features reader.profiles.v1",
+        );
+    }
+
     if let Some(config) = object.get("source_config") {
         match parse_source_selection(root, object, config) {
             Ok(selection) => registry.source_selection = Some(selection),
@@ -255,6 +271,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         "proposals",
         "saved_queries",
         "localizations",
+        "reader_profiles",
     ] {
         let Some(value) = object.get(key) else {
             continue;
@@ -270,6 +287,8 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
         for (id, value) in entries {
             if !(if key == "templates" {
                 valid_template_id(id)
+            } else if key == "reader_profiles" {
+                valid_reader_profile_id(id)
             } else {
                 valid_id(id)
             }) {
@@ -297,6 +316,7 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                 paths.insert(path_key, path.clone());
                 if (key == "templates" && templates_feature_missing)
                     || (key == "localizations" && localization_feature_missing)
+                    || (key == "reader_profiles" && reader_profiles_feature_missing)
                 {
                     read_only_paths.insert(path.clone());
                 }
@@ -329,6 +349,9 @@ pub(crate) fn parse_registry(root: &Path, manifest: &[u8]) -> Registry {
                     }
                     "localizations" => {
                         registry.localizations.insert(id.clone(), path);
+                    }
+                    "reader_profiles" => {
+                        registry.reader_profiles.insert(id.clone(), path);
                     }
                     _ => unreachable!(),
                 }
@@ -458,6 +481,15 @@ pub(crate) fn document_read_only(bytes: &[u8], inherited: bool) -> bool {
     {
         return true;
     }
+    if let Some(scene) = object.get("scene") {
+        if scene.get("schema_version").and_then(Value::as_u64) != Some(1)
+            || scene
+                .get("required_features")
+                .is_some_and(|v| !features_supported(v))
+        {
+            return true;
+        }
+    }
     object
         .get("required_features")
         .is_some_and(|features| !features_supported(features))
@@ -498,6 +530,8 @@ fn supported_feature(feature: &str) -> bool {
     matches!(
         feature,
         "presentation.maps.v1"
+            | "presentation.vector_scene.v1"
+            | "reader.profiles.v1"
             | "content.entities.v1"
             | "content.choice_presentation.v1"
             | "content.relations.v1"
@@ -529,4 +563,12 @@ pub(crate) fn valid_id(id: &str) -> bool {
 
 pub(crate) fn valid_template_id(id: &str) -> bool {
     id.strip_prefix("project:").is_some_and(valid_id)
+}
+
+pub(crate) fn valid_reader_profile_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }

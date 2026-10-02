@@ -46,7 +46,7 @@ fn snapshot_keeps_exact_draft_and_deleted_tracking_without_writing() {
         Project::from_snapshot_with_state(&isolated, Path::new("world.wl"), &files, &state)
             .unwrap();
     assert_eq!(rebuilt.content_baseline(), baseline);
-    assert!(rebuilt.documents[&isolated.join("old.wl")].is_deleted());
+    assert!(rebuilt.documents[&rebuilt.root.join("old.wl")].is_deleted());
     assert!(!isolated.exists());
     assert_eq!(
         fs::read_to_string(fixture.0.join("world.wl")).unwrap(),
@@ -139,4 +139,138 @@ fn limits_reject_large_resources_and_do_not_count_deleted_disk_files_as_active()
         .is_err());
     assert_eq!(project.content_baseline(), baseline);
     assert!(fixture.0.join("old.wl").exists());
+}
+
+#[test]
+fn native_nested_snapshot_paths_roundtrip_as_portable_state_with_tombstones() {
+    let fixture = Fixture::new();
+    fs::create_dir_all(fixture.0.join("chapters/deep")).unwrap();
+    fs::create_dir_all(fixture.0.join(".world/maps")).unwrap();
+    let source = fixture.0.join("chapters/deep/draft.wl");
+    let deleted = fixture.0.join("chapters/deep/deleted.wl");
+    fs::write(&source, "event draft\n  -> END\n").unwrap();
+    fs::write(&deleted, "event deleted\n  -> END\n").unwrap();
+    fs::write(
+        fixture.0.join(".world/project.json"),
+        br#"{"schema_version":1,"required_features":["presentation.maps.v1"],"maps":{"future":".world/maps/future.json"}}"#,
+    )
+    .unwrap();
+    let future = br#"{"schema_version":99,"private":"keep exact bytes"}"#;
+    fs::write(fixture.0.join(".world/maps/future.json"), future).unwrap();
+    let mut project = Project::open(&fixture.0).unwrap();
+    project
+        .set_text(&source, "unfinished nested draft".into())
+        .unwrap();
+    project.delete_document(&deleted).unwrap();
+    let files = project.snapshot_files_limited(4, 4096).unwrap();
+    let state = project.snapshot_state().unwrap();
+    let wire = serde_json::to_value(&state).unwrap();
+    let wire_paths: Vec<_> = wire["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|document| document["path"].as_str().unwrap())
+        .collect();
+    assert!(wire_paths.contains(&"chapters/deep/draft.wl"));
+    assert!(wire_paths.contains(&"chapters/deep/deleted.wl"));
+    assert!(wire_paths.contains(&".world/maps/future.json"));
+    assert!(wire_paths.iter().all(|path| !path.contains('\\')));
+    let decoded = serde_json::from_value(wire).unwrap();
+    let destination = fixture.0.join("absent-rebuild-root");
+    let rebuilt =
+        Project::from_snapshot_with_state(&destination, Path::new("world.wl"), &files, &decoded)
+            .unwrap();
+    assert_eq!(rebuilt.content_baseline(), project.content_baseline());
+    assert_eq!(
+        rebuilt.documents[&rebuilt.root.join("chapters/deep/draft.wl")].text,
+        "unfinished nested draft"
+    );
+    assert!(rebuilt.documents[&rebuilt.root.join("chapters/deep/deleted.wl")].is_deleted());
+    let copy = rebuilt
+        .authoring_document(&rebuilt.root.join(".world/maps/future.json"))
+        .unwrap();
+    assert_eq!(copy.bytes(), future);
+    assert!(copy.is_read_only());
+    assert!(!destination.exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_native_separators_accept_relative_paths_but_reject_unsafe_components() {
+    let fixture = Fixture::new();
+    let files = BTreeMap::from([
+        (
+            PathBuf::from("world.wl"),
+            b"event start\n  -> END\n".to_vec(),
+        ),
+        (
+            PathBuf::from(r"chapters\deep\note.wl"),
+            b"nested draft".to_vec(),
+        ),
+    ]);
+    let rebuilt = Project::from_snapshot(&fixture.0, Path::new("world.wl"), &files).unwrap();
+    assert_eq!(
+        rebuilt.documents[&rebuilt.root.join("chapters/deep/note.wl")].text,
+        "nested draft"
+    );
+    let state = rebuilt.snapshot_state().unwrap();
+    assert!(state
+        .documents
+        .iter()
+        .any(|item| item.path.to_str() == Some("chapters/deep/note.wl")));
+    for unsafe_path in [
+        r"C:\outside.wl",
+        r"C:outside.wl",
+        r"\outside.wl",
+        r"\\server\share\outside.wl",
+        r"\\?\C:\outside.wl",
+        r"..\outside.wl",
+        r"chapters\..\outside.wl",
+        r"chapters\.\note.wl",
+        r"chapters\\note.wl",
+        r"chapters/note.wl/",
+        r"chapters/\note.wl",
+        r".world\.transactions\journal.wl",
+        r".world\.checkpoints\old.wl",
+    ] {
+        let invalid = BTreeMap::from([(PathBuf::from(unsafe_path), Vec::new())]);
+        assert!(
+            Project::from_snapshot(&fixture.0, Path::new("world.wl"), &invalid).is_err(),
+            "{unsafe_path}"
+        );
+        assert!(
+            Project::from_snapshot(&fixture.0, Path::new(unsafe_path), &files).is_err(),
+            "{unsafe_path}"
+        );
+        let mut forged = state.clone();
+        forged.documents[0].path = unsafe_path.into();
+        assert!(
+            Project::from_snapshot_with_state(&fixture.0, Path::new("world.wl"), &files, &forged)
+                .is_err(),
+            "{unsafe_path}"
+        );
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn non_windows_literal_backslash_is_not_a_portable_snapshot_separator() {
+    let fixture = Fixture::new();
+    let project = Project::open(&fixture.0).unwrap();
+    let files = project.snapshot_files().unwrap();
+    let state = project.snapshot_state().unwrap();
+    for invalid_path in [r"chapters\note.wl", r"chapters\..\outside.wl"] {
+        let invalid = BTreeMap::from([(PathBuf::from(invalid_path), Vec::new())]);
+        assert!(Project::from_snapshot(&fixture.0, Path::new("world.wl"), &invalid).is_err());
+        assert!(Project::from_snapshot(&fixture.0, Path::new(invalid_path), &files).is_err());
+        let mut forged = state.clone();
+        forged.documents[0].path = invalid_path.into();
+        assert!(Project::from_snapshot_with_state(
+            &fixture.0,
+            Path::new("world.wl"),
+            &files,
+            &forged
+        )
+        .is_err());
+    }
 }

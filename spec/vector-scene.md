@@ -86,6 +86,8 @@ ImportSvg 在 normalized_batch 中替换为已校验 typed ImportScene，不再�
 
 ## 6. 编辑、锁与迁移
 
+Group 支持同父同层的非连续选择：保持所选项相对次序，整体置于原最高选中位置。若因此改变与未选项的叠放，计划发出 `SCENE_GROUP_REORDER` warning，列出全部受影响 ID，UI 必须先展示预览再确认提交；不能以连续选择限制替代分组。跨父/跨层选择明确提示先调整结构。
+
 Update 不得隐式改变 parent_id/layer_id；同层顺序用 Reorder，跨层移动用 MoveToLayer。锁包括节点、祖先和层；仅解自身锁也不能绕过上级锁。MoveToLayer 保持 world affine、有效样式和原顺序；不得穿越无法等价保留的 ancestor opacity/viewport 合成边界，需移动完整边界组并明确诊断。Ungroup 若会丢失非单位 group opacity 或 viewport crop，拒绝而非改变画面。
 
 旧 placement 显式 MigratePlacements：保持 ID、typed metadata、styles、extensions/未知可选字段，normalized 坐标按 canvas 变逻辑坐标，移除旧 placement 后加入 scene，不能 copy 两份。批注 MapPlacement 锚点、reader 授权、对象引用和 refactor 定点身份不变。
@@ -114,12 +116,12 @@ selected=None 尊重作者显隐；Some 是精确公开白名单，忽略作者�
 
 ## 8. 验证、诊断和预算
 
-所有 numeric/资源/性能数值只在 [presentation.md §11](presentation.md#11-阈值登记单源) 登记。SceneLimits 默认遵守该表，caller 只可调低；每个 node matrix、累计 world matrix、viewport组合、变换后的控制点、保守 curve/text/stroke bounds 和最终投影点都检查有限性与世界硬预算。不得仅逐字段 finite 后让多层累乘生成 f32 infinity。临时投影超预算明确失败，不降低精度冒充成功。
+所有 numeric/资源/性能数值只在 [presentation.md §11](presentation.md#11-阈值登记单源) 登记。SceneLimits 默认遵守该表，caller 只可调低；每个 node matrix、累计 world matrix、viewport组合、变换后的控制点、保守 curve/text/stroke bounds 和最终投影点都检查有限性与世界硬预算。不得仅逐字段 finite 后让多层累乘生成 f32 infinity。临时投影超预算明确失败，不降低精度冒充成功。批量输入、复制子树和原JSON未知字段保全必须在分配派生副本前计算有界字节成本，不能只在最终提交时发现元数据放大。
 
-`SceneError{code,message,node_id,line,column,field,operation_index}` 使用英文 code/中文 message。稳定错误域：`SCENE_SCHEMA`、`SCENE_FEATURE`、`SCENE_STRUCTURE`、`SCENE_GEOMETRY`、`SCENE_STYLE`、`SCENE_NUMERIC`、`SCENE_LIMIT`、`SCENE_SVG_PROFILE`、`SCENE_REFERENCE`、`SCENE_LOCKED`、`SCENE_COMPOSITING_BOUNDARY`、`SCENE_MIGRATION_ORDER`、`SCENE_MIGRATION_STYLE`、`SCENE_STALE`、`SCENE_CONFLICT`、`SCENE_CANCELLED`、`SCENE_STORAGE`。XML可定位时行列从1开始，operation_index从0开始；没有位置时用null，不伪造位置。
+`SceneError{code,message,node_id,line,column,field,operation_index}` 使用英文 code/中文 message。稳定错误域：`SCENE_SCHEMA`、`SCENE_FEATURE`、`SCENE_STRUCTURE`、`SCENE_GEOMETRY`、`SCENE_STYLE`、`SCENE_NUMERIC`、`SCENE_LIMIT`、`SCENE_SVG_PROFILE`、`SCENE_REFERENCE`、`SCENE_LOCKED`、`SCENE_COMPOSITING_BOUNDARY`、`SCENE_MIGRATION_ORDER`、`SCENE_MIGRATION_STYLE`、`SCENE_STALE`、`SCENE_CONFLICT`、`SCENE_CANCELLED`、`SCENE_STORAGE`。Rust的line/column/operation_index使用Option<u32>，覆盖输入与操作硬预算且避免错误值不必要膨胀；JSON仍为整数或null。XML可定位时行列从1开始，operation_index从0开始；没有位置时用null，不伪造位置。
 
 资源预算既约束解析也约束渲染；最多实际活动任务数与显式 RGBA 工作缓冲/scene纹理合计在阈值表登记。该合计不是总RSS，resvg内部合成内存另须预检/拒绝，不能隐含降DPI、丢图层或取消后提前释放仍运行线程的许可。
 
 ## 9. 必要回归
 
-完整路径命令/多子路径/fill-rule、text/affine/clip、source→scene→SVG→scene 保真；危险/超预算/nested输入定位拒绝零改；一次batch/undo/reopen/worker规范化/stale/cancel/未知feature保全；旧placement迁移ID与comments/refactor连续；whole-layer/后缀顺序与中段拒绝；全图旧新混合导出/公开精确选择；累计32层数值恶意输入、极小viewBox、unknown style放大；release导入性能及前台取消进度。历史性能结果不能代替重建后全部重新验收。
+完整路径命令/多子路径/fill-rule、text/affine/clip、source→scene→SVG→scene 保真；危险/超预算/nested输入定位拒绝零改；一次batch/undo/reopen/worker规范化/stale/cancel/未知feature保全；旧placement迁移ID与comments/refactor连续；whole-layer/后缀顺序与中段拒绝；全图旧新混合导出/公开精确选择；累计32层数值恶意输入、极小viewBox、unknown style放大；release导入性能及前台取消进度。当前候选须通过全量验收。

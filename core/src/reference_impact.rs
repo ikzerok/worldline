@@ -75,6 +75,20 @@ pub fn deletion_impact(
                     map_id: map_id.clone(),
                     placement_id: placement.id.clone(),
                 })
+                .chain(
+                    map.scene
+                        .iter()
+                        .flat_map(|scene| scene.nodes.values())
+                        .filter(|node| {
+                            node.scope_refs
+                                .iter()
+                                .any(|reference| affected_by_deletion(reference, target))
+                        })
+                        .map(|node| MapPlacementRef {
+                            map_id: map_id.clone(),
+                            placement_id: node.id.clone(),
+                        }),
+                )
         })
         .collect();
     let map_rasters = maps

@@ -2,6 +2,8 @@
 
 **协议版本:** 1（语言 v1.10 entity 字段扩展）
 
+0.15 的原生矢量预览、原子应用和安全SVG交换见 [scene-protocol.md](scene-protocol.md)，能力为 `authoring.vector_scene.v1`；语言默认版本与runtime不因此改变。
+
 CAP-01A 的[就地建档组合意图](authoring-intents.md)由 core Project API、CLI 与 agent RPC
 共同提供；既有单对象写入命令仍不代表组合事务能力。
 

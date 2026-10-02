@@ -1,13 +1,54 @@
 //! 原生可编辑矢量场景。格式与安全边界见 spec/vector-scene.md。
 //! SVG、作者 UI 与读者发布共用本模型；临时采样不得成为持久化真源。
 mod affine;
+mod batch;
 mod contract;
+mod edit_tree;
+mod entity;
+mod legacy;
+mod operations;
+mod preserve;
+mod projection;
+mod render;
+mod structure;
+mod style;
+mod svg_elements;
+mod svg_path;
+mod svg_scene;
+mod svg_transform;
+mod validate;
+mod viewport;
+mod world_bounds;
 
 pub use affine::Affine;
+pub use batch::{
+    apply_batch, apply_batch_with_control, preview_batch, preview_batch_with_control, ScenePlan,
+};
 pub use contract::{
     SceneBatch, SceneEntityRequest, SceneError, SceneLimits, SceneOp, SceneProgress,
     ScenePublicLink, SvgScenePreview,
 };
+pub use entity::{
+    apply_entity_binding, preview_entity_binding, SceneEntityPlan, SceneEntityResult,
+    SceneSourceChange,
+};
+pub use projection::{node_state, node_world_transform, project_scene, SceneNodeState};
+pub use render::{
+    map_to_safe_svg, scene_to_safe_svg, to_safe_svg, to_safe_svg_layers_with_links,
+    to_safe_svg_with_links,
+};
+pub(crate) fn preview_scene(source: &str) -> Result<SvgScenePreview, SceneError> {
+    svg_scene::preview_scene(source)
+}
+pub(crate) fn preview_scene_with_control(
+    source: &str,
+    limits: &SceneLimits,
+    progress: &mut dyn FnMut(SceneProgress) -> bool,
+) -> Result<SvgScenePreview, SceneError> {
+    svg_scene::preview_scene_with_control(source, limits, progress)
+}
+pub use validate::validate_scene;
+pub use viewport::{import_view_transform, view_box_transform};
 
 use crate::catalog::TargetRef;
 use serde::{Deserialize, Serialize};

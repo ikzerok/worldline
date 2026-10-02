@@ -36,6 +36,8 @@ v3 对象选择明确公开 display、全部对象别名和本规范允许的类
 | 所有公开对象 | 类型、display、aliases、已授权静态正文与逐键 property |
 | entity | 声明的 subtype；不以 subtype 推导属性授权 |
 | state | 公开 owner；隐藏 owner 用一般提示 |
+| anchor | 明确关联的公开对象；未公开关联端点隐藏 |
+| storyline / character | 已公开事件对故事线/人物的明确成员联系及安全反链 |
 | variable | 值类型；不公开初始值 |
 | event | 公开 period/storyline/character 成员，显式前后关系 |
 | period | 公开父子层级、直接事件成员 |
@@ -68,13 +70,13 @@ v3 身份路径为 `objects/r<hash>.html`、`maps/r<hash>.html`、`manuscripts/r
 
 v1/v2 保持 `objects/o0001.html`、`maps/m0001.html`、`manuscripts/m0001-c0001.html`、`assets/a0001.<ext>`。保存的 profile 可以保留这些兼容路径；编号为至少四位十进制。路由覆盖仅接受上述对应类别的形状，不接受任意自定义文件名、绝对路径、反斜杠、scheme 或目录逃逸。目标身份重复和路由重复都拒绝。
 
-选择次序、增加其他内容、修改 display/alias 不改变原 v3 身份路径。已保存 profile 重构身份时仅改 routes.target，保留 output_path。新增选择得到新路径，旧路由不重排；删选项不授予其原目标访问权，保留的路由表只用于未来恢复同一身份的稳定路径。
+选择次序、增加其他内容、修改 display/alias 不改变原 v3 身份路径。已保存 profile 重构身份时仅改 routes.target，保留 output_path。新增选择得到新路径，旧路由不重排；v1/v2 新身份从未被 routes 占用的序号槽分配，已移除身份保留的路径也不可重用；删选项不授予其原目标访问权，保留的路由表只用于未来恢复同一身份的稳定路径。
 
-v3 搜索条目为 `{title,url,text,kind,aliases}`；v1/v2 保留 `{title,url,text}`。中文子串、英文大小写不敏感、kind 过滤和摘录均仅使用公共文本。每个 preview.content 主页面按 output_path 对应一个正文完全一致的搜索条目；地图图元可额外生成 `url#anchor` 条目，不能要求预览和索引数组 zip 相等。
+v3 搜索条目为 `{title,url,text,kind,aliases}`；v1/v2 保留 `{title,url,text}`。中文子串、英文大小写不敏感、kind 过滤和摘录均仅使用公共文本。每个 preview.content 主页面按 output_path 对应一个正文完全一致的搜索条目；地图图元可额外生成 `url#anchor` 条目，kind 为 map_placement；同一地图的额外条目按其公开正文片段出现顺序输出，title 为该片段的公开标签，text 为同一片段原文，供调用方用单向游标核对，不能附带不在该页公开正文中的文字。不能要求预览和索引数组 zip 相等。
 
 所有 HTML、CSS、脚本与资源采用包内相对路径。搜索数据通过本地 script 载入，不使用 fetch、CDN、远程字体或服务器。深层页面和双击 file:// 打开遵守同一相对路径规则。搜索 DOM 使用 textContent，不把输入或索引正文当 HTML。
 
-manifest 包含 schema_version、title、pages、attachments，并增加 `hash_algorithm:"fnv1a64"` 与 `resources:[{path,bytes,hash}]`。resources 覆盖除 manifest 自身外全部文件；不包含作者专用 exclusions、源路径或未选 ID。hash 记录文件完整字节。生成后审计每个 HTML href/src、CSS url 和片段 ID：拒绝远程/绝对路径、逃逸、缺资源与缺 anchor，禁止 iframe/object/embed/base 和 CSS import；SVG namespace 不是外部依赖。
+manifest 包含 schema_version、title、pages、attachments，并增加 `hash_algorithm:"fnv1a64"` 与 `resources:[{path,bytes,hash}]`。resources 覆盖除 manifest 自身外全部文件；不包含作者专用 exclusions、源路径或未选 ID。hash 记录文件完整字节。生成后审计每个 HTML href/src、CSS url 和片段 ID：拒绝远程/绝对路径、逃逸、缺资源与缺 anchor，禁止 iframe/object/embed/base、内联 style 元素和 CSS import；SVG namespace 不是外部依赖。
 
 ## 5. 发布 profile 文档
 
@@ -100,7 +102,7 @@ ReaderProfileRoute {
 
 route 身份要么是 target（包括 asset/map），要么是同时存在的 manuscript_id+chapter_id，两者互斥；章节的其中一个 ID 不能独存。profile 及清单拒绝重复 JSON 键。未知可选 profile 顶层字段允许读取，保存时按原 JSON 合并保留。route 与其他已知 DTO 拒绝未知字段。
 
-已保存 profile 的失效对象、字段、map/placement/raster、章节和附件不能在候选刷新时自动裁剪；未知 required_features 不能丢弃。直到作者显式移除失效项之前，预览/保存报错。保持 selection 原数组顺序，尤其章节顺序；新章节按作者选择顺序追加。
+已保存 profile 的失效对象、字段、map/placement/raster、章节和附件不能在候选刷新时自动裁剪；未知 required_features 不能丢弃。直到作者显式移除失效项之前，预览/保存报错。保持 selection 原数组顺序，尤其章节顺序；新章节按明确候选顺序追加。
 
 v1/v2 selection 向 v3 迁移保持 routes，并列出 aliases 和 typed 结构的新增公开授权；不自动添加 story_details、fields 或 attachments。apply migration 仅返回校验后的候选，不保存或发布。已有 v3 不重复扩大能力。
 
@@ -145,7 +147,7 @@ export 方法只在非 wasm 提供。非 progress 方法使用默认继续回调
 
 ## 7. 原子性、预算与验证
 
-preview 只在 clone 编译，不能刷新、保存或污染工程。计划摘要绑定 selection、Project content baseline、所选资源字节、实际路由和公共 HTML。build 重算并要求 expected_plan_digest 一致；profile 保存与迁移也绑定其对应完整基线和候选。
+preview 只在 clone 编译，不能刷新、保存或污染工程。计划摘要绑定 selection、Project content baseline、clone 编译实际消费的全部源码（包括尚未进入原 Project 缓冲的 include）、所选资源字节/显示名、实际路由与公共页面的标题/正文/索引/anchor。build 重算并要求 expected_plan_digest 一致；profile 保存与迁移也绑定其对应完整基线和候选。
 
 native export 只允许工程外、尚不存在的新目标，父目录必须存在。使用同级唯一 staging，逐文件校验后写入；错误或取消清理暂存。最终以操作系统 no-replace 原子 rename 发布，目标即使在最后检查之后由他人创建也不能覆盖。Linux renameat2/RENAME_NOREPLACE、macOS renamex_np/RENAME_EXCL、Windows MoveFileW；不支持的平台安全拒绝，不用可能覆盖目标的 fallback。
 

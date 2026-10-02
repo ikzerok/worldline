@@ -48,6 +48,8 @@ mod relation_promotions;
 mod relation_queries;
 #[path = "lib/relation_types.rs"]
 mod relation_types;
+#[path = "lib/scene.rs"]
+mod scene;
 #[path = "lib/sessions.rs"]
 mod sessions;
 #[path = "lib/source_edit.rs"]
@@ -105,6 +107,7 @@ struct Server {
 struct ProjectUnit {
     project: Project,
     entry: PathBuf,
+    scene_revision: worldline_core::presentation_commands::Revision,
 }
 
 struct CompileInput {
@@ -202,6 +205,7 @@ impl Server {
                 "capabilities": [
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
+                    worldline_core::scene_protocol::CAPABILITY,
                 ],
             })),
             "compile" => self.compile(params),
@@ -289,6 +293,10 @@ impl Server {
             "project.analyze" => self.project_analyze(params),
             "workspace.check" => self.workspace_check(params),
             "maps.list" => self.maps_list(params),
+            "scene.svg.preview" => self.scene(params, "svg-preview"),
+            "scene.preview" => self.scene(params, "preview"),
+            "scene.apply" => self.scene(params, "apply"),
+            "scene.export" => self.scene(params, "export"),
             "source.edit.preview" => self.source_edit(params, false),
             "source.edit.apply" => self.source_edit(params, true),
             "schema.index" => self.schema_index(params),

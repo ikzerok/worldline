@@ -22,6 +22,16 @@ pub(super) fn apply_placement(
             ..
         } => {
             validate_id(placement_id, "标记 ID")?;
+            if object
+                .get("scene")
+                .and_then(|v| v.get("nodes"))
+                .and_then(Value::as_object)
+                .is_some_and(|nodes| nodes.contains_key(placement_id))
+            {
+                return Err(EditError::InvalidSchema {
+                    message: format!("标记 `{placement_id}` 与 scene 节点 ID 冲突"),
+                });
+            }
             validate_geometry(geometry)?;
             ensure_geometry_feature(object, geometry)?;
             validate_text(annotation, "annotation")?;

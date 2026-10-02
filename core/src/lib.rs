@@ -43,6 +43,7 @@ pub mod refactor;
 pub mod reference_impact;
 pub mod relation_context;
 pub mod relations;
+pub mod scene_protocol;
 pub mod schemas;
 pub mod search_replace;
 pub mod source_config;

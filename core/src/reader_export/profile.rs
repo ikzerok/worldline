@@ -4,6 +4,10 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReaderProfileRoute {
+    #[serde(
+        default,
+        deserialize_with = "super::serde_target::deserialize_optional"
+    )]
     pub target: Option<TargetRef>,
     pub manuscript_id: Option<String>,
     pub chapter_id: Option<String>,

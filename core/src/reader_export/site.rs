@@ -1,234 +1,258 @@
 use super::*;
 use serde::Serialize;
+use serde_json::{json, Value};
 use std::path::{Component, Path};
 
 pub(super) fn render_package(
     prepared: PreparedExport,
+    progress: &mut dyn FnMut(&ReaderExportProgress) -> bool,
 ) -> Result<BTreeMap<PathBuf, Vec<u8>>, String> {
-    #[derive(Serialize)]
-    struct PublicSearchEntry<'a> {
-        title: &'a str,
-        url: String,
-        text: &'a str,
-    }
-    #[derive(Serialize)]
-    struct PublicManifestEntry<'a> {
-        title: &'a str,
-        url: String,
-    }
-    #[derive(Serialize)]
-    struct PublicManifest<'a> {
-        schema_version: u32,
-        title: &'a str,
-        pages: Vec<PublicManifestEntry<'a>>,
-        attachments: Vec<PublicManifestEntry<'a>>,
-    }
-
     let mut files = BTreeMap::new();
-    let public_pages: Vec<_> = prepared
+    let mut search = Vec::<Value>::new();
+    for (index, page) in prepared.pages.iter().enumerate() {
+        super::progress::report(progress, "render", index, prepared.pages.len())?;
+        let url = page.output_path.to_string_lossy().into_owned();
+        let mut entry = json!({"title":page.title,"url":url,"text":page.searchable_text});
+        if prepared.world_site {
+            entry["kind"] = json!(page.kind);
+            entry["aliases"] = json!(page.aliases);
+            for anchor in &page.anchors {
+                search.push(
+                    json!({"title":anchor.label,"url":format!("{url}#{}",anchor.id),
+                    "text":anchor.text,"kind":"map_placement","aliases":[]}),
+                );
+            }
+        }
+        search.push(entry);
+        insert_output(
+            &mut files,
+            &page.output_path,
+            document(
+                &prepared.site_title,
+                &page.title,
+                &url,
+                &page.body_html,
+                prepared.world_site,
+            )
+            .into_bytes(),
+        )?;
+    }
+    let objects: Vec<_> = prepared
         .pages
         .iter()
-        .map(|page| PublicManifestEntry {
-            title: &page.title,
-            url: page.output_path.to_string_lossy().into_owned(),
-        })
+        .filter(|page| page.output_path.starts_with("objects"))
         .collect();
-    let public_attachments: Vec<_> = prepared
+    let chapters: Vec<_> = prepared
+        .pages
+        .iter()
+        .filter(|page| page.output_path.starts_with("manuscripts"))
+        .collect();
+    let maps: Vec<_> = prepared
+        .pages
+        .iter()
+        .filter(|page| page.output_path.starts_with("maps"))
+        .collect();
+    for (path, title, entries) in [
+        ("objects/index.html", "资料对象", &objects),
+        ("manuscripts/index.html", "书稿章节", &chapters),
+        ("maps/index.html", "地图", &maps),
+    ] {
+        insert_output(
+            &mut files,
+            path,
+            document(
+                &prepared.site_title,
+                title,
+                path,
+                &page_links(entries, path),
+                prepared.world_site,
+            )
+            .into_bytes(),
+        )?;
+    }
+    let mut home = String::new();
+    if prepared.world_site {
+        home.push_str("<p class=\"lede\">浏览这个世界的公开资料、时间结构、地图与静态故事。</p><div class=\"category-grid\">");
+        let kinds: BTreeSet<_> = objects.iter().map(|page| page.kind.as_str()).collect();
+        for kind in kinds {
+            let entries: Vec<_> = objects
+                .iter()
+                .copied()
+                .filter(|page| page.kind == kind)
+                .collect();
+            let path = format!("objects/kind-{kind}.html");
+            let title = super::semantics::kind_label(kind);
+            let body = page_links(&entries, &path);
+            insert_output(
+                &mut files,
+                &path,
+                document(&prepared.site_title, title, &path, &body, true).into_bytes(),
+            )?;
+            home.push_str(&format!("<a class=\"category\" href=\"{path}\"><strong>{}</strong><span>{} 项公开内容</span></a>", html_escape(title), entries.len()));
+        }
+        home.push_str("</div>");
+        for (path, title, count) in [
+            ("manuscripts/index.html", "书稿章节", chapters.len()),
+            ("maps/index.html", "地图", maps.len()),
+        ] {
+            home.push_str(&format!(
+                "<p><a href=\"{path}\">{title}</a> · {count} 项</p>"
+            ));
+        }
+    } else {
+        home.push_str(&format!(
+            "<h2>资料对象</h2>{}<h2>书稿章节</h2>{}<h2>地图</h2>{}",
+            page_links(&objects, "index.html"),
+            page_links(&chapters, "index.html"),
+            page_links(&maps, "index.html")
+        ));
+    }
+    home.push_str("<h2>公开附件</h2><ul>");
+    for attachment in &prepared.attachments {
+        home.push_str(&format!(
+            "<li><a href=\"{}\">{}</a></li>",
+            html_escape(&attachment.output_path.to_string_lossy()),
+            html_escape(&attachment.display)
+        ));
+    }
+    home.push_str("</ul>");
+    insert_output(
+        &mut files,
+        "index.html",
+        document(
+            &prepared.site_title,
+            &prepared.site_title,
+            "index.html",
+            &home,
+            prepared.world_site,
+        )
+        .into_bytes(),
+    )?;
+    let mut filters = String::new();
+    if prepared.world_site {
+        filters
+            .push_str("<label>内容类型 <select id=\"kind\"><option value=\"\">全部类型</option>");
+        let kinds: BTreeSet<_> = search
+            .iter()
+            .filter_map(|entry| entry["kind"].as_str())
+            .collect();
+        for kind in kinds {
+            let label = if kind == "map_placement" {
+                "地图图元"
+            } else {
+                super::semantics::kind_label(kind)
+            };
+            filters.push_str(&format!(
+                "<option value=\"{}\">{}</option>",
+                html_escape(kind),
+                html_escape(label)
+            ));
+        }
+        filters.push_str("</select></label>");
+    }
+    let body = format!("<div class=\"search-controls\"><label>搜索 <input id=\"query\" type=\"search\" autocomplete=\"off\" placeholder=\"正文、别名或公开字段\"></label>{filters}</div><p id=\"search-status\" aria-live=\"polite\"></p><ul id=\"results\"></ul><script src=\"search-data.js\"></script>");
+    insert_output(
+        &mut files,
+        "search.html",
+        document(
+            &prepared.site_title,
+            "搜索公开内容",
+            "search.html",
+            &body,
+            prepared.world_site,
+        )
+        .into_bytes(),
+    )?;
+    let search_json = json_for_script(&search)?;
+    insert_output(
+        &mut files,
+        "search-index.json",
+        search_json.as_bytes().to_vec(),
+    )?;
+    insert_output(
+        &mut files,
+        "search-data.js",
+        format!("window.READER_SEARCH_DATA={search_json};\n").into_bytes(),
+    )?;
+    insert_output(
+        &mut files,
+        "reader.js",
+        super::site_assets::JS.as_bytes().to_vec(),
+    )?;
+    insert_output(
+        &mut files,
+        "style.css",
+        super::site_assets::CSS.as_bytes().to_vec(),
+    )?;
+    let pages: Vec<_> = prepared
+        .pages
+        .iter()
+        .map(|page| json!({"title":page.title,"url":page.output_path}))
+        .collect();
+    let attachments: Vec<_> = prepared
         .attachments
         .iter()
-        .map(|attachment| PublicManifestEntry {
-            title: &attachment.display,
-            url: attachment.output_path.to_string_lossy().into_owned(),
-        })
+        .map(|asset| json!({"title":asset.display,"url":asset.output_path}))
         .collect();
-    let manifest = PublicManifest {
-        schema_version: READER_EXPORT_SCHEMA_VERSION,
-        title: &prepared.site_title,
-        pages: public_pages,
-        attachments: public_attachments,
-    };
+    for (index, attachment) in prepared.attachments.into_iter().enumerate() {
+        super::progress::report(progress, "render", index, attachments.len())?;
+        insert_output(&mut files, attachment.output_path, attachment.bytes)?;
+    }
+    let resources: Vec<_> = files.iter().map(|(path, bytes)| json!({"path":path,"bytes":bytes.len(),"hash":super::routes::hash_bytes(bytes)})).collect();
+    let manifest = json!({"schema_version":if prepared.world_site {READER_SITE_SCHEMA_VERSION} else {READER_EXPORT_SCHEMA_VERSION},
+        "title":prepared.site_title,"pages":pages,"attachments":attachments,"hash_algorithm":"fnv1a64","resources":resources});
     insert_output(
         &mut files,
         "reader-manifest.json",
         json_for_script(&manifest)?.into_bytes(),
     )?;
-
-    let mut search_entries = Vec::new();
-    for page in &prepared.pages {
-        search_entries.push(PublicSearchEntry {
-            title: &page.title,
-            url: page.output_path.to_string_lossy().into_owned(),
-            text: &page.searchable_text,
-        });
-    }
-    let search_json = json_for_script(&search_entries)?;
-    insert_output(
-        &mut files,
-        "search-index.json",
-        search_json.clone().into_bytes(),
-    )?;
-    let js_data = json_for_script(&search_entries)?;
-    insert_output(
-        &mut files,
-        "search-data.js",
-        format!("window.READER_SEARCH_DATA={js_data};\n").into_bytes(),
-    )?;
-    insert_output(&mut files, "reader.js", READER_JS.as_bytes().to_vec())?;
-    insert_output(&mut files, "style.css", READER_CSS.as_bytes().to_vec())?;
-
-    for page in &prepared.pages {
-        let path = page.output_path.to_string_lossy();
-        let stylesheet = relative_url(path.as_ref(), "style.css");
-        let home = relative_url(path.as_ref(), "index.html");
-        let search = relative_url(path.as_ref(), "search.html");
-        let html = format!(
-            "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\"></head><body><header><a href=\"{}\">{}</a> · <a href=\"{}\">搜索</a></header><main><h1>{}</h1>{}</main></body></html>",
-            html_escape(&page.title),
-            html_escape(&stylesheet),
-            html_escape(&home),
-            html_escape(&prepared.site_title),
-            html_escape(&search),
-            html_escape(&page.title),
-            page.body_html
-        );
-        insert_output(&mut files, &page.output_path, html.into_bytes())?;
-    }
-
-    let object_pages: Vec<_> = prepared
-        .pages
-        .iter()
-        .filter(|page| page.output_path.starts_with("objects"))
-        .collect();
-    let manuscript_pages: Vec<_> = prepared
-        .pages
-        .iter()
-        .filter(|page| page.output_path.starts_with("manuscripts"))
-        .collect();
-    let map_pages: Vec<_> = prepared
-        .pages
-        .iter()
-        .filter(|page| page.output_path.starts_with("maps"))
-        .collect();
-    let attachments_html = prepared
-        .attachments
-        .iter()
-        .map(|attachment| {
-            let path = attachment.output_path.to_string_lossy();
-            format!(
-                "<li><a href=\"{}\">{}</a></li>",
-                html_escape(&path),
-                html_escape(&attachment.display)
-            )
-        })
-        .collect::<String>();
-    let index_html = format!(
-        "{}<h1>{}</h1>{}<h2>资料对象</h2>{}<h2>书稿章节</h2>{}<h2>附件</h2><ul>{}</ul>",
-        page_start(&prepared.site_title, "index.html", false),
-        html_escape(&prepared.site_title),
-        search_link(),
-        page_links(&object_pages, "index.html"),
-        page_links(&manuscript_pages, "index.html"),
-        attachments_html
-    );
-    let index_html = format!(
-        "{index_html}<h2>地图</h2>{}",
-        page_links(&map_pages, "index.html")
-    );
-    insert_output(&mut files, "index.html", page_end(index_html).into_bytes())?;
-    insert_output(
-        &mut files,
-        "maps/index.html",
-        page_end(format!(
-            "{}<h1>地图</h1>{}",
-            page_start(&prepared.site_title, "maps/index.html", true),
-            page_links(&map_pages, "maps/index.html")
-        ))
-        .into_bytes(),
-    )?;
-    insert_output(
-        &mut files,
-        "objects/index.html",
-        page_end(format!(
-            "{}<h1>资料对象</h1>{}",
-            page_start(&prepared.site_title, "objects/index.html", true),
-            page_links(&object_pages, "objects/index.html")
-        ))
-        .into_bytes(),
-    )?;
-    insert_output(
-        &mut files,
-        "manuscripts/index.html",
-        page_end(format!(
-            "{}<h1>书稿章节</h1>{}",
-            page_start(&prepared.site_title, "manuscripts/index.html", true),
-            page_links(&manuscript_pages, "manuscripts/index.html")
-        ))
-        .into_bytes(),
-    )?;
-    insert_output(
-        &mut files,
-        "search.html",
-        page_end(format!(
-            "{}<h1>搜索公开内容</h1><label>搜索 <input id=\"query\" type=\"search\" autocomplete=\"off\"></label><ul id=\"results\"></ul><script src=\"search-data.js\"></script><script src=\"reader.js\"></script>",
-            page_start(&prepared.site_title, "search.html", false)
-        ))
-        .into_bytes(),
-    )?;
-
-    for attachment in prepared.attachments {
-        insert_output(&mut files, attachment.output_path, attachment.bytes)?;
-    }
-    let total_bytes: usize = files.values().map(Vec::len).sum();
-    if total_bytes > MAX_PACKAGE_BYTES {
-        return Err("阅读包超过 128 MiB 限制".into());
-    }
+    super::audit::audit(&files, progress)?;
     Ok(files)
 }
 
-fn page_start(site_title: &str, current_path: &str, nested_index: bool) -> String {
-    let css = if nested_index {
-        "../style.css"
-    } else {
-        "style.css"
-    };
-    let home = if nested_index {
-        "../index.html"
-    } else {
-        "index.html"
-    };
-    format!(
-        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\"></head><body><header><a href=\"{}\">{}</a> · <a href=\"{}\">搜索</a></header><main>",
-        html_escape(site_title),
-        css,
-        home,
-        html_escape(site_title),
-        relative_url(current_path, "search.html")
-    )
-}
-
-fn page_end(body: String) -> String {
-    format!("{body}</main></body></html>")
-}
-
-fn search_link() -> &'static str {
-    "<p><a href=\"search.html\">搜索公开内容</a></p>"
-}
-
-fn page_links(pages: &[&PublicPage], from_path: &str) -> String {
-    let items = pages
-        .iter()
-        .map(|page| {
-            format!(
-                "<li><a href=\"{}\">{}</a></li>",
-                html_escape(&relative_url(from_path, &page.output_path,)),
-                html_escape(&page.title)
+fn document(site_title: &str, title: &str, path: &str, body: &str, world_site: bool) -> String {
+    let mut navigation = String::new();
+    for (destination, label) in [
+        ("index.html", "首页"),
+        ("objects/index.html", "资料"),
+        ("manuscripts/index.html", "书稿"),
+        ("maps/index.html", "地图"),
+        ("timeline.html", "时间结构"),
+        ("relations.html", "关系"),
+        ("stories.html", "故事"),
+        ("search.html", "搜索"),
+    ] {
+        if !world_site
+            && matches!(
+                destination,
+                "timeline.html" | "relations.html" | "stories.html"
             )
-        })
-        .collect::<String>();
-    format!("<ul>{items}</ul>")
+        {
+            continue;
+        }
+        navigation.push_str(&format!(
+            "<a href=\"{}\">{label}</a>",
+            html_escape(&relative_url(path, destination))
+        ));
+    }
+    format!("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{}\"></head><body><header><a class=\"site-title\" href=\"{}\">{}</a><nav aria-label=\"站点导航\">{navigation}</nav></header><main><h1>{}</h1>{body}</main><footer>公开世界资料 · 静态阅读</footer><script src=\"{}\"></script></body></html>",
+        html_escape(title), html_escape(&relative_url(path, "style.css")), html_escape(&relative_url(path, "index.html")),
+        html_escape(site_title), html_escape(title), html_escape(&relative_url(path, "reader.js")))
 }
 
-fn json_for_script<T: Serialize>(value: &T) -> Result<String, String> {
+fn page_links(pages: &[&PublicPage], from: &str) -> String {
+    let mut html = String::from("<ul class=\"page-list\">");
+    for page in pages {
+        html.push_str(&format!(
+            "<li><a href=\"{}\">{}</a></li>",
+            html_escape(&relative_url(from, &page.output_path)),
+            html_escape(&page.title)
+        ));
+    }
+    html.push_str("</ul>");
+    html
+}
+pub(super) fn json_for_script<T: Serialize>(value: &T) -> Result<String, String> {
     let json = serde_json::to_string(value).map_err(|error| error.to_string())?;
     Ok(json
         .replace('&', "\\u0026")
@@ -245,6 +269,13 @@ fn insert_output(
 ) -> Result<(), String> {
     let path = path.into();
     validate_output_path(&path)?;
+    let total = files
+        .values()
+        .try_fold(bytes.len(), |total, value| total.checked_add(value.len()))
+        .ok_or("阅读包大小超出限制")?;
+    if total > MAX_PACKAGE_BYTES || files.len() >= MAX_OUTPUT_FILES {
+        return Err("阅读包超过 128 MiB 或 10000 个文件限制".into());
+    }
     if files.insert(path.clone(), bytes).is_some() {
         return Err(format!("阅读包内部输出路径冲突：{}", path.display()));
     }
@@ -252,7 +283,8 @@ fn insert_output(
 }
 
 pub(super) fn validate_output_path(path: &Path) -> Result<(), String> {
-    if path.as_os_str().is_empty()
+    if path.to_string_lossy().contains(['\\', ':', '?', '#'])
+        || path.as_os_str().is_empty()
         || path.is_absolute()
         || path
             .components()
@@ -306,29 +338,3 @@ pub(super) fn html_escape(value: &str) -> String {
     }
     escaped
 }
-
-const READER_CSS: &str = "body{font:1rem/1.7 system-ui,sans-serif;max-width:68rem;margin:0 auto;padding:1rem;color:#222}header{border-bottom:1px solid #ddd;padding:.5rem 0}main{padding:1rem 0}.unavailable{color:#666;font-style:italic}.choice{margin:.5rem 0;padding:.5rem;border-left:3px solid #bbb}a{color:#174ea6}";
-
-const READER_JS: &str = r#"(() => {
-const input = document.getElementById('query');
-const list = document.getElementById('results');
-if (!input || !list) return;
-const entries = window.READER_SEARCH_DATA || [];
-input.addEventListener('input', () => {
-  const query = input.value.trim().toLocaleLowerCase();
-  list.replaceChildren();
-  if (!query) return;
-  for (const entry of entries) {
-    if (!(entry.title + ' ' + entry.text).toLocaleLowerCase().includes(query)) continue;
-    const item = document.createElement('li');
-    const link = document.createElement('a');
-    link.href = entry.url;
-    link.textContent = entry.title;
-    const excerpt = document.createElement('p');
-    excerpt.textContent = entry.text;
-    item.append(link, excerpt);
-    list.append(item);
-  }
-});
-})();
-"#;

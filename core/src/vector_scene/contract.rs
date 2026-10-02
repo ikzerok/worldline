@@ -71,10 +71,10 @@ pub struct SceneError {
     pub code: String,
     pub message: String,
     pub node_id: Option<String>,
-    pub line: Option<usize>,
-    pub column: Option<usize>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
     pub field: Option<String>,
-    pub operation_index: Option<usize>,
+    pub operation_index: Option<u32>,
 }
 
 impl SceneError {

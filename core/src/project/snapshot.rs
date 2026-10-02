@@ -271,19 +271,26 @@ fn relative(root: &Path, path: &Path) -> Result<PathBuf, String> {
 
 fn checked_relative(path: &Path) -> Result<PathBuf, String> {
     let text = path.to_str().ok_or("后台快照路径必须是 UTF-8")?;
+    // Windows 捕获的 PathBuf 使用原生分隔符；传输状态统一使用斜线。
+    // 先保留所有原始分量再验证，不能借规范化吞掉空段或父目录逃逸。
+    #[cfg(windows)]
+    let portable = text.replace('\\', "/");
+    #[cfg(windows)]
+    let text = portable.as_str();
+    let relative = Path::new(text);
     if text.is_empty()
         || text.contains([':', '\\'])
-        || path.is_absolute()
+        || relative.is_absolute()
         || text
             .split('/')
             .any(|part| part.is_empty() || part == "." || part == "..")
-        || path
+        || relative
             .components()
             .any(|part| !matches!(part, Component::Normal(_)))
-        || path.starts_with(".world/.transactions")
-        || path.starts_with(".world/.checkpoints")
+        || relative.starts_with(".world/.transactions")
+        || relative.starts_with(".world/.checkpoints")
     {
         return Err("后台快照路径不是安全工作区相对路径".into());
     }
-    Ok(path.to_path_buf())
+    Ok(relative.to_path_buf())
 }
