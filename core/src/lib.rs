@@ -51,6 +51,7 @@ mod storage;
 pub mod svg_import;
 pub mod timeline;
 mod topic_projection;
+pub mod vector_scene;
 pub mod wiki;
 mod workspace_documents;
 pub use workspace_documents::parse_unique_json;

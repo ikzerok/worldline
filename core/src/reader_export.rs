@@ -3,12 +3,18 @@
 mod fields;
 mod maps;
 mod plan;
+mod profile;
+mod progress;
 mod render;
 mod site;
 use crate::catalog::TargetRef;
 use crate::manuscript::ManuscriptIndex;
 use crate::project::Project;
 use crate::CompileResult;
+pub use profile::{
+    ReaderProfileMigrationPlan, ReaderProfileRoute, ReaderProfileSavePlan, ReaderPublicationProfile,
+};
+pub use progress::ReaderExportProgress;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -16,6 +22,11 @@ use std::path::PathBuf;
 pub const READER_EXPORT_SCHEMA_VERSION: u32 = 1;
 pub const READER_FIELDS_SCHEMA_VERSION: u32 = 2;
 pub const READER_FIELDS_FEATURE: &str = "reader.fields.v1";
+pub const READER_SITE_SCHEMA_VERSION: u32 = 3;
+pub const READER_SITE_FEATURE: &str = "reader.world_site.v1";
+pub const READER_STORY_FEATURE: &str = "reader.story_details.v1";
+pub const READER_PROFILE_SCHEMA_VERSION: u32 = 1;
+pub const READER_PROFILES_FEATURE: &str = "reader.profiles.v1";
 const MAX_OBJECTS: usize = 500;
 const MAX_MANUSCRIPTS: usize = 100;
 const MAX_CHAPTERS: usize = 5_000;
@@ -54,7 +65,7 @@ pub struct ReaderFieldCandidate {
     pub preview: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderContentPreview {
     pub title: String,
     pub output_path: String,
@@ -79,7 +90,7 @@ pub struct ReaderExportSelection {
     pub maps: Vec<ReaderMapSelection>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportIncluded {
     pub target: Option<TargetRef>,
     pub manuscript_id: Option<String>,
@@ -89,7 +100,7 @@ pub struct ReaderExportIncluded {
 }
 
 /// 作者预览中的排除报告；该结构只从 preview API 返回，绝不写入站点。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportExclusion {
     pub target: Option<TargetRef>,
     pub manuscript_id: Option<String>,
@@ -98,7 +109,7 @@ pub struct ReaderExportExclusion {
     pub reason_code: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReaderExportPreview {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub content: Vec<ReaderContentPreview>,

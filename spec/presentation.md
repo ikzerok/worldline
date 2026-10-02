@@ -116,7 +116,7 @@ M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument`
 
 坐标系属于地图文档自身：原点在canvas extent左上，x向右，y向下。持久坐标为归一化二维值`[u,v]`，均相对地图extent取[0,1]。标记、折线、多边形与未来矢量图元共用这一坐标系；更换、裁剪或删除栅格图层不改变任何已保存坐标。未知位置不用[0,0]占位，而是不建立标记。
 
-栅格图层（PNG/JPEG等位图素材）是放置在该坐标系中的展示图层：每层声明asset引用与放置矩形`[u0,v0,u1,v1]`，默认整幅铺满extent。首次导入位图时extent默认取该图像素尺寸、放置矩形为[0,0,1,1]，作者随后可显式调整extent或各层放置。矢量图元（点标记、折线、多边形）是格式的原生成员；SVG 导入采用安全转换：只接受 svg/g 及 rect、circle、ellipse、line、polyline、polygon、路径 path（M/L/H/V/Z/C/Q，含绝对、相对和重复参数），转换为既有归一化几何（曲线转折线，不保留贝塞尔控制柄）；不保存或执行原 SVG。坐标取 viewBox 或正数 width/height，支持 svg/g/图形上的 translate、rotate（可指定中心）和等比 scale；列表按 SVG 次序右乘，嵌套为 parent × local，先变换后归一化。负比例可反射；零比例、非等比 scale、matrix、skew、超界、脚本、外链、实体、滤镜、未知元素或属性整批拒绝。颜色限 #RGB/#RRGGBB/none，支持 fill/stroke/stroke-width/fill-opacity/stroke-opacity 的继承（不透明度 0–1）。等比变换同步缩放描边宽度，结果仍须在 0–100 范围。C/Q 使用 de Casteljau 自适应细分：变换后的归一化坐标中，每段控制点到端点线段的距离不超过 0.00025；由凸包性质约束曲线到近似折线的误差（4000×4000 逻辑画布内不超过 1 像素）。每条图形最多 4096 点、递归深度最多 16、单次导入总计最多 100000 点；无法满足精度或预算则整批失败，不降低精度。圆/椭圆以 64 点多边形近似。导入前可预览，确认后原子添加独立图层；取消零写入，修订或文档哈希陈旧则拒绝，未知必需能力保持只读。
+栅格图层（PNG/JPEG等位图素材）是放置在该坐标系中的展示图层：每层声明asset引用与放置矩形`[u0,v0,u1,v1]`，默认整幅铺满extent。首次导入位图时extent默认取该图像素尺寸、放置矩形为[0,0,1,1]，作者随后可显式调整extent或各层放置。矢量图元（点标记、折线、多边形）是格式的原生成员。工具0.15新增显式能力保护的原生 scene：完整曲线、控制点、组、文本、样式和2D仿射持久保留，根viewport矩形裁剪与安全SVG交换共同保真，见[vector-scene.md](vector-scene.md)。旧Rust `svg_import::preview/apply` 仍保留历史采样placement兼容契约；新的可编辑SVG作者入口使用 `preview_scene` 与原子SceneBatch，不把兼容采样宣称为可编辑曲线。旧placements继续使用本节normalized坐标；scene使用自己的view_box逻辑坐标，由core唯一变换映到同一canvas，不自动迁移旧地图。
 
 栅格放置矩形必须满足 `u0 < u1` 且 `v0 < v1`，拒绝零宽、零高和倒置矩形。
 
@@ -379,6 +379,23 @@ M1新增展示/模板/批注文档不进入Story.program、不改旧指纹。新
 | Markdown 导入命名空间 | 64 UTF-8 字节 | 单次导入 | CAP-07A |
 | Markdown 相对路径长度 | 512 UTF-8 字节；单个路径分量≤200字节 | 来源与目标相对路径 | CAP-07A |
 | M1验收负载 | 1,000对象、1张2048×2048栅格图层、500标记、3,000米级图元 | 测试夹具 | M1 |
+| SVG 源码 / 单次导入图元 | 2 MiB / 1000 | 安全 SVG profile 预检 | 0.15 |
+| 矢量 scene 节点 / 层级 | 5000 / 32 | 每张地图 scene | 0.15 |
+| 矢量 path 段 / 文本 | 100000 / 1 MiB | 每张地图 scene | 0.15 |
+| 矢量批次 / 文档字节 | 10000 操作 / 16 MiB | 原子 scene 编辑 | 0.15 |
+| 临时几何投影点 | 200000 | 命中与控制柄投影，不持久化采样 | 0.15 |
+| 场景数值绝对值 | ≤1e9 且有限 | 局部/累计 affine、world bounds、viewport | 0.15 |
+| 矢量渲染实际并发 | ≤2 jobs | 所有图层与导入预览共享 | 0.15 |
+| 矢量 RGBA 工作缓冲与纹理合计 | 桌面128MiB / WASM64MiB | 分配前预留；不含字体/树/驱动或全部RSS | 0.15 |
+| 后台请求 JSON / 二进制快照 | 32 MiB / 128 MiB、10000项 | 活动文件与墓碑合计 | 0.15 |
+| v3 静态网站对象 | 2000；v1/v2仍500 | 显式公开选择 | 0.15 |
+| 静态网站输出 | 10000文件 / 128 MiB | 全站与ZIP原始内容，ZIP另受同额度 | 0.15 |
+| SVG release 批量耗时 | 1000简单图元 parse+plan+apply≤3s | 同机固定夹具，重复冷热测量 | 0.15 |
+| 世界站 release 构建耗时 | 2000对象 preview+build≤5s | 五轮fresh固定夹具 | 0.15 |
+| 5000 scene nodes CPU | P95≤33ms | release交互；headless与native证据分开 | 0.15 |
+| 长任务前台反馈 / 取消响应 | ≤250ms / ≤500ms | 无部分稿件、站点或陈旧提交 | 0.15 |
+
+0.15 行为安全上限与性能门是当前候选的明确验收条件，不因历史 debug 结果或较小夹具通过而放宽。RGBA 预算不代表渲染库内部合成总内存上限；组隔离和裁剪的额外工作集必须单独检查并在超限时明确拒绝。完整 scene、网站与后台快照的预算语义分别见 [vector-scene.md](vector-scene.md)、[reader-site.md](reader-site.md)、[workspace-snapshot.md](workspace-snapshot.md)。
 
 
 ## 独立文字标签（工具 0.5.0）（文字几何 v1）
