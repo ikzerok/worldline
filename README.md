@@ -1,6 +1,15 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 语言工具链。产品版本0.14.0提供既有语言与资料能力的显式预览/启用事务，以及实际条件证据的准确作者来源。能力计划检查全文、关键字解释变化、具体 required_features 与运行兼容影响，取消不改稿，确认仅修改内存。默认语言仍为1.9，最高1.13；本版不新增DSL，旧作品不自动升级。作者说明见[显式能力与完整表达示例](docs/explicit-capabilities.md)。
+面向世界设定与分支叙事创作的 Rust 语言工具链。0.15.0 开发候选增加原生矢量地图、受限 SVG 交换、完整静态世界站与对应 CLI / JSON-RPC 接口。默认语言仍为 1.9，最高 1.13；旧作品不自动升级，故事运行与存档契约不因地图或发布功能改变。
+
+当前仍在进行最终原生、Windows 与性能验收；真实 `file://` 离线浏览受工具安全策略限制，尚未完成验证。当前源码和构建不代表正式发行。完整变更与边界见 [CHANGELOG](CHANGELOG.md)，按任务查阅 [文档索引](docs/README.md)。
+
+## 0.15 使用入口
+
+- [原生矢量与 SVG](spec/vector-scene.md)：保留曲线、文字、组与变换；预览、原子编辑、显式迁移及安全交换
+- [静态世界站](spec/reader-site.md)：按对象、字段、地图图元、章节和附件分别授权，生成多页离线内容；可保存发布配置
+- [场景机器接口](spec/scene-protocol.md)：`wl scene` 与 `scene.*` 使用同一 core 计划；读者站沿用 `reader-export` / `reader.export.*`
+- [既有能力显式启用](docs/explicit-capabilities.md)：语言与资料能力继续先预览、后确认，取消不改稿
 
 ## 开始使用
 
@@ -14,6 +23,8 @@ cargo build --workspace --release --locked
 将整个作品目录作为参数，会递归分析全部 `.wl`，以根目录 world.wl 为入口。单文件参数适合独立示例，只读取入口及 include。所有引用都必须留在入口工作区中。
 
 ## 文档
+
+完整入口见 [按任务阅读](docs/README.md)；版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 - [从资料到可信重放](docs/author-route.md)：用[栖雪山站最小示例](examples/snowline-seeds/README.md)串起来源资料、偏序与倒叙、双路线、共享片段和安全改稿。
 
@@ -37,7 +48,7 @@ cargo build --workspace --release --locked
 |---|---|
 | core | 词法、解析、分析、文档缓冲和结构创作 API |
 | runtime | 演练状态机、选择、效果和存档 |
-| cli | wl：check / play / graph / timeline / catalog |
+| cli | wl：check / play / graph / timeline / catalog / scene / reader-export |
 | agent | wl-agent：stdio JSON-RPC 机器会话 |
 | spec | 完整语言与机器契约 |
 | docs | 教程与接入文档 |

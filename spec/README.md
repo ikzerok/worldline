@@ -1,6 +1,6 @@
 # worldline 语言规范
 
-语言真源文档,实现(`worldline/core`、`worldline/runtime`)以其为准。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.15.0 开发候选不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
@@ -15,8 +15,18 @@
 | [replay.md](replay.md) | 确定性叙事重放、检查点、条件解释与访问覆盖 |
 | [catalog.md](catalog.md) | 通用标签、独立锚点与反查、文件引用及工程打包 |
 | [presentation.md](presentation.md) | 地图、网络视图、展示文档、关系 DTO、命令边界与跨仓契约 |
+| [vector-scene.md](vector-scene.md) | 原生矢量模型、编辑事务、受限 SVG、viewport 裁剪、迁移与公开白名单 |
+| [scene-protocol.md](scene-protocol.md) | scene CLI/JSON-RPC、核心计划摘要、修订与失败边界 |
+| [reader-export.md](reader-export.md) | 静态阅读包 v1/v2、字段/章节/地图/附件的明确授权 |
+| [reader-site.md](reader-site.md) | v3 世界站、typed 页面、别名搜索、稳定路由、profile 与发布预算 |
+| [workspace-snapshot.md](workspace-snapshot.md) | 后台当前稿快照、只读/墓碑保真、有界传输与过期结果保护 |
+| [language-versions.md](language-versions.md) | 支持版本、显式能力预览/启用及兼容边界 |
+| [manuscript.md](manuscript.md) | 书稿章节、来源引用与正文边界 |
+| [templates.md](templates.md) | 内容模板与注册文档 |
+| [markdown-import.md](markdown-import.md) | 外部 Markdown 的预览、损失核对和应用 |
+| [localization.md](localization.md) | 显式本地化交换与原稿保护 |
 
-`presentation.md` 及其 [schemas](schemas/README.md) 是地图、展示文档和共同文件格式的唯一规范真源。
+地图与展示文档以 `presentation.md`、`vector-scene.md` 及其 [schemas](schemas/README.md) 为共同契约；[矢量场景 Schema](schemas/vector-scene.schema.json) 的形状检查不能替代引用、锁定、资源或事务验证。
 验证夹具位于 [examples](examples/README.md)，仅用于设计级 Schema/引用检查，不是可运行工程或产品资源。
 
 规范随工具发行包提供，无需在线文档；作品导出只保留工作区自身内容，不自动插入规范。语言运行示例位于仓库根 `examples/`，共同契约验证夹具位于本目录 `examples/`，集成测试位于 `runtime/tests/`。

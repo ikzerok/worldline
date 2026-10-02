@@ -74,6 +74,8 @@ apply_batch_with_control(&mut Project, &mut Revision, &ScenePlan,
     &mut dyn FnMut(SceneProgress) -> bool) -> Result<CommandResult, SceneError>
 ```
 
+expected_documents 的键按 Project 登记文档使用的路径身份规范化后比对，包括本机路径分隔符、当前目录片段与 Windows 设备前缀等价形式；不以原始 PathBuf 拼写判断是否缺少基线。多个键规范化为同一文档时返回 `SCENE_CONFLICT`，不能选择其中一个 hash；所有基线仍逐一验证，缺失、错误 hash、未注册或越界目标不能因规范化获准。原请求保留，摘要继续绑定原请求。
+
 preview 只读当前缓冲；一次 parse/plan/serialize，构造私有完整候选。apply 重新校验 revision、内容基线、文档 hash、磁盘保存基线及只读状态后一次提交内存，一个 undo record、一次展示修订；不逐图元改写整图。取消、失败、陈旧或磁盘冲突均零修改，不自动保存。
 
 ScenePlan 无 Deserialize，私有 path/before/after/baseline/normalized 字段序列化跳过。公开摘要为 map_id、affected_nodes、affected_refs、diagnostics、expected_revision、document_hash、after_hash、operation_count；可信内存 accessor 为 `document_path()->&Path`、`document_before()->&[u8]`、`document_after()->&[u8]`、`normalized_batch()->&SceneBatch`。

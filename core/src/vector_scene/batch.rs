@@ -74,6 +74,7 @@ pub fn preview_batch_with_control(
     if batch.operations.is_empty() || batch.operations.len() > limits.max_operations {
         return Err(super::validate::limit("批量操作数"));
     }
+    let batch_bytes = super::validate::serialized_size(&batch, limits.max_document_bytes)?;
     check(project, revision, &batch)?;
     let path = map_document_path(project, &batch.map_id)
         .map_err(|e| SceneError::new("SCENE_REFERENCE", e.to_string()))?;
@@ -81,7 +82,6 @@ pub fn preview_batch_with_control(
     if document.is_read_only() {
         return Err(SceneError::new("SCENE_FEATURE", "地图只读，不能编辑"));
     }
-    let batch_bytes = super::validate::serialized_size(&batch, limits.max_document_bytes)?;
     let before = document.bytes().to_vec();
     let mut working_bytes = before.len().saturating_add(batch_bytes);
     if before.len() > limits.max_document_bytes {
@@ -358,12 +358,13 @@ fn check(project: &Project, revision: Revision, batch: &SceneBatch) -> Result<()
     }
     let path = map_document_path(project, &batch.map_id)
         .map_err(|e| SceneError::new("SCENE_REFERENCE", e.to_string()))?;
-    if !batch.expected_documents.contains_key(&path) {
+    let expected_documents = normalized_documents(&batch.expected_documents)?;
+    if !expected_documents.contains_key(&path) {
         return Err(SceneError::new("SCENE_STALE", "缺少地图文档hash基线"));
     }
-    for (path, expected) in &batch.expected_documents {
+    for (path, expected) in expected_documents {
         let document = project
-            .authoring_document(path)
+            .authoring_document(&path)
             .map_err(|e| SceneError::new("SCENE_CONFLICT", e))?;
         if document.is_read_only() {
             return Err(SceneError::new("SCENE_FEATURE", "计划涉及只读文档"));
@@ -376,6 +377,22 @@ fn check(project: &Project, revision: Revision, batch: &SceneBatch) -> Result<()
         .checkpoint_disk_baselines_match()
         .map_err(|e| SceneError::new("SCENE_CONFLICT", e))
 }
+pub(super) fn normalized_documents(
+    documents: &BTreeMap<PathBuf, String>,
+) -> Result<BTreeMap<PathBuf, &String>, SceneError> {
+    let mut normalized = BTreeMap::new();
+    for (path, hash) in documents {
+        let path = crate::compiler::source_path(path);
+        if normalized.insert(path, hash).is_some() {
+            return Err(SceneError::new(
+                "SCENE_CONFLICT",
+                "多个文档基线路径指向同一登记文档",
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
 fn registry(project: &Project) -> Result<crate::workspace_documents::Registry, SceneError> {
     let path = crate::workspace_documents::manifest_path(&project.root);
     Ok(crate::workspace_documents::parse_registry(

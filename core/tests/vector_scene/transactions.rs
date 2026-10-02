@@ -193,7 +193,10 @@ fn entity_creation_and_binding_commit_together() {
     let request = SceneEntityRequest {
         expected_baseline: p.content_baseline(),
         expected_revision: r,
-        expected_documents: baseline(&p),
+        expected_documents: BTreeMap::from([(
+            p.root.join(".world/maps/../maps/map.json"),
+            baseline(&p).into_values().next().unwrap(),
+        )]),
         map_id: "map".into(),
         node_id: "a".into(),
         path: p.entry.clone(),
@@ -247,4 +250,49 @@ fn modified_public_plan_summary_is_rejected_without_commit() {
         "SCENE_STALE"
     );
     assert_eq!(before, p.content_baseline());
+}
+
+#[test]
+fn document_baseline_paths_use_registered_identity_and_reject_alias_duplicates() {
+    let (mut p, mut r) = project("path-identity");
+    let initial = p.content_baseline();
+    let mut request = batch(&p, r, vec![SceneOp::EnableScene]);
+    let hash = request.expected_documents.pop_first().unwrap().1;
+    let alias = p.root.join(".world/maps/../maps/map.json");
+    request.expected_documents.insert(alias, hash.clone());
+    let plan = preview_batch(&p, r, request.clone()).unwrap();
+    assert_eq!(initial, p.content_baseline());
+    request.expected_documents.insert(path(&p), hash);
+    assert_eq!(
+        preview_batch(&p, r, request.clone()).unwrap_err().code,
+        "SCENE_CONFLICT"
+    );
+    assert_eq!(initial, p.content_baseline());
+    request.expected_documents.remove(&path(&p));
+    *request.expected_documents.values_mut().next().unwrap() = "wrong-hash".into();
+    assert_eq!(
+        preview_batch(&p, r, request).unwrap_err().code,
+        "SCENE_STALE"
+    );
+    assert_eq!(initial, p.content_baseline());
+    apply_batch(&mut p, &mut r, &plan).unwrap();
+    assert!(map(&p).scene.is_some());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_verbatim_document_baseline_keeps_the_same_registered_identity() {
+    let (mut p, mut r) = project("windows-path-identity");
+    p.save().unwrap();
+    let mut request = batch(&p, r, vec![SceneOp::EnableScene]);
+    let (native, hash) = request.expected_documents.pop_first().unwrap();
+    let verbatim = std::fs::canonicalize(native).unwrap();
+    assert!(verbatim.to_string_lossy().starts_with(r"\\?\"));
+    request.expected_documents.insert(verbatim, hash);
+    let before = p.content_baseline();
+    let plan = preview_batch(&p, r, request).unwrap();
+    assert_eq!(before, p.content_baseline());
+    apply_batch(&mut p, &mut r, &plan).unwrap();
+    assert!(map(&p).scene.is_some());
+    std::fs::remove_dir_all(p.root).unwrap();
 }

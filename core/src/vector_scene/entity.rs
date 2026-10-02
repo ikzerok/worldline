@@ -69,7 +69,8 @@ pub fn preview_entity_binding(
     let source =
         crate::authoring_intents::require_active_source(project, &request.path).map_err(failed)?;
     let path = map_document_path(project, &request.map_id).map_err(|e| failed(e.to_string()))?;
-    if request.expected_documents.get(&path)
+    let expected_documents = super::batch::normalized_documents(&request.expected_documents)?;
+    if expected_documents.get(&path).copied()
         != Some(&document_hash(
             project.authoring_document(&path).map_err(failed)?.bytes(),
         ))
