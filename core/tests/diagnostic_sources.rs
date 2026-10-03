@@ -299,3 +299,40 @@ fn missing_assignment_and_divert_targets_keep_recovery_facts_as_context() {
     );
     expect("event start\n  ->\n", "A101", "->", Role::Statement);
 }
+
+#[test]
+fn escaped_choice_links_are_mapped_once_for_both_diagnostics_and_wiki() {
+    let source = r#"character hero as "旅人"
+event start
+  choice "前\"缀🔔 [[character:hero|那位\"人]] 末尾"
+    -> END
+"#;
+    let result = compile_source_with_options("story.wl", source, CompileOptions::v1_13());
+    assert!(!result.has_errors(), "{:?}", result.diagnostics);
+    let index = worldline_core::wiki::KeywordIndex::new(&result);
+    let hits: Vec<_> = index
+        .occurrences(&worldline_core::TargetRef::new("character", "hero"))
+        .iter()
+        .filter(|hit| hit.line == 3)
+        .collect();
+    assert_eq!(hits.len(), 1);
+    let link = result
+        .analysis
+        .catalog
+        .text_links
+        .iter()
+        .find(|link| link.line == 3)
+        .unwrap();
+    assert_eq!(hits[0].column, link.column);
+    assert_eq!(
+        hits[0].preview.chars().nth(hits[0].column as usize - 1),
+        Some('[')
+    );
+    let invalid = source.replace("character:hero", "character:missing");
+    expect(
+        &invalid,
+        "A218",
+        r#"[[character:missing|那位\"人]]"#,
+        Role::Target,
+    );
+}
