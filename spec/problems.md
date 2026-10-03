@@ -26,7 +26,7 @@ export 操作级检查，明确不在此报告范围内。
 所有以下公共 DTO 均实现 Clone/Debug/Serialize/Deserialize，拥有字符串而不保存
 `&'static str`，适于原生和 WASM 后台 worker 传输。枚举 JSON 使用 snake_case。
 
-- `ProblemsReport { schema_version:u32, report_version:String, content_baseline:String,
+- `ProblemsReport { schema_version:u32, report_version:String, content_baseline:String, source_observation:String,
   language_version:String, content_has_errors:bool, read_only:bool, complete:bool,
   truncated:bool, reasons:Vec<String>, coverage:Vec<ProblemCoverage>, entries:Vec<ProblemEntry>,
   related:BTreeMap<String,Vec<ProblemLocation>>, limits:ProblemsOptions, compile_count:u32 }`
@@ -60,6 +60,7 @@ export 操作级检查，明确不在此报告范围内。
 API 位于 `worldline_core::problems`（类型同时可从 core 根导入）：
 
 ```
+Project::problems_observation_key(&self) -> Result<String, ProblemsError>
 Project::problems_report(&self, options: &ProblemsOptions) -> Result<ProblemsReport, ProblemsError>
 Project::problems_report_with_content(&self, content: &CompileResult,
     expected_baseline: &str, options: &ProblemsOptions) -> Result<ProblemsReport, ProblemsError>
@@ -110,6 +111,16 @@ report_version 是 schema、基线、覆盖、问题与预算的确定性摘要�
 因此不得仅凭旧 ID、数组序号、旧行号、同文案或消失宣称“已解决”。若 UI 独立有可靠
 修复确认，则仍须同来源新基线完整重检且无截断；过滤变化不提供此证据。
 
+外部可读性观测：`problems_observation_key` 最多枚举10000个工作区文件，遵守现有
+workspace_files 的链接/联接和目录边界拒绝；不读普通文件全文、不编译。摘要绑定工作区
+root身份、非受管普通文件的相对路径和本次 readable 状态、已知恢复冲突路径。受管
+源码/JSON由 content_baseline 覆盖，不因未保存新文件在磁盘尚不存在而误失效。尚不存在
+的全新草稿 root 按空磁盘稳定处理；其他枚举失败返回 OBSERVATION_UNAVAILABLE，报告
+保留可检查缓冲并标不完整，不能把失败当空磁盘。WASM仅观察已授权挂载快照，live及
+worker均使用 `/world`；原生worker保留原root，不能任意改root后比较。该摘要不承诺
+附件内容摘要或实时权限，仅给缓存失效依据。report.source_observation 纳入report_version；
+RPC缓存须比较 baseline/options/此key，位置守卫也拒绝不匹配。
+
 ## 4. 有界输出与性能验收（实现前冻结）
 
 ProblemsOptions 使用 deny_unknown_fields，默认值/硬上限如下；调用方只能降低：
@@ -140,7 +151,7 @@ release、其他平台未实测不得外推，offscreen不等于真实GUI/IME。
 `--options-json`；`--related ID` 切换相关位置页且不允许非空 query。
 CLI 每次进程重建同输入确定性报告；游标基线变化必须拒绝。JSON 输出
 `{ok:true,report:{schema_version,report_version,content_baseline,language_version,
-content_has_errors,read_only,complete,truncated,reasons,coverage,limits,compile_count},page}`，
+content_has_errors,read_only,complete,truncated,reasons,coverage,limits,compile_count,source_observation},page}`，
 不返回完整 entries/related 巨量数组；问题存在仍 ok:true（读取成功）。退出码：无错误且
 完整为0；报告含任何 error 或不完整为1；协议/用法/打开/预算/游标失败为2。
 

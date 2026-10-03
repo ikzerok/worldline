@@ -3,6 +3,11 @@ use super::*;
 impl Project {
     /// 返回 builtin 与清单注册的工程模板；坏文档只产生局部诊断，不中断其他项。
     pub fn template_index(&self) -> ProjectTemplateIndex {
+        self.template_index_with_content(&self.compile_current())
+    }
+
+    /// 复用同一活动内容快照，不重新编译。
+    pub fn template_index_with_content(&self, content: &CompileResult) -> ProjectTemplateIndex {
         let builtins = crate::content_templates::builtin_templates()
             .templates
             .clone();
@@ -22,7 +27,7 @@ impl Project {
         let root_has_feature = registry
             .required_features
             .contains(PROJECT_TEMPLATE_REQUIRED_FEATURE);
-        let content = self.compile_current();
+
         let mut projects = BTreeMap::new();
         let mut diagnostics = Vec::new();
         for (id, path) in &registry.templates {
@@ -41,7 +46,7 @@ impl Project {
                 &registry.required_features,
                 registered_read_only,
                 self.language_version_kind(),
-                &content,
+                content,
             );
             if !root_has_feature {
                 entry.error(

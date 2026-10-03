@@ -1,5 +1,6 @@
 //! Explicitly selected localization exchange; see `spec/localization.md`.
 
+mod document;
 mod export;
 mod import;
 use serde::{Deserialize, Serialize};

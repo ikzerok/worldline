@@ -2,12 +2,21 @@ use super::index::valid_id;
 use super::*;
 use crate::project::{AuthoringDocument, Project};
 use crate::workspace_documents::{manifest_path, parse_registry, parse_unique_json};
+use crate::CompileResult;
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 
 impl Project {
     /// 返回当前缓冲中所有清单注册书稿的只读索引；不会刷新工程或编译写入缓冲。
     pub fn manuscript_indices(&self) -> BTreeMap<String, ManuscriptIndex> {
+        self.manuscript_indices_with_content(&self.compile_current())
+    }
+
+    /// 复用同一活动内容快照，不重新编译。
+    pub fn manuscript_indices_with_content(
+        &self,
+        content: &CompileResult,
+    ) -> BTreeMap<String, ManuscriptIndex> {
         let manifest = manifest_path(&self.root);
         let Some(manifest_document) = self
             .authoring_documents
@@ -18,7 +27,7 @@ impl Project {
         };
         let registry = parse_registry(&self.root, manifest_document.bytes());
         let required_features: Vec<_> = registry.required_features.iter().cloned().collect();
-        let content = self.compile_current();
+
         registry
             .manuscripts
             .iter()
@@ -38,7 +47,7 @@ impl Project {
                         id,
                         &required_features,
                         read_only,
-                        &content,
+                        content,
                     ),
                 )
             })
