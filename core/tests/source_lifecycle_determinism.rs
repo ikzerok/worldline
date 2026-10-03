@@ -206,7 +206,7 @@ fn source_move_process_probe() {
 fn same_line_duplicate_references_and_legacy_relations_survive_move() {
     let ws = Workspace::new(&[
         ("world.wl", "include \"people.wl\"\nevent entry with lin, ling\n  [[file:people.wl|人]] [[file:people.wl|人]]\n  -> END\n"),
-        ("people.wl", "character lin as \"林\"\n  relation ling as \"伙伴\"\n  relation ling as \"伙伴\"\ncharacter ling as \"绫\"\n  relation lin as \"朋友\"\n"),
+        ("people.wl", "character lin as \"林\"\n  relation ling as \"伙伴\"\n  relation ling as \"同袍\"\ncharacter ling as \"绫\"\n  relation lin as \"朋友\"\n"),
     ]);
     let mut project = ws.open();
     let before = checked_compile(&mut project);
@@ -341,5 +341,34 @@ fn character_and_entity_rename_and_reader_v1_v3_remain_stable_for_100_runs() {
                 "v{schema_version} leaked {excluded}"
             );
         }
+    }
+}
+
+#[test]
+fn move_that_changes_the_implicit_default_entry_is_zero_write_rejected() {
+    let ws = Workspace::new(&[
+        ("world.wl", "// 默认事件由剩余源码顺序选择\n"),
+        ("a.wl", "event first\n  -> END\n"),
+        ("b.wl", "event second\n  -> END\n"),
+    ]);
+    let mut project = ws.open();
+    assert_eq!(checked_compile(&mut project).program.entry, "first");
+    let baseline = project.content_baseline();
+    let sources = project.sources();
+    let error = project
+        .preview_source_lifecycle(&Request::Move {
+            from: "a.wl".into(),
+            to: "z.wl".into(),
+        })
+        .unwrap_err();
+    assert!(
+        error.contains("加载顺序") || error.contains("默认入口"),
+        "{error}"
+    );
+    assert_eq!(project.content_baseline(), baseline);
+    assert_eq!(project.sources(), sources);
+    assert!(!ws.0.join("z.wl").exists());
+    for (path, text) in sources {
+        assert_eq!(fs::read(path).unwrap(), text.as_bytes());
     }
 }

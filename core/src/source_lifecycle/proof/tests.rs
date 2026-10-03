@@ -142,3 +142,52 @@ fn mapped_adjacency_keeps_parallel_and_self_relation_multiplicity() {
         normalized_catalog(&after, "z.wl", "z.wl").unwrap()
     );
 }
+
+#[test]
+fn proof_itself_rejects_real_target_choice_and_effect_order_changes() {
+    let root = std::env::temp_dir().join(format!("wl-proof-order-{}", std::process::id()));
+    let mut original = Project::new(&root);
+    let entry = original.entry.clone();
+    original.documents.retain(|path, _| path == &entry);
+    let source = "character a\ncharacter b\ntag ready\nstate mood on character a with ready\nevent entry\n  effect on enter\n    become mood remove ready\n    become mood add ready\n  [[character:a|人]]\n  choice \"甲\"\n    -> END\n  choice \"乙\"\n    -> END\n";
+    original.set_text(&entry, source.into()).unwrap();
+    let before = original.compile_current();
+    assert!(!before.has_errors(), "{:?}", before.diagnostics);
+    let variants = [
+        (source.replace("[[character:a|", "[[character:b|"), false),
+        (
+            source
+                .replace("choice \"甲\"", "choice \"TEMP\"")
+                .replace("choice \"乙\"", "choice \"甲\"")
+                .replace("choice \"TEMP\"", "choice \"乙\""),
+            true,
+        ),
+        (
+            source.replace(
+                "remove ready\n    become mood add ready",
+                "add ready\n    become mood remove ready",
+            ),
+            true,
+        ),
+    ];
+    for (source, runtime_change) in variants {
+        let mut candidate = original.clone();
+        candidate.set_text(&entry, source).unwrap();
+        let after = candidate.compile_current();
+        assert!(!after.has_errors(), "{:?}", after.diagnostics);
+        assert_eq!(before.program.files, after.program.files);
+        assert_eq!(
+            before.analysis.fingerprint != after.analysis.fingerprint,
+            runtime_change
+        );
+        let error = equivalent(&original, &candidate, &before, &entry, &entry).unwrap_err();
+        assert!(
+            error.contains(if runtime_change {
+                "指纹"
+            } else {
+                "正式引用目标"
+            }),
+            "{error}"
+        );
+    }
+}
