@@ -20,5 +20,7 @@ pub fn analyze(program: &Program, parse_diags: Vec<Diagnostic>) -> (Analysis, Ve
 /// 显式开始试玩时追加到编译诊断的只读提示；普通历史资料检查不调用。
 /// Program 与 Analysis 必须来自同一次编译；只检查当前 Program.entry，不改指纹。
 pub fn execution_diagnostics(program: &Program, analysis: &Analysis) -> Vec<Diagnostic> {
-    builder::execution_diagnostics(program, analysis)
+    let mut diagnostics = builder::execution_diagnostics(program, analysis);
+    program.source_provenance.resolve_diagnostics(&mut diagnostics);
+    diagnostics
 }

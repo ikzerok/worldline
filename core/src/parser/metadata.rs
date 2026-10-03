@@ -12,7 +12,7 @@ impl<'a> Parser<'a> {
         let mut description = String::new();
         let mut has_description = false;
         let mut block_indent = None;
-        while let Some(line) = self.peek().cloned() {
+        while let Some(line) = self.peek() {
             if line.indent <= indent || line.file != file {
                 break;
             }
@@ -31,7 +31,7 @@ impl<'a> Parser<'a> {
                     value_src,
                     loc,
                 } => {
-                    let expr = parse_expr_src(&value_src, file, line.no, 1, self.diags);
+                    let expr = self.sourced_expr(&value_src, file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
                     match parse_property_value(expr, file, self.options()) {
                         Ok(value) => {
                             properties.push(Property { name, value, loc });
@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
     ) {
         let mut block_indent = None;
         let mut seen_fields = std::collections::HashSet::new();
-        while let Some(line) = self.peek().cloned() {
+        while let Some(line) = self.peek() {
             if line.indent <= indent || line.file != file {
                 break;
             }
@@ -187,7 +187,7 @@ impl<'a> Parser<'a> {
         let mut properties = Vec::new();
         let mut block_indent = None;
         let mut has_description = false;
-        while let Some(line) = self.peek().cloned() {
+        while let Some(line) = self.peek() {
             if line.indent <= indent || line.file != file {
                 break;
             }
@@ -219,7 +219,7 @@ impl<'a> Parser<'a> {
                     value_src,
                     loc,
                 } => {
-                    let expr = parse_expr_src(&value_src, file, line.no, 1, self.diags);
+                    let expr = self.sourced_expr(&value_src, file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
                     match parse_property_value(expr, file, self.options()) {
                         Ok(value) => {
                             if properties

@@ -115,6 +115,7 @@ pub(super) fn analyze(
     crate::schemas::add_binding_references(program, &mut catalog);
     let mut all = std::mem::take(&mut ctx.diags);
     all.append(&mut diags);
+    program.source_provenance.resolve_diagnostics(&mut all);
     sort_diagnostics(&mut all);
     timeline.mark_incomplete(&all);
 

@@ -16,9 +16,9 @@ pub(crate) fn static_ref_id_range(source: &str, kind: &str, id: &str) -> Option<
         return None;
     }
     let tokens = lex_expr(source, "rename.wl", 1, 0, &mut diagnostics);
-    let (_, column) = tokens
+    let (_, column, _) = tokens
         .iter()
-        .filter(|(token, _)| matches!(token, Tok::Str(_)))
+        .filter(|(token, _, _)| matches!(token, Tok::Str(_)))
         .nth(1)?;
     let start = (*column as usize).checked_sub(1)?;
     let chars: Vec<_> = source.chars().collect();

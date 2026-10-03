@@ -2,7 +2,7 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
-use crate::expression::{parse_expr_src, parse_interpolations_with_options};
+use crate::source_provenance::{ExpressionSlot, SourceProvenance};
 use crate::lexer::{Line, LineKind};
 mod language;
 mod metadata;
@@ -10,6 +10,7 @@ mod program;
 mod schemas;
 mod statements;
 mod text;
+mod source;
 pub(crate) use text::split_text_decorations;
 
 fn relation_target(file: &str, kind: &str, id: &str) -> crate::catalog::TargetRef {
@@ -128,6 +129,7 @@ pub struct Parser<'a> {
     allow_object_refs: bool,
     allow_character_refs: bool,
     allow_localization_ids: bool,
+    sources: SourceProvenance,
 }
 
 impl<'a> Parser<'a> {
@@ -149,15 +151,19 @@ impl<'a> Parser<'a> {
             allow_object_refs: options.object_refs,
             allow_character_refs: options.character_refs,
             allow_localization_ids: options.localization_ids,
+            sources: SourceProvenance {
+                statements: lines.iter().map(|line| ((line.file.clone(), line.no), line.statement_source())).collect(),
+                ..SourceProvenance::default()
+            },
         }
     }
 
-    fn peek(&self) -> Option<&'a Line> {
-        self.lines.get(self.pos)
+    fn peek(&self) -> Option<Line> {
+        self.lines.get(self.pos).map(Line::physical)
     }
 
-    fn next(&mut self) -> Option<&'a Line> {
-        let l = self.lines.get(self.pos);
+    fn next(&mut self) -> Option<Line> {
+        let l = self.lines.get(self.pos).map(Line::physical);
         if l.is_some() {
             self.pos += 1;
         }

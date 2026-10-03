@@ -70,7 +70,7 @@ impl Parser<'_> {
                     self.language_error(file, loc, "未知规则返回类型");
                     return;
                 };
-                let expr = self.language_expr(keyword, source, expr.trim(), loc, file);
+                let expr = self.language_expr(source, expr.trim(), loc, file, ExpressionSlot::Rule);
                 program.rules.push(RuleDecl {
                     name,
                     parameters,
@@ -119,7 +119,7 @@ impl Parser<'_> {
                 }
                 Stmt::Return(loc)
             }
-            "call" => match self.language_expr(keyword, source, source, loc, file) {
+            "call" => match self.language_expr(source, source, loc, file, ExpressionSlot::Call) {
                 Expr::Call { name, args, .. } => Stmt::Call(CallStmt { name, args, loc }),
                 _ => {
                     self.language_error(file, loc, "call 需要片段名及括号参数");
@@ -145,7 +145,7 @@ impl Parser<'_> {
                 Stmt::Local(LocalStmt {
                     name: name.trim().into(),
                     kind,
-                    expr: self.language_expr(keyword, source, expr.trim(), loc, file),
+                    expr: self.language_expr(source, expr.trim(), loc, file, ExpressionSlot::Value),
                     loc,
                 })
             }
@@ -160,8 +160,8 @@ impl Parser<'_> {
                     return fallback();
                 };
                 Stmt::DynamicChange(DynamicChangeStmt {
-                    state: self.language_expr(keyword, source, state.trim(), loc, file),
-                    tags: self.language_expr(keyword, source, tags.trim(), loc, file),
+                    state: self.language_expr(source, state.trim(), loc, file, ExpressionSlot::State),
+                    tags: self.language_expr(source, tags.trim(), loc, file, ExpressionSlot::Tags),
                     kind,
                     loc,
                 })
@@ -174,18 +174,17 @@ impl Parser<'_> {
     }
     fn language_expr(
         &mut self,
-        keyword: &str,
         source: &str,
         expr: &str,
         loc: Loc,
         file: &str,
+        slot: ExpressionSlot,
     ) -> Expr {
         let start = (expr.as_ptr() as usize)
             .saturating_sub(source.as_ptr() as usize)
             .min(source.len());
-        let base =
-            loc.column + keyword.chars().count() as u32 + source[..start].chars().count() as u32;
-        parse_expr_src(expr, file, loc.line, base, self.diags)
+        let base = self.source_remainder(file, loc.line) + source[..start].chars().count() as u32;
+        self.sourced_expr(expr, file, loc.line, loc.line, base, slot)
     }
     fn parse_say(&mut self, source: &str, loc: Loc, file: &str) -> Stmt {
         let (speaker, rest) = source
@@ -228,14 +227,9 @@ impl Parser<'_> {
         if !valid_name(speaker) {
             self.language_error(file, loc, "say 需要角色ID");
         }
-        let parts = crate::expression::parse_quoted_interpolations_with_options(
-            &raw,
-            file,
-            loc.line,
-            loc.column + speaker.chars().count() as u32 + 5,
-            self.diags,
-            self.options(),
-        );
+        let base = self.source_remainder(file, loc.line)
+            + source[..source.len() - rest.trim_start().len()].chars().count() as u32 + 1;
+        let parts = self.sourced_text(&raw, file, loc.line, base, true);
         Stmt::Say(SayStmt {
             speaker: speaker.into(),
             text: TextStmt {

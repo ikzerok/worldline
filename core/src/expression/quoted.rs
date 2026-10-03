@@ -9,9 +9,19 @@ pub fn parse_quoted_interpolations_with_options(
     diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
 ) -> Vec<TextPart> {
-    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new())
+    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut Vec::new())
 }
 
+pub(crate) fn parse_with_sources(
+    raw: &str, file: &str, line: u32, base_col: u32, diags: &mut Vec<Diagnostic>,
+    options: crate::CompileOptions,
+) -> (Vec<TextPart>, Vec<ExpressionSource>) {
+    let mut sources = Vec::new();
+    let parts = parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut sources);
+    (parts, sources)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_with_ranges(
     raw: &str,
     file: &str,
@@ -20,6 +30,7 @@ pub(super) fn parse_with_ranges(
     diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
     ranges: &mut Vec<std::ops::Range<usize>>,
+    sources: &mut Vec<ExpressionSource>,
 ) -> Vec<TextPart> {
     let chars: Vec<char> = raw.chars().collect();
     let mut normalized = String::new();
@@ -104,7 +115,8 @@ pub(super) fn parse_with_ranges(
     positions.push(chars.len());
     let diagnostics_start = diags.len();
     let mut parts =
-        super::text::parse_with_ranges(&normalized, file, line, base_col, diags, options, ranges);
+        super::text::parse_with_ranges(&normalized, file, line, base_col, diags, options, ranges, sources);
+    for source in sources.iter_mut() { source.map_boundaries(base_col, &positions); }
     for range in ranges.iter_mut() {
         range.start = positions[range.start];
         range.end = positions[range.end];
@@ -117,21 +129,19 @@ pub(super) fn parse_with_ranges(
                 link.id_end = positions.get(link.id_end).copied().unwrap_or(chars.len());
                 link.start = positions.get(link.start).copied().unwrap_or(chars.len());
                 link.end = positions.get(link.end).copied().unwrap_or(chars.len());
-                link.column = base_col + link.start as u32;
+                link.column = base_col + link.start as u32 + 1;
             }
             _ => {}
         }
     }
     for diagnostic in &mut diags[diagnostics_start..] {
-        if diagnostic.span.line == line && diagnostic.span.column > base_col {
-            let offset = (diagnostic.span.column - base_col - 1) as usize;
-            diagnostic.span.column =
-                base_col + positions.get(offset).copied().unwrap_or(chars.len()) as u32 + 1;
+        if diagnostic.span.line == line {
+            crate::source_provenance::map_span(&mut diagnostic.span, base_col, &positions);
         }
     }
     parts
 }
-fn remap_expr(expr: &mut Expr, base: u32, positions: &[usize]) {
+pub(super) fn remap_expr(expr: &mut Expr, base: u32, positions: &[usize]) {
     match expr {
         Expr::Var { loc, .. } => remap_loc(loc, base, positions),
         Expr::Call { loc, args, .. } => {
@@ -189,4 +199,21 @@ pub(crate) fn static_literal_ranges(raw: &str) -> Result<Vec<std::ops::Range<usi
         at += 1;
     }
     Ok(ranges)
+}
+
+/// 已解码 choice 标签的原稿边界映射；不再次解码或改变现有文本语义。
+pub(crate) fn remap_parts(parts: &mut [TextPart], base: u32, positions: &[usize]) {
+    for part in parts {
+        match part {
+            TextPart::Expr(expr) => remap_expr(expr, base, positions),
+            TextPart::Link(link) => {
+                link.start = positions[link.start];
+                link.end = positions[link.end];
+                link.id_start = positions[link.id_start];
+                link.id_end = positions[link.id_end];
+                link.column = base + link.start as u32 + 1;
+            }
+            _ => {}
+        }
+    }
 }

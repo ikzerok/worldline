@@ -4,6 +4,8 @@
 use crate::ast::Loc;
 use crate::diagnostic::{Diagnostic, Span};
 mod classify;
+mod source;
+pub(crate) use source::LineSource;
 mod identity;
 pub(crate) use identity::path_source_spans;
 pub use identity::{identity_source_spans, IdentitySourceSpan};
@@ -17,6 +19,7 @@ pub struct Line {
     pub no: u32,
     pub indent: u32,
     pub kind: LineKind,
+    pub(crate) source: LineSource,
 }
 
 #[derive(Debug, Clone)]
@@ -469,13 +472,16 @@ pub fn lex_source_with_options(
         let mut chars: Vec<char> = Vec::new();
         let mut leading = true;
         let mut bad_tab = false;
+        let mut physical_base = 0u32;
         for c in raw_line.chars() {
             if leading && c == ' ' {
                 indent += 1;
+                physical_base += 1;
                 continue;
             }
             if leading && c == '\t' {
                 bad_tab = true;
+                physical_base += 1;
                 continue;
             }
             leading = false;
@@ -498,12 +504,19 @@ pub fn lex_source_with_options(
             continue;
         }
         let chars: Vec<char> = content_trim.chars().collect();
-        let kind = classify::classify(file, no, &chars, diags, options);
+        let mut source = LineSource { base: physical_base, length: chars.len() as u32, ..LineSource::default() };
+        let diagnostics_start = diags.len();
+        let kind = classify::classify(file, no, &chars, diags, options, &mut source);
+        for diagnostic in &mut diags[diagnostics_start..] {
+            diagnostic.span = Span::new(no, source.base + 1, source.length);
+            diagnostic.source_role = Some(crate::diagnostic::DiagnosticSourceRole::Statement);
+        }
         lines.push(Line {
             file: file.to_string(),
             no,
             indent,
             kind,
+            source,
         });
     }
     lines

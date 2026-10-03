@@ -22,7 +22,7 @@ impl<'a> Parser<'a> {
         }
         let mut schema = crate::schemas::parse::declaration(source, file, loc, self.diags);
         let mut block_indent = None;
-        while let Some(line) = self.peek().cloned() {
+        while let Some(line) = self.peek() {
             if line.indent <= indent || line.file != file {
                 break;
             }

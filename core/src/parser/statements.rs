@@ -41,7 +41,7 @@ impl<'a> Parser<'a> {
             if line.indent != block_indent {
                 self.diags.push(Diagnostic::error(
                     "P002",
-                    &self.file_of(line),
+                    &self.file_of(&line),
                     Span::new(line.no, line.indent + 1, 1),
                     format!("缩进不一致:同一块内应保持 {block_indent} 个空格"),
                 ));
@@ -57,7 +57,7 @@ impl<'a> Parser<'a> {
 
     fn parse_stmt(&mut self, indent: u32) -> Stmt {
         let line = self.next().expect("parse_stmt 调用前已确认存在");
-        let file = self.file_of(line);
+        let file = self.file_of(&line);
         match line.kind.clone() {
             LineKind::Schema112 { loc, .. } => {
                 self.diags.push(Diagnostic::error(
@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
             } => self.parse_language_statement(
                 &keyword,
                 &source,
-                Loc::new(loc.line, loc.column + indent),
+                loc,
                 &file,
             ),
             LineKind::Text { content, loc } => {
@@ -89,14 +89,7 @@ impl<'a> Parser<'a> {
                 let options = self.options();
                 let (tags, localization_id) =
                     extract_localization_id(tags, &file, loc, options.localization_ids, self.diags);
-                let parts = parse_interpolations_with_options(
-                    &text_part,
-                    &file,
-                    line.no,
-                    indent + 1,
-                    self.diags,
-                    options,
-                );
+                let parts = self.sourced_text(&text_part, &file, line.no, line.source.base + line.source.text, false);
                 Stmt::Text(TextStmt {
                     parts,
                     glue,
@@ -130,27 +123,13 @@ impl<'a> Parser<'a> {
                 disabled_span: _,
                 localization_id,
                 loc,
-                label_span,
+                label_span: _,
             } => {
-                let label = parse_interpolations_with_options(
-                    &label_raw,
-                    &file,
-                    line.no,
-                    indent + label_span.column,
-                    self.diags,
-                    self.options(),
-                );
-                let cond = cond_src.map(|src| {
-                    parse_expr_src(
-                        &src,
-                        &file,
-                        line.no,
-                        label_span.column + label_raw.chars().count() as u32 + 4,
-                        self.diags,
-                    )
-                });
-                let enable = enable_src
-                    .map(|src| parse_expr_src(&src, &file, line.no, label_span.column, self.diags));
+                let label = self.sourced_label(&label_raw, &line);
+                let cond = cond_src.map(|src| self.sourced_expr(&src, &file, line.no, line.no,
+                    line.source.base + line.source.condition, ExpressionSlot::Condition(0)));
+                let enable = enable_src.map(|src| self.sourced_expr(&src, &file, line.no, line.no,
+                    line.source.base + line.source.enable, ExpressionSlot::Enable));
                 let body = self.parse_block(indent, &file, false);
                 Stmt::Choice(ChoiceStmt {
                     label,
@@ -165,11 +144,11 @@ impl<'a> Parser<'a> {
                 })
             }
             LineKind::If { cond_src, loc } => {
-                let cond = parse_expr_src(&cond_src, &file, line.no, loc.column + 2, self.diags);
+                let cond = self.sourced_expr(&cond_src, &file, line.no, line.no, line.source.base + line.source.condition, ExpressionSlot::Condition(0));
                 let body = self.parse_block(indent, &file, true);
                 let mut branches = vec![(Some(cond), body)];
                 // 链式 else if / else:必须与 if 同缩进
-                while let Some(next_line) = self.peek().cloned() {
+                while let Some(next_line) = self.peek() {
                     if next_line.indent != indent {
                         break;
                     }
@@ -177,13 +156,8 @@ impl<'a> Parser<'a> {
                         LineKind::ElseIf { cond_src, .. } => {
                             let cond_src = cond_src.clone();
                             self.next();
-                            let c = parse_expr_src(
-                                &cond_src,
-                                &file,
-                                next_line.no,
-                                loc.column + 6,
-                                self.diags,
-                            );
+                            let c = self.sourced_expr(&cond_src, &file, next_line.no, line.no,
+                                next_line.source.base + next_line.source.condition, ExpressionSlot::Condition(branches.len() as u32));
                             let b = self.parse_block(indent, &file, true);
                             branches.push((Some(c), b));
                         }
@@ -234,13 +208,7 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = parse_expr_src(
-                    &expr_src,
-                    &file,
-                    line.no,
-                    name_span.column + name.chars().count() as u32 + 1,
-                    self.diags,
-                );
+                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
                 Stmt::Let(LetStmt {
                     name,
                     expr,
@@ -255,13 +223,7 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = parse_expr_src(
-                    &expr_src,
-                    &file,
-                    line.no,
-                    name_span.column + name.chars().count() as u32 + 1,
-                    self.diags,
-                );
+                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
                 Stmt::Let(LetStmt {
                     name,
                     expr,
@@ -276,13 +238,7 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = parse_expr_src(
-                    &expr_src,
-                    &file,
-                    line.no,
-                    name_span.column + name.chars().count() as u32 + 1,
-                    self.diags,
-                );
+                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
                 Stmt::Set(SetStmt {
                     name,
                     expr,
@@ -452,7 +408,7 @@ impl<'a> Parser<'a> {
                     _ => EffectWhen::Enter,
                 };
                 let cond = cond_src
-                    .map(|src| parse_expr_src(&src, &file, line.no, loc.column + 6, self.diags));
+                    .map(|src| self.sourced_expr(&src, &file, line.no, line.no, line.source.base + line.source.condition, ExpressionSlot::Condition(0)));
                 let actions = self.parse_effect_actions(indent, &file);
                 Stmt::Effect(EffectBlock {
                     when,
@@ -493,7 +449,7 @@ impl<'a> Parser<'a> {
             if line.indent != block_indent {
                 self.diags.push(Diagnostic::error(
                     "P002",
-                    &self.file_of(line),
+                    &self.file_of(&line),
                     Span::new(line.no, line.indent + 1, 1),
                     format!("缩进不一致:同一效果块内应保持 {block_indent} 个空格"),
                 ));

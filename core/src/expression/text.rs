@@ -24,9 +24,19 @@ pub fn parse_interpolations_with_options(
     diags: &mut Vec<Diagnostic>,
     options: crate::compiler::CompileOptions,
 ) -> Vec<TextPart> {
-    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new())
+    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut Vec::new())
 }
 
+pub(crate) fn parse_with_sources(
+    raw: &str, file: &str, line: u32, base_col: u32, diags: &mut Vec<Diagnostic>,
+    options: crate::CompileOptions,
+) -> (Vec<TextPart>, Vec<ExpressionSource>) {
+    let mut sources = Vec::new();
+    let parts = parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut sources);
+    (parts, sources)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_with_ranges(
     raw: &str,
     file: &str,
@@ -35,6 +45,7 @@ pub(super) fn parse_with_ranges(
     diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
     ranges: &mut Vec<std::ops::Range<usize>>,
+    sources: &mut Vec<ExpressionSource>,
 ) -> Vec<TextPart> {
     let chars: Vec<char> = raw.chars().collect();
     let mut parts = Vec::new();
@@ -69,7 +80,7 @@ pub(super) fn parse_with_ranges(
                 diags.push(Diagnostic::error(
                     "P004",
                     file,
-                    Span::new(line, base_col + i as u32, 2),
+                    Span::new(line, base_col + i as u32 + 1, 2),
                     "正文对象链接未闭合",
                 ));
                 lit.extend(chars[i..].iter());
@@ -91,13 +102,13 @@ pub(super) fn parse_with_ranges(
                     label,
                     start: i,
                     end: end + 2,
-                    column: base_col + i as u32,
+                    column: base_col + i as u32 + 1,
                 }));
             } else {
                 diags.push(Diagnostic::error(
                     "P004",
                     file,
-                    Span::new(line, base_col + i as u32, (end + 2 - i) as u32),
+                    Span::new(line, base_col + i as u32 + 1, (end + 2 - i) as u32),
                     "正文链接需要 [[对象类型:ID|显示文字]]，显示文字不可包含语法分隔符",
                 ));
                 lit.extend(chars[i..end + 2].iter());
@@ -138,7 +149,8 @@ pub(super) fn parse_with_ranges(
                 break;
             }
             let inner: String = chars[start..j].iter().collect();
-            let expr = parse_expr_src(&inner, file, line, base_col + start as u32, diags);
+            let (expr, source) = parse_expr_with_source(&inner, file, line, base_col + start as u32, diags);
+            sources.push(source);
             parts.push(TextPart::Expr(expr));
             i = j + 1;
             continue;
@@ -173,6 +185,7 @@ pub(crate) fn literal_ranges(
             &mut diagnostics,
             options,
             &mut ranges,
+            &mut Vec::new(),
         );
     } else {
         parse_with_ranges(
@@ -183,6 +196,7 @@ pub(crate) fn literal_ranges(
             &mut diagnostics,
             options,
             &mut ranges,
+            &mut Vec::new(),
         );
     }
     if !diagnostics.is_empty() {
