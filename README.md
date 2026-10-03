@@ -102,3 +102,7 @@ cargo doc --workspace --no-deps --locked
 显式语言1.12支持[持续schema与bind](spec/schemas.md)及[读者可见禁用choice](spec/choices.md)。默认1.9和显式1.10/1.11不自动升级。资料违规通过统一compiler/CLI/RPC/发布检查；schema字段变更先查看实例影响，不填值、不强转、静态约束不改变运行指纹。锁定选择采用独立presentation能力协商，旧choices仍只含可选项；禁用拒选零推进，全锁落穿，片段/once/存档/重放闭环。
 
 配对worldedit提供[当前稿安全查找替换](spec/search-replace.md)、标准编辑命令与当前章节只读预览。core投影未应用WritingBuffer，坏稿保留并明确标记预览过期。产品继续按0.x递进，语言版本与产品版本独立。
+
+### 工程问题报告（0.18）
+
+`wl problems 工程目录 --json` 汇总当前已应用缓冲及已注册文档的静态问题，支持筛选、分页与主/关联来源；`wl check` 的既有范围和运行门禁保持不变。报告不会自动修复、保存或发布作品。用法与覆盖边界见 [工程问题指南](docs/problems.md)。
