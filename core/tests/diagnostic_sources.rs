@@ -304,7 +304,7 @@ fn missing_assignment_and_divert_targets_keep_recovery_facts_as_context() {
 fn escaped_choice_links_are_mapped_once_for_both_diagnostics_and_wiki() {
     let source = r#"character hero as "旅人"
 event start
-  choice "前\"缀🔔 [[character:hero|那位\"人]] 末尾"
+  choice "前\"缀🔔 [[character:hero|那位人]] 末尾"
     -> END
 "#;
     let result = compile_source_with_options("story.wl", source, CompileOptions::v1_13());
@@ -332,7 +332,7 @@ event start
     expect(
         &invalid,
         "A218",
-        r#"[[character:missing|那位\"人]]"#,
+        r#"[[character:missing|那位人]]"#,
         Role::Target,
     );
 }

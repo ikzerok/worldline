@@ -71,16 +71,16 @@ fn actual_rpc_envelope_shrinks_primary_and_related_pages_without_losing_ids() {
             assert_eq!(actual["id"], id);
             assert_eq!(actual["result"]["ok"], true);
             assert_eq!(actual["result"]["report"]["compile_count"], 0);
-            assert!(actual.to_string().len() + 1 <= MAX_RESPONSE_BYTES);
+            assert!(actual.to_string().len() < MAX_RESPONSE_BYTES);
             let list = if related { "locations" } else { "entries" };
             assert_eq!(actual["result"]["page"][list].as_array().unwrap().len(), 1);
             assert_eq!(actual["result"]["page"]["next_cursor"]["offset"], 1);
             let handled = server.handle(&wire).unwrap();
-            assert!(handled.len() + 1 <= MAX_RESPONSE_BYTES);
+            assert!(handled.len() < MAX_RESPONSE_BYTES);
             assert_eq!(serde_json::from_str::<Value>(&handled).unwrap(), actual);
             wire_params["cursor"] = actual["result"]["page"]["next_cursor"].clone();
             let next = server.dispatch(&request(id.clone(), wire_params)).unwrap();
-            assert!(next.to_string().len() + 1 <= MAX_RESPONSE_BYTES);
+            assert!(next.to_string().len() < MAX_RESPONSE_BYTES);
             assert_eq!(next["result"]["page"][list].as_array().unwrap().len(), 1);
             assert!(next["result"]["page"]["next_cursor"].is_null());
             if !related {
@@ -112,7 +112,7 @@ fn huge_identifiers_fail_before_method_execution_without_truncation() {
             response["error"]["data"],
             "request_id_exceeds_response_budget"
         );
-        assert!(response.to_string().len() + 1 <= MAX_RESPONSE_BYTES);
+        assert!(response.to_string().len() < MAX_RESPONSE_BYTES);
         assert!(server.projects["p1"].problems_report.is_none());
     }
     // The same large ID on another method keeps its existing protocol behavior.
@@ -137,7 +137,7 @@ fn oversize_protocol_detail_preserves_error_code_and_representable_id() {
     assert_eq!(response["id"], id);
     assert_eq!(response["error"]["code"], -32602);
     assert!(response["error"]["data"].is_null());
-    assert!(response.to_string().len() + 1 <= MAX_RESPONSE_BYTES);
+    assert!(response.to_string().len() < MAX_RESPONSE_BYTES);
     let invalid = server
         .dispatch(&json!({"jsonrpc":"wrong","id":id,"method":"project.problems"}).to_string())
         .unwrap();

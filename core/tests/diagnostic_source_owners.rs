@@ -1,12 +1,20 @@
 //! Include 合并后执行语句保留实际 file；来源修正不改变旧 parser 接受集合。
 use std::{collections::BTreeMap, path::PathBuf};
 use worldline_core::diagnostic::DiagnosticSourceRole as Role;
+use worldline_core::project::Project;
 use worldline_core::{
     compile_sources_with_options, CompileOptions, CompileResult, Diagnostic, Span,
 };
 
-fn compile(main: &str, included: &[(&str, &str)]) -> (CompileResult, BTreeMap<PathBuf, String>) {
+fn fixture_root() -> PathBuf {
     let root = std::env::temp_dir().join(format!("wl-statement-owner-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    // 与 core 使用相同完整路径身份，不能把 Windows 8.3 别名作为 source map key。
+    Project::new(&root).root
+}
+
+fn compile(main: &str, included: &[(&str, &str)]) -> (CompileResult, BTreeMap<PathBuf, String>) {
+    let root = fixture_root();
     let entry = root.join("world.wl");
     let mut sources = BTreeMap::from([(entry.clone(), main.into())]);
     sources.extend(
@@ -50,7 +58,11 @@ fn assert_origin(
         .collect();
     assert!(!found.is_empty(), "{:#?}", result.diagnostics);
     for diagnostic in found {
-        assert!(diagnostic.file.ends_with(file), "{diagnostic:?}");
+        assert_eq!(
+            diagnostic.file,
+            fixture_root().join(file).to_string_lossy(),
+            "{diagnostic:?}"
+        );
         assert_eq!(diagnostic.source_role(), Some(role));
         assert_eq!(selected(sources, diagnostic), expected);
     }

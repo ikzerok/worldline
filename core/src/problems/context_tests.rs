@@ -229,10 +229,12 @@ fn inactive_loaded_source_keeps_identity_and_role_without_navigation_range() {
     std::fs::write(root.join("archive.wl"), "event old\n  -> END\n").unwrap();
     std::fs::write(root.join(".world/project.json"), r#"{"schema_version":1,"language_version":"1.10","required_features":["workspace.source_sets.v1"],"source_config":{"mode":"explicit","active":["world.wl"],"archived":["archive.wl"]}}"#).unwrap();
     let project = Project::open(&root).unwrap();
-    assert!(project.documents.contains_key(&root.join("archive.wl")));
+    // Project normalizes Windows short-name temp paths; use the exact loaded identity.
+    let archive = project.root.join("archive.wl");
+    assert!(project.documents.contains_key(&archive));
     let location = super::location::project_location(
         &project,
-        &root.join("archive.wl").to_string_lossy(),
+        &archive.to_string_lossy(),
         Span::new(1, 7, 3),
         Some(ProblemSourceRole::Target),
         512,

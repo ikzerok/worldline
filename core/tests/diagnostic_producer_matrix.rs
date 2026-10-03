@@ -1,6 +1,7 @@
 //! 共享生产路径与 related 的来源完整性。
 use std::collections::BTreeMap;
 use worldline_core::diagnostic::DiagnosticSourceRole as Role;
+use worldline_core::project::Project;
 use worldline_core::{
     compile_source_with_options, compile_sources_with_options, CompileOptions, Diagnostic, Span,
 };
@@ -70,9 +71,12 @@ fn schema_value_and_missing_property_have_real_primary_and_related_headers() {
 #[test]
 fn duplicate_same_basename_and_include_keep_correct_file_and_target_roles() {
     let root = std::env::temp_dir().join(format!("wl-diagnostic-sources-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    // 使用 core 的源码身份，展开 Windows 8.3 别名并去除设备路径前缀。
+    let root = Project::new(&root).root;
     let main = root.join("world.wl");
-    let first = root.join("a/actors.wl");
-    let second = root.join("b/actors.wl");
+    let first = root.join("a").join("actors.wl");
+    let second = root.join("b").join("actors.wl");
     let sources = BTreeMap::from([
         (
             main.clone(),
@@ -152,6 +156,8 @@ fn explicit_execution_hint_reuses_the_same_declaration_source() {
 fn failed_include_points_to_the_supplied_path_not_the_missing_document() {
     let root =
         std::env::temp_dir().join(format!("wl-missing-include-source-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = Project::new(&root).root;
     let main = root.join("world.wl");
     let source = "include    \"missing.wl\"\nevent start\n  -> END\n";
     let result = compile_sources_with_options(
