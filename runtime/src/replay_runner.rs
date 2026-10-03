@@ -243,7 +243,7 @@ pub(crate) fn run_replay_slice(
     if budget.cancellation.is_cancelled() {
         return ReplayProgress::Finished(ReplayEnd {
             status: ReplayStatus::Cancelled,
-            initial_state: (&cursor.initial_state).clone(),
+            initial_state: cursor.initial_state.clone(),
         });
     }
 
@@ -267,7 +267,7 @@ pub(crate) fn run_replay_slice(
                             node: error.node,
                             line: error.line,
                         },
-                        initial_state: (&cursor.initial_state).clone(),
+                        initial_state: cursor.initial_state.clone(),
                     });
                 }
             };
@@ -290,8 +290,8 @@ pub(crate) fn run_replay_slice(
                         let outputs = std::mem::take(&mut cursor.pending_outputs);
                         story.record_continuation(&outputs);
                         return ReplayProgress::Finished(ReplayEnd {
-                            status: status,
-                            initial_state: (&cursor.initial_state).clone(),
+                            status,
+                            initial_state: cursor.initial_state.clone(),
                         });
                     }
                 }
@@ -310,7 +310,7 @@ pub(crate) fn run_replay_slice(
                         expected_choice: None,
                         actual_choices: initial_actual.choices,
                     },
-                    initial_state: (&expected.state).clone(),
+                    initial_state: expected.state.clone(),
                 });
             }
         }
@@ -322,7 +322,7 @@ pub(crate) fn run_replay_slice(
         if budget.cancellation.is_cancelled() {
             return ReplayProgress::Finished(ReplayEnd {
                 status: ReplayStatus::Cancelled,
-                initial_state: (&cursor.initial_state).clone(),
+                initial_state: cursor.initial_state.clone(),
             });
         }
         if let Some(status) = comparison_stop(budget) {
@@ -348,7 +348,7 @@ pub(crate) fn run_replay_slice(
                         expected_choice: Some(step.choice.clone()),
                         actual_choices: story.observation(&[]).choices,
                     },
-                    initial_state: (&cursor.initial_state).clone(),
+                    initial_state: cursor.initial_state.clone(),
                 });
             };
             let selected = if budget.comparison_limit.is_some() && cursor.initial_verified {
@@ -373,7 +373,7 @@ pub(crate) fn run_replay_slice(
                         node: error.node,
                         line: error.line,
                     },
-                    initial_state: (&cursor.initial_state).clone(),
+                    initial_state: cursor.initial_state.clone(),
                 });
             }
             if let Some(selected) = selected {
@@ -385,7 +385,7 @@ pub(crate) fn run_replay_slice(
         let Some(expected_observation) = &step.observation else {
             return ReplayProgress::Finished(ReplayEnd {
                 status: ReplayStatus::IncompleteTrace,
-                initial_state: (&cursor.initial_state).clone(),
+                initial_state: cursor.initial_state.clone(),
             });
         };
         let mut outcome = match story.continue_story_inner(&mut *budget) {
@@ -397,7 +397,7 @@ pub(crate) fn run_replay_slice(
                         node: error.node,
                         line: error.line,
                     },
-                    initial_state: (&cursor.initial_state).clone(),
+                    initial_state: cursor.initial_state.clone(),
                 });
             }
         };
@@ -416,8 +416,8 @@ pub(crate) fn run_replay_slice(
                     let outputs = std::mem::take(&mut cursor.pending_outputs);
                     story.record_continuation(&outputs);
                     return ReplayProgress::Finished(ReplayEnd {
-                        status: status,
-                        initial_state: (&cursor.initial_state).clone(),
+                        status,
+                        initial_state: cursor.initial_state.clone(),
                     });
                 }
             }
@@ -433,7 +433,7 @@ pub(crate) fn run_replay_slice(
                     expected_choice: Some(step.choice.clone()),
                     actual_choices: actual.choices,
                 },
-                initial_state: (&expected_observation.state).clone(),
+                initial_state: expected_observation.state.clone(),
             });
         }
         cursor.step_index += 1;
@@ -445,7 +445,7 @@ pub(crate) fn run_replay_slice(
             ended: story.is_ended(),
             complete: trace.complete && story.is_ended(),
         },
-        initial_state: (&cursor.initial_state).clone(),
+        initial_state: cursor.initial_state.clone(),
     })
 }
 
