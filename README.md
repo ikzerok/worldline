@@ -4,6 +4,8 @@
 
 本候选尚在开发验收，未公开发行。范围与闸门见 [0.17 开发合同](docs/v0.17-development.md)；完整变更见 [CHANGELOG](CHANGELOG.md)。早期 draft CI 不代表最终配对验收。
 
+升级边界：0.16 的重放 trace 按既有 runtime_version 合同不能在0.17直接重放，不应手改版本字段绕过；普通存档与检查点分别按验证记录判断。
+
 ## 使用入口
 
 - [世界对象焦点上下文](spec/world-context.md)：区分正式关系、属性引用、人物参与、显式链接与可选文字提及
