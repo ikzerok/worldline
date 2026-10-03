@@ -107,6 +107,9 @@ RelationGraph {
 
 ## 7. 时段与部分顺序（1.6；1.13 显式跨时段扩展）
 
+工具 0.17 的只读比较、强连通环分量、受阻下游和真实边见证见
+[temporal-explanations.md](temporal-explanations.md)；不从 rank 推导先后或同时。
+
 `Analysis.timeline` 为 `{periods, events, edges, order_scope, status}`。时间线由 core
 唯一分析；CLI JSON、RPC、Mermaid 与原生编辑器消费同一结果，不另推导排序。
 
