@@ -411,7 +411,29 @@ pub(crate) fn analyze(
     crate::states::collect_changes(program, &mut catalog, diags);
     crate::navigation::collect(program, &mut catalog, diags);
     catalog.objects.sort_by(|a, b| a.target.cmp(&b.target));
+    // 正式引用是多重集；符号表的随机遍历不能进入公开目录或移动等价证明。
+    // 只排序派生引用，不去重，也不改 AST、正文链接或状态动作的真实顺序。
+    catalog.references.sort_by(ReferenceInfo::canonical_cmp);
     catalog
+}
+
+impl ReferenceInfo {
+    pub(crate) fn canonical_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            &self.file,
+            self.line,
+            &self.source,
+            &self.target,
+            &self.kind,
+        )
+            .cmp(&(
+                &other.file,
+                other.line,
+                &other.source,
+                &other.target,
+                &other.kind,
+            ))
+    }
 }
 
 fn collect_property_references(
