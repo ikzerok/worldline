@@ -211,3 +211,5 @@ SCH001–SCH008 均为 error，并随统一 CompileResult 出现在所有检查�
 | SCH008 | opt-in closed schema 中出现未声明 property 键 |
 
 缺失 ref 目标仍报 A214，不重复伪称 subtype 错误。missing 指向对象声明，值违规指向 property，并关联字段约束位置。error 阻止执行和公开读者包；原始无效稿件、源码应用、保存、备份与撤销仍可用。完整边界与影响接口见 [schemas.md](schemas.md)。
+
+工具 0.19 的可信原稿来源、角色与生产者矩阵见 [diagnostic-sources.md](diagnostic-sources.md)。
