@@ -1,6 +1,6 @@
 use super::{
-    cycles::analyze_cycles, evidence::EdgeGraph, TemporalCycle,
-    PeriodInfo, TemporalEdge, TemporalEvent, TemporalOrderScope, Timeline, TimelineStatus,
+    cycles::analyze_cycles, evidence::EdgeGraph, PeriodInfo, TemporalCycle, TemporalEdge,
+    TemporalEvent, TemporalOrderScope, Timeline, TimelineStatus,
 };
 use crate::{Diagnostic, Program, Span};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -245,7 +245,11 @@ fn report_cycles(program: &Program, diagnostics: &mut Vec<Diagnostic>, timeline:
         );
         let mut notes = Vec::new();
         for cycle in causes {
-            notes.push(format!("环 `{}` 的闭环见证：{}", cycle.id, path_label(&cycle.witness)));
+            notes.push(format!(
+                "环 `{}` 的闭环见证：{}",
+                cycle.id,
+                path_label(&cycle.witness)
+            ));
             add_locations(&mut diagnostic, &cycle.witness);
             if !members.contains_key(event.name.as_str()) {
                 if let Some(path) = graph.path(

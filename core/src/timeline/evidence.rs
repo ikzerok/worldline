@@ -20,15 +20,14 @@ impl<'a> EdgeGraph<'a> {
             .collect();
         let indices: BTreeMap<_, _> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
         let mut edges: Vec<_> = edges.iter().collect();
-        edges.sort_by_key(|e| {
-            (
-                &e.before,
-                &e.after,
-                &e.file,
-                e.line,
-                &e.order_scope,
-                &e.root,
-            )
+        edges.sort_by(|a, b| {
+            a.before
+                .cmp(&b.before)
+                .then(a.after.cmp(&b.after))
+                .then(a.file.cmp(&b.file))
+                .then(a.line.cmp(&b.line))
+                .then(a.order_scope.cmp(&b.order_scope))
+                .then(a.root.cmp(&b.root))
         });
         let mut outgoing = vec![Vec::new(); ids.len()];
         let mut incoming = vec![Vec::new(); ids.len()];
