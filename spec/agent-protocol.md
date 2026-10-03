@@ -664,3 +664,7 @@ comparison.relation=unknown，业务 ok:false；invalid 同样 ok:false。协议
 `world.context` 在 refresh 已知未决外部/恢复冲突时保留同一缓冲 context，附原 conflicts，
 并设置 context.complete=false、reasons 包含 source_conflict；冲突本身不置 truncated，
 不改变 read_only，也不清空或覆盖任何一侧。源码快照摘要不能证明当前磁盘最新版。
+
+## 工程问题报告（工具 0.18）
+
+新增 `authoring.problems.v1`、只读 `project.problems` 与 `wl problems`。完整 DTO、分页/游标、coverage、位置精度、预算和退出码见 [problems.md](problems.md)。旧 `wl check` 的检查范围与成功语义不变；报告列出 sidecar error 不改变任何运行、发布或只读门禁。
