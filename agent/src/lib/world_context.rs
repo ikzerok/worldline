@@ -227,6 +227,8 @@ mod tests {
             .project_open(&json!({"path":root}))
             .unwrap_or_else(|error| panic!("{}", error.message));
         let project = &mut server.projects.get_mut("p1").unwrap().project;
+        // Windows 的已载入文档键可能使用规范化前缀；沿用 Project 的真实入口身份。
+        let path = project.entry.clone();
         project
             .set_text(&path, format!("{source}// local\n"))
             .unwrap();
