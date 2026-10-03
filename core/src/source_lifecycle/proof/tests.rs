@@ -181,8 +181,12 @@ fn proof_itself_rejects_real_target_choice_and_effect_order_changes() {
             runtime_change
         );
         let error = equivalent(&original, &candidate, &before, &entry, &entry).unwrap_err();
+        assert_eq!(
+            error.kind,
+            crate::source_lifecycle::SourceLifecycleFailureKind::SemanticChange
+        );
         assert!(
-            error.contains(if runtime_change {
+            error.message.contains(if runtime_change {
                 "指纹"
             } else {
                 "正式引用目标"

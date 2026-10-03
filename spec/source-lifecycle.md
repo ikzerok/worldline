@@ -120,6 +120,24 @@ load_order_before/after、resources。occurrences 复用 RefactorOccurrence 的�
 undo/redo；core 不偷偷保存。保存复用既有 recoverable journal 的旧路径删除与新路径
 写入，保存失败保留可恢复事务，不宣称磁盘跨文件物理原子。
 
+### 有类型的失败回执（工具 0.17）
+
+Rust 的兼容新增入口 `preview_source_lifecycle_classified`、
+`apply_source_lifecycle_classified`、`apply_source_lifecycle_plan_classified` 及前两者的
+`_cancellable_classified` 形式返回 `Result<_, SourceLifecycleFailure>`。
+`SourceLifecycleFailure { kind, message }` 保留原始中文详情；`kind` 为
+`SourceLifecycleFailureKind`，按 snake_case 序列化：
+
+- `SourceChanged`：内容基线/完整预览不符、外部保存基线变化、新增未载入源码、提交前资源变化或未解决保存事务；提示保留稿件、检查外改并重新预览
+- `IllegalPath`：相对路径/边界不符、目的碰撞、入口移动或不允许写入的路径；提示选择合法的非入口工作区路径
+- `SemanticChange`：明确检出的加载/默认入口、运行指纹、正式引用或资料、资源字节、成员身份或批注附着变化；提示修正造成变化的内容或保留原路径
+- `UnableToProve`：坏稿、未知能力/注册语义、预算、取消、内部投影或读取错误等无法完成证明的情形；保留详情，不冒称已经证明语义改变
+
+类别必须在 core 已知守卫产生错误时指定，不解析中文消息猜类别；未分类的旧底层
+错误仅归入 `UnableToProve`。旧 String API 包装同一实现并仅取 message，既有 CLI/agent
+错误协议不变。分类只服务解释和下一步提示，不授权重试、不自动刷新/保存，不削弱
+任何拒绝或零修改保护；编辑器直接消费 enum，技术详情可展开。
+
 CLI：`wl source-lifecycle preview|apply <workspace> --request-json JSON [--plan-digest DIGEST] --json`。
 agent：`project.source_lifecycle_preview` / `project.source_lifecycle_apply`，params 仅指定
 path 或 project_id 之一、request；apply 必须提供 plan_digest。机器 apply 成功后保存，

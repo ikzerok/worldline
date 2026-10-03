@@ -1,3 +1,4 @@
+use super::Failure;
 use crate::{
     catalog::{Catalog, ReferenceInfo, TargetRef},
     project::Project,
@@ -12,7 +13,7 @@ pub(super) fn equivalent(
     before: &CompileResult,
     old: &Path,
     new: &Path,
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     let after = after_project.compile_current();
     if after.has_errors() {
         let error = after
@@ -20,7 +21,7 @@ pub(super) fn equivalent(
             .iter()
             .find(|diagnostic| diagnostic.severity == crate::Severity::Error)
             .unwrap();
-        return Err(format!("移动候选无效：{} {}", error.code, error.message));
+        return Err(format!("移动候选无效：{} {}", error.code, error.message).into());
     }
     let old = old.to_string_lossy();
     let new = new.to_string_lossy();
@@ -33,24 +34,23 @@ pub(super) fn equivalent(
     };
     let files: Vec<_> = before.program.files.iter().map(|file| map(file)).collect();
     if files != after.program.files || before.program.entry != after.program.entry {
-        return Err(
-            "路径移动会改变语义加载顺序或默认入口；请先显式安排 include 顺序再重新预览，工程未修改"
-                .into(),
-        );
+        return Err(Failure::semantic(
+            "路径移动会改变语义加载顺序或默认入口；请先显式安排 include 顺序再重新预览，工程未修改",
+        ));
     }
     if before.analysis.fingerprint != after.analysis.fingerprint {
-        return Err(format!("移动改变运行身份/指纹（{} → {}）；旧 Story 存档和检查点不可直接沿用，trace 须重新验证。本版不迁移，工程未修改", before.analysis.fingerprint, after.analysis.fingerprint));
+        return Err(Failure::semantic(format!("移动改变运行身份/指纹（{} → {}）；旧 Story 存档和检查点不可直接沿用，trace 须重新验证。本版不迁移，工程未修改", before.analysis.fingerprint, after.analysis.fingerprint)));
     }
     // 有类型的映射只改变正式路径字段；作者资料和值始终完整参加比较。
     let left = normalized_catalog(&before.analysis.catalog, &old, &new)?;
     let right = normalized_catalog(&after.analysis.catalog, &new, &new)?;
     if left != right {
-        return Err(
-            "移动候选的对象身份、资料或正式引用目标不同，无法证明语义等价，工程未修改".into(),
-        );
+        return Err(Failure::semantic(
+            "移动候选的对象身份、资料或正式引用目标不同，无法证明语义等价，工程未修改",
+        ));
     }
     if before_project.compile_options() != after_project.compile_options() {
-        return Err("移动不能改变语言版本或 required feature".into());
+        return Err(Failure::semantic("移动不能改变语言版本或 required feature"));
     }
     Ok(())
 }

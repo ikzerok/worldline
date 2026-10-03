@@ -1,4 +1,5 @@
 use super::*;
+use crate::source_lifecycle::SourceLifecycleFailure as Failure;
 
 impl Project {
     /// 保留旧路径保存基线与删除墓碑，供 journal 和保存后的单步撤销使用。
@@ -24,9 +25,16 @@ impl Project {
 impl Project {
     /// 生命周期专用有界基线检查；不改变其它检查点/保存接口的旧契约。
     pub(crate) fn source_lifecycle_disk_baselines_match(&self) -> Result<(), String> {
+        self.source_lifecycle_disk_baselines_match_classified()
+            .map_err(|failure| failure.message)
+    }
+
+    pub(crate) fn source_lifecycle_disk_baselines_match_classified(&self) -> Result<(), Failure> {
         let files = crate::source_lifecycle::safety::baseline_inventory(self)?;
         if !self.recovery_conflicts.is_empty() {
-            return Err("工程存在未解决的保存事务冲突，不能组织源码".into());
+            return Err(Failure::changed(
+                "工程存在未解决的保存事务冲突，不能组织源码",
+            ));
         }
         #[cfg(not(target_arch = "wasm32"))]
         for path in [
@@ -36,7 +44,7 @@ impl Project {
             match std::fs::symlink_metadata(&path) {
                 Ok(metadata) => {
                     if !metadata.is_dir() || crate::file_access::is_link_or_junction(&metadata) {
-                        return Err("保存事务父目录必须是非链接目录".into());
+                        return Err(Failure::path("保存事务父目录必须是非链接目录"));
                     }
                     if path.ends_with(".transactions")
                         && std::fs::read_dir(&path)
@@ -44,11 +52,13 @@ impl Project {
                             .next()
                             .is_some()
                     {
-                        return Err("工程存在未解决的保存事务，请重新打开并处理冲突".into());
+                        return Err(Failure::changed(
+                            "工程存在未解决的保存事务，请重新打开并处理冲突",
+                        ));
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return Err(error.to_string().into()),
             }
         }
         let sources = self
@@ -73,10 +83,10 @@ impl Project {
                 None
             };
             if disk.as_deref() != baseline {
-                return Err(format!(
+                return Err(Failure::changed(format!(
                     "{} 已被外部修改或删除，源码组织未提交",
                     path.display()
-                ));
+                )));
             }
         }
         Ok(())
