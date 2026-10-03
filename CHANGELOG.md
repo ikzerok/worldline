@@ -9,13 +9,13 @@
 - Problems schema 仍为 1，位置加法提供 context.version=1、有界原文、全稿 slice/局部 hit 范围及 full/partial/no_text；512 字节窗口沿 grapheme 边界显示，0 字节预算仍保留角色与完整权威位置
 - 上下文参与报告摘要和完整位置重验；旧无 context 报告可只读查询/分页，导航须刷新。未知版本、来源冲突、观测变化或位置证据不符不能跳到另一处原文
 - RPC 新增工具能力 authoring.problem_source_context.v1；旧 Diagnostic 八字段形状、请求、游标与退出码保留，新能力不进入语言或 Story save
-- 完整 report 限 32 MiB；主/related 页以及 CLI/RPC 完整 JSON 加 LF 各限 1 MiB。context 与兼容 excerpt 重复字节均计入，成功/错误外壳和巨大 RPC id 也有明确预算行为
+- 完整 report 限 32 MiB；主/related 页以及 `wl problems`、成功解析识别的 `project.problems` 完整 JSON 加 LF 各限 1 MiB；通用 JSON 解析失败不属于方法预算。context 与兼容 excerpt 重复字节均计入，成功/错误外壳和巨大 RPC id 也有明确预算行为
 
 ### 语义、兼容与验收
 
 - 默认语言 1.9、最高既有 1.13，不新增 DSL 或诊断事实；来源元数据不改变指纹、choice signature、once 身份、保存和运行语义，runtime_version 守卫保持
 - 0.18 普通 Story save 的同源码样本已在 0.19 完整继续；当前 0.19 新 trace 重放测试通过。这两项不表示旧 trace/checkpoint 能跨版本重放
-- 最终完整门禁、性能数字和平台覆盖待精确配对记录回填，不把中间 focused 测试或上一版实测计入本版完成状态
+- 本地完整 core 1135 通过、0 失败、7 性能专项 ignored；fmt、全目标严格 Clippy、工作区构建通过。Windows 路径 fixture 修正后44项集中回归通过，完整 Windows CI 同步验收；不把普通/原型或不同平台结果相加为唯一测试数
 
 使用见 [工程问题](docs/problems.md)，正式范围见 [诊断来源](spec/diagnostic-sources.md)与[来源上下文](spec/problem-source-context.md)。配对编辑器的完整能力、负面边界及最终验收记录见 [0.19 说明](../worldedit/docs/releases/v0.19.0.md)；跨仓链接用于同级检出。
 
