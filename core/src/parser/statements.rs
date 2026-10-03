@@ -15,7 +15,7 @@ impl<'a> Parser<'a> {
                 self.diags.push(Diagnostic::error(
                     "P005",
                     file,
-                    Span::new(0, 1, 1),
+                    self.missing_body_span(),
                     "声明之后缺少缩进的块体",
                 ));
             }
@@ -26,7 +26,7 @@ impl<'a> Parser<'a> {
                 self.diags.push(Diagnostic::error(
                     "P005",
                     file,
-                    Span::new(first.no, first.indent + 1, 1),
+                    self.missing_body_span(),
                     "声明之后缺少缩进的块体",
                 ));
             }
@@ -58,7 +58,8 @@ impl<'a> Parser<'a> {
     fn parse_stmt(&mut self, indent: u32) -> Stmt {
         let line = self.next().expect("parse_stmt 调用前已确认存在");
         let file = self.file_of(&line);
-        match line.kind.clone() {
+        let actual_file = file.clone();
+        let statement = match line.kind.clone() {
             LineKind::Schema112 { loc, .. } => {
                 self.diags.push(Diagnostic::error(
                     "P002",
@@ -78,18 +79,19 @@ impl<'a> Parser<'a> {
                 keyword,
                 source,
                 loc,
-            } => self.parse_language_statement(
-                &keyword,
-                &source,
-                loc,
-                &file,
-            ),
+            } => self.parse_language_statement(&keyword, &source, loc, &file),
             LineKind::Text { content, loc } => {
                 let (text_part, glue, tags) = split_text_decorations(&content);
                 let options = self.options();
                 let (tags, localization_id) =
                     extract_localization_id(tags, &file, loc, options.localization_ids, self.diags);
-                let parts = self.sourced_text(&text_part, &file, line.no, line.source.base + line.source.text, false);
+                let parts = self.sourced_text(
+                    &text_part,
+                    &file,
+                    line.no,
+                    line.source.base + line.source.text,
+                    false,
+                );
                 Stmt::Text(TextStmt {
                     parts,
                     glue,
@@ -126,10 +128,26 @@ impl<'a> Parser<'a> {
                 label_span: _,
             } => {
                 let label = self.sourced_label(&label_raw, &line);
-                let cond = cond_src.map(|src| self.sourced_expr(&src, &file, line.no, line.no,
-                    line.source.base + line.source.condition, ExpressionSlot::Condition(0)));
-                let enable = enable_src.map(|src| self.sourced_expr(&src, &file, line.no, line.no,
-                    line.source.base + line.source.enable, ExpressionSlot::Enable));
+                let cond = cond_src.map(|src| {
+                    self.sourced_expr(
+                        &src,
+                        &file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.condition,
+                        ExpressionSlot::Condition(0),
+                    )
+                });
+                let enable = enable_src.map(|src| {
+                    self.sourced_expr(
+                        &src,
+                        &file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.enable,
+                        ExpressionSlot::Enable,
+                    )
+                });
                 let body = self.parse_block(indent, &file, false);
                 Stmt::Choice(ChoiceStmt {
                     label,
@@ -144,7 +162,14 @@ impl<'a> Parser<'a> {
                 })
             }
             LineKind::If { cond_src, loc } => {
-                let cond = self.sourced_expr(&cond_src, &file, line.no, line.no, line.source.base + line.source.condition, ExpressionSlot::Condition(0));
+                let cond = self.sourced_expr(
+                    &cond_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.condition,
+                    ExpressionSlot::Condition(0),
+                );
                 let body = self.parse_block(indent, &file, true);
                 let mut branches = vec![(Some(cond), body)];
                 // 链式 else if / else:必须与 if 同缩进
@@ -156,8 +181,13 @@ impl<'a> Parser<'a> {
                         LineKind::ElseIf { cond_src, .. } => {
                             let cond_src = cond_src.clone();
                             self.next();
-                            let c = self.sourced_expr(&cond_src, &file, next_line.no, line.no,
-                                next_line.source.base + next_line.source.condition, ExpressionSlot::Condition(branches.len() as u32));
+                            let c = self.sourced_expr_from(
+                                &cond_src,
+                                (&file, line.no),
+                                (&next_line.file, next_line.no),
+                                next_line.source.base + next_line.source.condition,
+                                ExpressionSlot::Condition(branches.len() as u32),
+                            );
                             let b = self.parse_block(indent, &file, true);
                             branches.push((Some(c), b));
                         }
@@ -208,7 +238,14 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                let expr = self.sourced_expr(
+                    &expr_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
+                );
                 Stmt::Let(LetStmt {
                     name,
                     expr,
@@ -223,7 +260,14 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                let expr = self.sourced_expr(
+                    &expr_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
+                );
                 Stmt::Let(LetStmt {
                     name,
                     expr,
@@ -238,7 +282,14 @@ impl<'a> Parser<'a> {
                 name_span,
                 ..
             } => {
-                let expr = self.sourced_expr(&expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                let expr = self.sourced_expr(
+                    &expr_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
+                );
                 Stmt::Set(SetStmt {
                     name,
                     expr,
@@ -407,8 +458,16 @@ impl<'a> Parser<'a> {
                     "exit" => EffectWhen::Exit,
                     _ => EffectWhen::Enter,
                 };
-                let cond = cond_src
-                    .map(|src| self.sourced_expr(&src, &file, line.no, line.no, line.source.base + line.source.condition, ExpressionSlot::Condition(0)));
+                let cond = cond_src.map(|src| {
+                    self.sourced_expr(
+                        &src,
+                        &file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.condition,
+                        ExpressionSlot::Condition(0),
+                    )
+                });
                 let actions = self.parse_effect_actions(indent, &file);
                 Stmt::Effect(EffectBlock {
                     when,
@@ -417,96 +476,15 @@ impl<'a> Parser<'a> {
                     loc,
                 })
             }
-        }
-    }
-
-    /// 解析效果块体:仅允许 grant / revoke / meet / part / to 动作行。
-    fn parse_effect_actions(&mut self, parent_indent: u32, file: &str) -> Vec<Change> {
-        let Some(first) = self.peek() else {
-            self.diags.push(Diagnostic::error(
-                "P005",
-                file,
-                Span::new(0, 1, 1),
-                "effect 之后缺少缩进的动作块",
-            ));
-            return Vec::new();
         };
-        if first.indent <= parent_indent {
-            self.diags.push(Diagnostic::error(
-                "P005",
-                file,
-                Span::new(first.no, first.indent + 1, 1),
-                "effect 之后缺少缩进的动作块",
-            ));
-            return Vec::new();
+        if let Some(owner) = &self.source_owner {
+            self.sources.record_statement(
+                owner,
+                crate::language::statement_loc(&statement),
+                crate::source_provenance::StatementKind::of(&statement),
+                &actual_file,
+            );
         }
-        let block_indent = first.indent;
-        let mut actions = Vec::new();
-        while let Some(line) = self.peek() {
-            if line.indent <= parent_indent {
-                break;
-            }
-            if line.indent != block_indent {
-                self.diags.push(Diagnostic::error(
-                    "P002",
-                    &self.file_of(&line),
-                    Span::new(line.no, line.indent + 1, 1),
-                    format!("缩进不一致:同一效果块内应保持 {block_indent} 个空格"),
-                ));
-                self.next();
-                continue;
-            }
-            match &line.kind {
-                LineKind::Become(change) => {
-                    actions.push(change.clone());
-                    self.next();
-                }
-                LineKind::ChangeLine {
-                    kind,
-                    id,
-                    note,
-                    loc,
-                } => {
-                    actions.push(Change {
-                        tags: Vec::new(),
-                        kind: *kind,
-                        id: id.clone(),
-                        note: note.clone(),
-                        to_storyline: None,
-                        loc: *loc,
-                    });
-                    self.next();
-                }
-                LineKind::ToLine {
-                    storyline,
-                    note,
-                    loc,
-                } => {
-                    actions.push(Change {
-                        tags: Vec::new(),
-                        kind: ChangeKind::To,
-                        id: String::new(),
-                        note: note.clone(),
-                        to_storyline: Some(storyline.clone()),
-                        loc: *loc,
-                    });
-                    self.next();
-                }
-                _ => {
-                    let (no, col) = match &line.kind {
-                        LineKind::Text { loc, .. } => (loc.line, loc.column),
-                        _ => (line.no, line.indent + 1),
-                    };
-                    self.diags.push(Diagnostic::error(
-                        "P004",
-                        file,
-                        Span::new(no, col, 6),
-                        "效果块内只能是 become / grant / revoke / meet / part / to 动作",
-                    ));
-                    self.next();
-                }
-            }
-        }
-        actions
+        statement
     }
 }

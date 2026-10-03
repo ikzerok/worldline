@@ -15,7 +15,8 @@ pub(super) fn parse(
     let leading = tail.chars().take_while(|c| c.is_whitespace()).count() as u32;
     let tail = tail.trim();
     if let Some(condition) = tail.strip_prefix("if").map(str::trim_start) {
-        origins.condition = column - 1 + leading + tail[..tail.len() - condition.len()].chars().count() as u32;
+        origins.condition =
+            column - 1 + leading + tail[..tail.len() - condition.len()].chars().count() as u32;
     }
     let legacy = || tail.strip_prefix("if").map(|v| v.trim().to_owned());
     if !options.language_version.supports_language_112() {
@@ -53,7 +54,8 @@ pub(super) fn parse(
     };
     let cond = after_keyword(tail[..index].trim(), "if").map(str::to_owned);
     let enabled = tail[index + "enable".len()..].trim();
-    origins.enable = column - 1 + leading + tail[..tail.len() - enabled.len()].chars().count() as u32;
+    origins.enable =
+        column - 1 + leading + tail[..tail.len() - enabled.len()].chars().count() as u32;
     let Some(disabled_at) = marker(enabled, "disabled", |i| is_expression(enabled[..i].trim()))
     else {
         error(

@@ -2,6 +2,7 @@ use super::{Ctx, NodeCtx};
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::language::{is_new_builtin, locals, static_id, Parameter};
+use crate::source_provenance::{ExpressionSlot, SourceOwner, StatementKind};
 use std::collections::{HashMap, HashSet};
 
 impl Ctx<'_> {
@@ -69,20 +70,25 @@ impl Ctx<'_> {
     pub(super) fn walk_callables(&mut self) {
         for r in self.program.rules.clone() {
             self.cur_file = r.file;
+            self.source_file = Some(self.cur_file.clone());
             self.expression_fallback = r.loc;
             self.bind_parameters(&r.parameters);
             self.in_rule = true;
-            self.check_expr(&r.expr, Some(r.result));
+            self.check_at(&r.expr, Some(r.result), r.loc.line, ExpressionSlot::Rule);
             self.in_rule = false;
         }
         for f in self.program.fragments.clone() {
             self.cur_file = f.file;
+            self.source_file = Some(self.cur_file.clone());
+            self.source_owner = Some(SourceOwner::new(&self.cur_file, f.loc.line));
             self.expression_fallback = f.loc;
             self.bind_parameters(&f.parameters);
             self.in_fragment = true;
             for l in locals(&f.body) {
                 if self.locals.insert(l.name.clone(), l.kind).is_some() {
+                    let scope = self.enter_source(l.loc, StatementKind::Local);
                     self.language_error("A104", l.loc, format!("局部/参数 `{}` 重复", l.name));
+                    self.leave_source(scope);
                 }
             }
             self.walk_block(
@@ -225,23 +231,26 @@ impl Ctx<'_> {
                 if !self.in_fragment {
                     self.language_error("A230", l.loc, "local只能出现在片段内");
                 }
-                self.check_expr(&l.expr, Some(l.kind));
+                self.check_at(&l.expr, Some(l.kind), l.loc.line, ExpressionSlot::Value);
             }
             Stmt::Return(loc) => {
                 if !self.in_fragment {
                     self.language_error("A230", *loc, "return只能出现在片段内");
                 }
             }
-            Stmt::Call(c) => match self
-                .program
-                .fragments
-                .iter()
-                .find(|f| f.name == c.name)
-                .cloned()
-            {
-                Some(f) => self.check_arguments(&c.name, &c.args, &f.parameters, c.loc),
-                None => self.language_error("A103", c.loc, format!("未知片段 `{}`", c.name)),
-            },
+            Stmt::Call(c) => {
+                self.bind_arguments(&c.args, c.loc.line);
+                match self
+                    .program
+                    .fragments
+                    .iter()
+                    .find(|f| f.name == c.name)
+                    .cloned()
+                {
+                    Some(f) => self.check_arguments(&c.name, &c.args, &f.parameters, c.loc),
+                    None => self.language_error("A103", c.loc, format!("未知片段 `{}`", c.name)),
+                }
+            }
             Stmt::Say(s) => {
                 if !self.symbols.characters.contains_key(&s.speaker) {
                     self.language_error(
@@ -250,15 +259,21 @@ impl Ctx<'_> {
                         format!("say引用未定义角色 `{}`", s.speaker),
                     );
                 }
-                for p in &s.text.parts {
-                    if let TextPart::Expr(e) = p {
-                        self.check_expr(e, None);
-                    }
-                }
+                self.check_text(&s.text.parts, s.loc);
             }
             Stmt::DynamicChange(c) => {
-                self.check_expr(&c.state, Some(ValueKind::StateRef));
-                self.check_expr(&c.tags, Some(ValueKind::TagSet));
+                self.check_at(
+                    &c.state,
+                    Some(ValueKind::StateRef),
+                    c.loc.line,
+                    ExpressionSlot::State,
+                );
+                self.check_at(
+                    &c.tags,
+                    Some(ValueKind::TagSet),
+                    c.loc.line,
+                    ExpressionSlot::Tags,
+                );
             }
             _ => {}
         }

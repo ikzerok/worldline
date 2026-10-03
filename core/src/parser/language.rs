@@ -84,7 +84,11 @@ impl Parser<'_> {
                 if !tail.is_empty() {
                     self.language_error(file, loc, "fragment 签名之后不得包含其他内容");
                 }
+                let previous_owner = self
+                    .source_owner
+                    .replace(crate::source_provenance::SourceOwner::new(file, loc.line));
                 let body = self.parse_block(indent, file, true);
+                self.source_owner = previous_owner;
                 program.fragments.push(FragmentDecl {
                     name,
                     parameters,
@@ -160,7 +164,13 @@ impl Parser<'_> {
                     return fallback();
                 };
                 Stmt::DynamicChange(DynamicChangeStmt {
-                    state: self.language_expr(source, state.trim(), loc, file, ExpressionSlot::State),
+                    state: self.language_expr(
+                        source,
+                        state.trim(),
+                        loc,
+                        file,
+                        ExpressionSlot::State,
+                    ),
                     tags: self.language_expr(source, tags.trim(), loc, file, ExpressionSlot::Tags),
                     kind,
                     loc,
@@ -228,7 +238,10 @@ impl Parser<'_> {
             self.language_error(file, loc, "say 需要角色ID");
         }
         let base = self.source_remainder(file, loc.line)
-            + source[..source.len() - rest.trim_start().len()].chars().count() as u32 + 1;
+            + source[..source.len() - rest.trim_start().len()]
+                .chars()
+                .count() as u32
+            + 1;
         let parts = self.sourced_text(&raw, file, loc.line, base, true);
         Stmt::Say(SayStmt {
             speaker: speaker.into(),

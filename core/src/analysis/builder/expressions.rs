@@ -9,6 +9,7 @@ impl<'a> Ctx<'a> {
         e: &Expr,
         expected: Option<ValueKind>,
     ) -> Option<ValueKind> {
+        let diagnostics_start = self.diags.len();
         let kind = self.infer_expr(e);
         if let (Some(k), Some(exp)) = (kind, expected) {
             if k != exp {
@@ -24,10 +25,18 @@ impl<'a> Ctx<'a> {
                 ));
             }
         }
+        self.mark_expression_diagnostics(e, diagnostics_start);
         kind
     }
 
     pub(super) fn infer_expr(&mut self, e: &Expr) -> Option<ValueKind> {
+        let start = self.diags.len();
+        let kind = self.infer_expr_inner(e);
+        self.mark_expression_diagnostics(e, start);
+        kind
+    }
+
+    fn infer_expr_inner(&mut self, e: &Expr) -> Option<ValueKind> {
         match e {
             Expr::Num(_) => Some(ValueKind::Num),
             Expr::Str(_) => Some(ValueKind::Str),
@@ -41,12 +50,15 @@ impl<'a> Ctx<'a> {
                     v.kind
                 }
                 None => {
-                    self.diags.push(Diagnostic::error(
-                        "A102",
-                        &self.cur_file,
-                        Span::new(loc.line, loc.column, name.chars().count().max(1) as u32),
-                        format!("变量 `{name}` 未声明(需要先 let)"),
-                    ));
+                    self.diags.push(
+                        Diagnostic::error(
+                            "A102",
+                            &self.cur_file,
+                            Span::new(loc.line, loc.column, name.chars().count().max(1) as u32),
+                            format!("变量 `{name}` 未声明(需要先 let)"),
+                        )
+                        .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                    );
                     None
                 }
             },

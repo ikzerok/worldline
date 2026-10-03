@@ -2,15 +2,16 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
-use crate::source_provenance::{ExpressionSlot, SourceProvenance};
 use crate::lexer::{Line, LineKind};
+use crate::source_provenance::{ExpressionSlot, SourceProvenance};
+mod effects;
 mod language;
 mod metadata;
 mod program;
 mod schemas;
+mod source;
 mod statements;
 mod text;
-mod source;
 pub(crate) use text::split_text_decorations;
 
 fn relation_target(file: &str, kind: &str, id: &str) -> crate::catalog::TargetRef {
@@ -130,6 +131,8 @@ pub struct Parser<'a> {
     allow_character_refs: bool,
     allow_localization_ids: bool,
     sources: SourceProvenance,
+    source_owner: Option<crate::source_provenance::SourceOwner>,
+    remainder_bases: std::collections::BTreeMap<(String, u32), u32>,
 }
 
 impl<'a> Parser<'a> {
@@ -151,8 +154,21 @@ impl<'a> Parser<'a> {
             allow_object_refs: options.object_refs,
             allow_character_refs: options.character_refs,
             allow_localization_ids: options.localization_ids,
+            source_owner: None,
+            remainder_bases: lines
+                .iter()
+                .map(|line| {
+                    (
+                        (line.file.clone(), line.no),
+                        line.source.base + line.source.remainder,
+                    )
+                })
+                .collect(),
             sources: SourceProvenance {
-                statements: lines.iter().map(|line| ((line.file.clone(), line.no), line.statement_source())).collect(),
+                statements: lines
+                    .iter()
+                    .map(|line| ((line.file.clone(), line.no), line.statement_source()))
+                    .collect(),
                 ..SourceProvenance::default()
             },
         }

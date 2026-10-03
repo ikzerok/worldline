@@ -2,6 +2,7 @@
 use crate::ast::{Stmt, TextPart};
 use crate::catalog::{Catalog, CatalogDecl, CatalogObject, ReferenceInfo, TargetRef};
 use crate::lexer::{lex_source, LineKind};
+use crate::source_provenance::{bind_diagnostics, SourceOwner, StatementKind};
 use crate::{Diagnostic, Program, Span};
 use serde::Serialize;
 
@@ -139,6 +140,8 @@ pub(crate) fn collect(program: &Program, catalog: &mut Catalog, diags: &mut Vec<
             file,
             catalog,
             diags,
+            program,
+            &SourceOwner::new(file, event.loc.line),
         );
     }
     for fragment in &program.fragments {
@@ -148,6 +151,8 @@ pub(crate) fn collect(program: &Program, catalog: &mut Catalog, diags: &mut Vec<
             &fragment.file,
             catalog,
             diags,
+            program,
+            &SourceOwner::new(&fragment.file, fragment.loc.line),
         );
     }
 }
@@ -181,7 +186,12 @@ fn collect_parts(
     for part in parts {
         if let TextPart::Link(link) = part {
             let target = resolve(link.target.clone(), file);
+            let start = diags.len();
             validate(catalog, &target, file, line, link.column, diags);
+            for diagnostic in &mut diags[start..] {
+                diagnostic.span = Span::new(line, link.column, (link.end - link.start) as u32);
+                diagnostic.source_role = Some(crate::diagnostic::DiagnosticSourceRole::Target);
+            }
             catalog.references.push(ReferenceInfo {
                 source: source.clone(),
                 target: target.clone(),
@@ -207,8 +217,11 @@ fn collect_body(
     file: &str,
     catalog: &mut Catalog,
     diags: &mut Vec<Diagnostic>,
+    program: &Program,
+    owner: &SourceOwner,
 ) {
     for stmt in body {
+        let start = diags.len();
         match stmt {
             Stmt::Say(say) => {
                 collect_parts(&say.text.parts, source, file, say.loc.line, catalog, diags)
@@ -218,7 +231,7 @@ fn collect_body(
             }
             Stmt::Choice(choice) => {
                 collect_parts(&choice.label, source, file, choice.loc.line, catalog, diags);
-                collect_body(&choice.body, source, file, catalog, diags);
+                collect_body(&choice.body, source, file, catalog, diags, program, owner);
             }
             Stmt::Scene(scene) => collect_body(
                 &scene.body,
@@ -226,14 +239,22 @@ fn collect_body(
                 file,
                 catalog,
                 diags,
+                program,
+                owner,
             ),
             Stmt::If(branches) => {
                 for (_, body) in &branches.branches {
-                    collect_body(body, source, file, catalog, diags);
+                    collect_body(body, source, file, catalog, diags, program, owner);
                 }
             }
             _ => {}
         }
+        let file = program.source_provenance.statement_file(
+            owner,
+            crate::language::statement_loc(stmt),
+            StatementKind::of(stmt),
+        );
+        bind_diagnostics(&mut diags[start..], file);
     }
 }
 

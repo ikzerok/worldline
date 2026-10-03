@@ -31,7 +31,14 @@ impl<'a> Parser<'a> {
                     value_src,
                     loc,
                 } => {
-                    let expr = self.sourced_expr(&value_src, file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                    let expr = self.sourced_expr(
+                        &value_src,
+                        file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
+                    );
                     match parse_property_value(expr, file, self.options()) {
                         Ok(value) => {
                             properties.push(Property { name, value, loc });
@@ -219,7 +226,14 @@ impl<'a> Parser<'a> {
                     value_src,
                     loc,
                 } => {
-                    let expr = self.sourced_expr(&value_src, file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                    let expr = self.sourced_expr(
+                        &value_src,
+                        file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
+                    );
                     match parse_property_value(expr, file, self.options()) {
                         Ok(value) => {
                             if properties

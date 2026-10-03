@@ -3,6 +3,7 @@ use super::{Ctx, VarInfo};
 use crate::analysis_helpers::expr_kind_static;
 use crate::ast::{LetStmt, Stmt};
 use crate::diagnostic::{Diagnostic, Span};
+use crate::source_provenance::ExpressionSlot;
 
 fn declarations<'a>(body: &'a [Stmt], out: &mut Vec<&'a LetStmt>) {
     for stmt in body {
@@ -55,7 +56,12 @@ impl Ctx<'_> {
                         span,
                         format!("变量 `{}` 重复定义", value.name),
                     )
-                    .with_related(&previous.decl_file, previous.decl_span),
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target)
+                    .with_related_source_role(
+                        &previous.decl_file,
+                        previous.decl_span,
+                        crate::diagnostic::DiagnosticSourceRole::Target,
+                    ),
                 );
                 continue;
             }
@@ -118,8 +124,9 @@ impl Ctx<'_> {
         }
         for value in &self.program.lets.clone() {
             self.cur_file = value.file.clone();
+            self.source_file = Some(value.file.clone());
             self.expression_fallback = value.loc;
-            let kind = self.check_expr(&value.expr, None);
+            let kind = self.check_at(&value.expr, None, value.loc.line, ExpressionSlot::Value);
             if let Some(info) = self.symbols.vars.get_mut(&value.name) {
                 if info.kind.is_none() {
                     info.kind = kind;

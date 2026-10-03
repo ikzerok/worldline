@@ -3,6 +3,7 @@ use crate::analysis_helpers::first_divert;
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
 use crate::graph::{AnchorDecl, EdgeKind};
+use crate::source_provenance::{ExpressionSlot, SourceOwner, StatementKind};
 use std::collections::HashSet;
 impl<'a> Ctx<'a> {
     /// 第三遍:遍历所有事件体,做引用/类型检查并产出图边。
@@ -23,19 +24,38 @@ impl<'a> Ctx<'a> {
                 node_name: name.clone(),
             };
             self.expression_fallback = self.program.events[idx].loc;
+            self.source_owner = Some(SourceOwner::new(
+                &self.cur_file,
+                self.expression_fallback.line,
+            ));
+            self.source_file = Some(self.cur_file.clone());
             // after 前置条件类型检查
             if let Some(after) = &self.program.events[idx].after {
-                self.check_expr(after, Some(ValueKind::Bool));
+                self.check_at(
+                    after,
+                    Some(ValueKind::Bool),
+                    self.program.events[idx].loc.line,
+                    ExpressionSlot::After,
+                );
             }
             // 效果块:条件与动作校验
             let effects = self.program.events[idx].effects.clone();
             for fx in &effects {
+                let scope = self.enter_source(fx.loc, StatementKind::Effect);
                 if let Some(cond) = &fx.cond {
-                    self.check_expr(cond, Some(ValueKind::Bool));
+                    self.check_at(
+                        cond,
+                        Some(ValueKind::Bool),
+                        fx.loc.line,
+                        ExpressionSlot::Condition(0),
+                    );
                 }
                 for a in &fx.actions {
+                    let action_scope = self.enter_source(a.loc, StatementKind::Change);
                     self.check_change(a);
+                    self.leave_source(action_scope);
                 }
+                self.leave_source(scope);
             }
             let body = self.program.events[idx].body.clone();
             self.walk_block(&body, &node, 0);
@@ -78,6 +98,7 @@ impl<'a> Ctx<'a> {
         let mut i = 0;
         while i < stmts.len() {
             self.expression_fallback = crate::language::statement_loc(&stmts[i]);
+            let scope = self.enter_source(self.expression_fallback, StatementKind::of(&stmts[i]));
             match &stmts[i] {
                 Stmt::Local(_)
                 | Stmt::Call(_)
@@ -85,11 +106,7 @@ impl<'a> Ctx<'a> {
                 | Stmt::Say(_)
                 | Stmt::DynamicChange(_) => self.check_language_statement(&stmts[i]),
                 Stmt::Text(t) => {
-                    for p in &t.parts {
-                        if let TextPart::Expr(e) = p {
-                            self.check_expr(e, None);
-                        }
-                    }
+                    self.check_text(&t.parts, t.loc);
                 }
                 Stmt::Divert(d) => {
                     self.check_divert(d, node, depth);
@@ -100,6 +117,7 @@ impl<'a> Ctx<'a> {
                     let mut labels: HashSet<String> = HashSet::new();
                     let mut all_cond = true;
                     while let Some(Stmt::Choice(c)) = stmts.get(j) {
+                        let choice_scope = self.enter_source(c.loc, StatementKind::Choice);
                         let label = c.label_raw.trim().to_string();
                         if !labels.insert(label.clone()) {
                             self.diags.push(Diagnostic::hint(
@@ -110,18 +128,24 @@ impl<'a> Ctx<'a> {
                             ));
                         }
                         if let Some(cond) = &c.cond {
-                            self.check_expr(cond, Some(ValueKind::Bool));
+                            self.check_at(
+                                cond,
+                                Some(ValueKind::Bool),
+                                c.loc.line,
+                                ExpressionSlot::Condition(0),
+                            );
                         } else if c.enable.is_none() {
                             all_cond = false;
                         }
                         if let Some(enable) = &c.enable {
-                            self.check_expr(enable, Some(ValueKind::Bool));
+                            self.check_at(
+                                enable,
+                                Some(ValueKind::Bool),
+                                c.loc.line,
+                                ExpressionSlot::Enable,
+                            );
                         }
-                        for p in &c.label {
-                            if let TextPart::Expr(e) = p {
-                                self.check_expr(e, None);
-                            }
-                        }
+                        self.check_text(&c.label, c.loc);
                         // Choice 边:选择体内预序首个跃迁
                         if let Some(DivertTarget::Node(t)) = first_divert(&c.body) {
                             let from = node.node_name.clone();
@@ -131,6 +155,7 @@ impl<'a> Ctx<'a> {
                             self.add_edge(&from, t, EdgeKind::Choice, Some(label), &file, line);
                         }
                         self.walk_block(&c.body, node, depth + 1);
+                        self.leave_source(choice_scope);
                         j += 1;
                     }
                     if all_cond && j > i {
@@ -142,18 +167,24 @@ impl<'a> Ctx<'a> {
                         ));
                     }
                     i = j;
+                    self.leave_source(scope);
                     continue;
                 }
                 Stmt::If(s) => {
-                    for (cond, body) in &s.branches {
+                    for (index, (cond, body)) in s.branches.iter().enumerate() {
                         if let Some(c) = cond {
-                            self.check_expr(c, Some(ValueKind::Bool));
+                            self.check_at(
+                                c,
+                                Some(ValueKind::Bool),
+                                s.loc.line,
+                                ExpressionSlot::Condition(index as u32),
+                            );
                         }
                         self.walk_block(body, node, depth + 1);
                     }
                 }
                 Stmt::Let(l) => {
-                    let kind = self.check_expr(&l.expr, None);
+                    let kind = self.check_at(&l.expr, None, l.loc.line, ExpressionSlot::Value);
                     if let Some(v) = self.symbols.vars.get_mut(&l.name) {
                         if v.kind.is_none() {
                             v.kind = kind;
@@ -171,30 +202,42 @@ impl<'a> Ctx<'a> {
                     let expected = match self.symbols.vars.get(&s.name) {
                         Some(v) => {
                             if v.is_const {
-                                self.diags.push(Diagnostic::error(
-                                    "A106",
+                                self.diags.push(
+                                    Diagnostic::error(
+                                        "A106",
+                                        &self.cur_file,
+                                        Span::new(
+                                            s.loc.line,
+                                            s.loc.column,
+                                            s.name.chars().count() as u32,
+                                        ),
+                                        format!("不能对常量 `{}` 赋值", s.name),
+                                    )
+                                    .with_source_role(
+                                        crate::diagnostic::DiagnosticSourceRole::Target,
+                                    ),
+                                );
+                            }
+                            v.kind
+                        }
+                        None => {
+                            self.diags.push(target_diagnostic(
+                                Diagnostic::error(
+                                    "A102",
                                     &self.cur_file,
                                     Span::new(
                                         s.loc.line,
                                         s.loc.column,
                                         s.name.chars().count() as u32,
                                     ),
-                                    format!("不能对常量 `{}` 赋值", s.name),
-                                ));
-                            }
-                            v.kind
-                        }
-                        None => {
-                            self.diags.push(Diagnostic::error(
-                                "A102",
-                                &self.cur_file,
-                                Span::new(s.loc.line, s.loc.column, s.name.chars().count() as u32),
-                                format!("`set` 的目标 `{}` 未声明(需要先 let)", s.name),
+                                    format!("`set` 的目标 `{}` 未声明(需要先 let)", s.name),
+                                ),
+                                &s.name,
                             ));
                             None
                         }
                     };
-                    self.check_expr(&s.expr, expected);
+                    self.check_at(&s.expr, expected, s.loc.line, ExpressionSlot::Value);
                 }
                 Stmt::Scene(s) => {
                     if self.in_fragment {
@@ -229,6 +272,7 @@ impl<'a> Ctx<'a> {
                     }
                 } // 事件顶层已提取
             }
+            self.leave_source(scope);
             i += 1;
         }
     }
@@ -241,11 +285,14 @@ impl<'a> Ctx<'a> {
             target,
             self.symbols.event_order.get(node.event).map(String::as_str),
         ) else {
-            self.diags.push(Diagnostic::error(
-                "A101",
-                &self.cur_file,
-                Span::new(d.loc.line, d.loc.column, target.chars().count() as u32),
-                format!("跃迁目标 `{target}` 不存在"),
+            self.diags.push(target_diagnostic(
+                Diagnostic::error(
+                    "A101",
+                    &self.cur_file,
+                    Span::new(d.loc.line, d.loc.column, target.chars().count() as u32),
+                    format!("跃迁目标 `{target}` 不存在"),
+                ),
+                target,
             ));
             return;
         };
@@ -255,14 +302,14 @@ impl<'a> Ctx<'a> {
             let cur_sl = self.program.events[node.event].storyline.clone();
             let tgt_sl = self.program.events[path.event].storyline.clone();
             if cur_sl == tgt_sl {
-                self.diags.push(Diagnostic::warning(
+                self.diags.push(target_diagnostic(Diagnostic::warning(
                     "A209",
                     &self.cur_file,
-                    Span::new(d.loc.line, d.loc.column, target.chars().count() as u32 + 3),
+                    Span::new(d.loc.line, d.loc.column, target.chars().count() as u32),
                     format!(
                         "漂流 `->>` 的目标 `{full}` 与当前节点在同一故事线 `{cur_sl}`;跨线移动才需要漂流,此处应使用 `->`"
                     ),
-                ));
+                ), target));
             }
         }
         let edge_kind = if d.drift {
@@ -280,4 +327,11 @@ impl<'a> Ctx<'a> {
         let from = node.node_name.clone();
         self.add_edge(&from, &full, edge_kind, label, &file, line);
     }
+}
+
+fn target_diagnostic(mut diagnostic: Diagnostic, target: &str) -> Diagnostic {
+    if !target.is_empty() {
+        diagnostic.source_role = Some(crate::diagnostic::DiagnosticSourceRole::Target);
+    }
+    diagnostic
 }

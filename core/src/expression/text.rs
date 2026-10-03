@@ -24,15 +24,37 @@ pub fn parse_interpolations_with_options(
     diags: &mut Vec<Diagnostic>,
     options: crate::compiler::CompileOptions,
 ) -> Vec<TextPart> {
-    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut Vec::new())
+    parse_with_ranges(
+        raw,
+        file,
+        line,
+        base_col,
+        diags,
+        options,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
 }
 
 pub(crate) fn parse_with_sources(
-    raw: &str, file: &str, line: u32, base_col: u32, diags: &mut Vec<Diagnostic>,
+    raw: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
 ) -> (Vec<TextPart>, Vec<ExpressionSource>) {
     let mut sources = Vec::new();
-    let parts = parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut sources);
+    let parts = parse_with_ranges(
+        raw,
+        file,
+        line,
+        base_col,
+        diags,
+        options,
+        &mut Vec::new(),
+        &mut sources,
+    );
     (parts, sources)
 }
 
@@ -60,12 +82,15 @@ pub(super) fn parse_with_ranges(
                 't' => lit.push('\t'),
                 '{' | '}' | '#' | '~' | '"' | '\\' | '[' | ']' => lit.push(n),
                 other => {
-                    diags.push(Diagnostic::error(
-                        "P003",
-                        file,
-                        Span::new(line, base_col + i as u32 + 1, 2),
-                        format!("未知的转义 \\{other}"),
-                    ));
+                    diags.push(
+                        Diagnostic::error(
+                            "P003",
+                            file,
+                            Span::new(line, base_col + i as u32 + 1, 2),
+                            format!("未知的转义 \\{other}"),
+                        )
+                        .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                    );
                     lit.push('\\');
                     lit.push(other);
                 }
@@ -77,12 +102,15 @@ pub(super) fn parse_with_ranges(
             let end = (i + 2..chars.len().saturating_sub(1))
                 .find(|&j| chars[j] == ']' && chars[j + 1] == ']');
             let Some(end) = end else {
-                diags.push(Diagnostic::error(
-                    "P004",
-                    file,
-                    Span::new(line, base_col + i as u32 + 1, 2),
-                    "正文对象链接未闭合",
-                ));
+                diags.push(
+                    Diagnostic::error(
+                        "P004",
+                        file,
+                        Span::new(line, base_col + i as u32 + 1, 2),
+                        "正文对象链接未闭合",
+                    )
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                );
                 lit.extend(chars[i..].iter());
                 break;
             };
@@ -105,12 +133,15 @@ pub(super) fn parse_with_ranges(
                     column: base_col + i as u32 + 1,
                 }));
             } else {
-                diags.push(Diagnostic::error(
-                    "P004",
-                    file,
-                    Span::new(line, base_col + i as u32 + 1, (end + 2 - i) as u32),
-                    "正文链接需要 [[对象类型:ID|显示文字]]，显示文字不可包含语法分隔符",
-                ));
+                diags.push(
+                    Diagnostic::error(
+                        "P004",
+                        file,
+                        Span::new(line, base_col + i as u32 + 1, (end + 2 - i) as u32),
+                        "正文链接需要 [[对象类型:ID|显示文字]]，显示文字不可包含语法分隔符",
+                    )
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                );
                 lit.extend(chars[i..end + 2].iter());
             }
             i = end + 2;
@@ -140,16 +171,20 @@ pub(super) fn parse_with_ranges(
                 j += 1;
             }
             if j >= chars.len() {
-                diags.push(Diagnostic::error(
-                    "P003",
-                    file,
-                    Span::new(line, base_col + i as u32 + 1, 1),
-                    "插值 `{` 未闭合",
-                ));
+                diags.push(
+                    Diagnostic::error(
+                        "P003",
+                        file,
+                        Span::new(line, base_col + i as u32 + 1, 1),
+                        "插值 `{` 未闭合",
+                    )
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                );
                 break;
             }
             let inner: String = chars[start..j].iter().collect();
-            let (expr, source) = parse_expr_with_source(&inner, file, line, base_col + start as u32, diags);
+            let (expr, source) =
+                parse_expr_with_source(&inner, file, line, base_col + start as u32, diags);
             sources.push(source);
             parts.push(TextPart::Expr(expr));
             i = j + 1;

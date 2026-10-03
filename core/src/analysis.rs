@@ -21,6 +21,8 @@ pub fn analyze(program: &Program, parse_diags: Vec<Diagnostic>) -> (Analysis, Ve
 /// Program 与 Analysis 必须来自同一次编译；只检查当前 Program.entry，不改指纹。
 pub fn execution_diagnostics(program: &Program, analysis: &Analysis) -> Vec<Diagnostic> {
     let mut diagnostics = builder::execution_diagnostics(program, analysis);
-    program.source_provenance.resolve_diagnostics(&mut diagnostics);
+    program
+        .source_provenance
+        .resolve_diagnostics(&mut diagnostics);
     diagnostics
 }

@@ -2,6 +2,8 @@
 use crate::ast::Expr;
 use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
 use std::collections::BTreeMap;
+mod origin;
+pub(crate) use origin::{bind_diagnostics, SourceOwner, StatementKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ExpressionSlot {
@@ -20,12 +22,17 @@ pub(crate) enum ExpressionSlot {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ExpressionSource {
     pub span: Option<Span>,
+    pub file: String,
     pub children: Vec<ExpressionSource>,
 }
 
 impl ExpressionSource {
-    pub fn leaf(span: Span) -> Self {
-        Self { span: Some(span), children: Vec::new() }
+    pub fn leaf(span: Span, file: &str) -> Self {
+        Self {
+            span: Some(span),
+            file: file.into(),
+            children: Vec::new(),
+        }
     }
 
     pub fn map_boundaries(&mut self, base: u32, positions: &[usize]) {
@@ -37,13 +44,18 @@ impl ExpressionSource {
         }
     }
 
-    pub fn bind(&self, expression: &Expr, output: &mut BTreeMap<usize, Span>) {
+    pub fn bind(&self, expression: &Expr, output: &mut BTreeMap<usize, (String, Span)>) {
         if let Some(span) = self.span {
-            output.insert(expression as *const Expr as usize, span);
+            output.insert(
+                expression as *const Expr as usize,
+                (self.file.clone(), span),
+            );
         }
         match expression {
             Expr::Unary { expr, .. } => {
-                if let [source] = self.children.as_slice() { source.bind(expr, output); }
+                if let [source] = self.children.as_slice() {
+                    source.bind(expr, output);
+                }
             }
             Expr::Binary { lhs, rhs, .. } => {
                 if let [left, right] = self.children.as_slice() {
@@ -52,7 +64,9 @@ impl ExpressionSource {
                 }
             }
             Expr::Call { args, .. } if args.len() == self.children.len() => {
-                for (arg, source) in args.iter().zip(&self.children) { source.bind(arg, output); }
+                for (arg, source) in args.iter().zip(&self.children) {
+                    source.bind(arg, output);
+                }
             }
             _ => {}
         }
@@ -60,9 +74,14 @@ impl ExpressionSource {
 }
 
 pub(crate) fn map_span(span: &mut Span, base: u32, positions: &[usize]) {
-    let Some(start) = span.column.checked_sub(base + 1) else { return };
-    let Some(end) = start.checked_add(span.length) else { return };
-    if let (Some(&start), Some(&end)) = (positions.get(start as usize), positions.get(end as usize)) {
+    let Some(start) = span.column.checked_sub(base + 1) else {
+        return;
+    };
+    let Some(end) = start.checked_add(span.length) else {
+        return;
+    };
+    if let (Some(&start), Some(&end)) = (positions.get(start as usize), positions.get(end as usize))
+    {
         span.column = base + start as u32 + 1;
         span.length = end.saturating_sub(start) as u32;
     }
@@ -76,34 +95,60 @@ pub(crate) struct StatementSource {
 
 #[derive(Debug, Clone, Default)]
 pub struct SourceProvenance {
+    pub(crate) statement_origins: BTreeMap<origin::StatementOriginKey, Option<String>>,
     pub(crate) statements: BTreeMap<(String, u32), StatementSource>,
     pub(crate) expressions: BTreeMap<(String, u32, ExpressionSlot), ExpressionSource>,
 }
 
 impl SourceProvenance {
     pub(crate) fn insert_expression(
-        &mut self, file: &str, owner: u32, slot: ExpressionSlot, source: ExpressionSource,
+        &mut self,
+        file: &str,
+        owner: u32,
+        slot: ExpressionSlot,
+        source: ExpressionSource,
     ) {
         self.expressions.insert((file.into(), owner, slot), source);
     }
 
-    pub(crate) fn expression(&self, file: &str, owner: u32, slot: ExpressionSlot) -> Option<&ExpressionSource> {
+    pub(crate) fn expression(
+        &self,
+        file: &str,
+        owner: u32,
+        slot: ExpressionSlot,
+    ) -> Option<&ExpressionSource> {
         self.expressions.get(&(file.into(), owner, slot))
     }
 
     /// 未专门承诺 target/expression 的语言生产者使用正式语句/声明上下文。
     pub(crate) fn resolve_diagnostics(&self, diagnostics: &mut [Diagnostic]) {
         for diagnostic in diagnostics {
-            self.resolve(&diagnostic.file, &mut diagnostic.span, &mut diagnostic.source_role);
-            diagnostic.related_source_roles.resize(diagnostic.related.len(), None);
-            for ((file, span), role) in diagnostic.related.iter_mut().zip(&mut diagnostic.related_source_roles) {
+            self.resolve(
+                &diagnostic.file,
+                &mut diagnostic.span,
+                &mut diagnostic.source_role,
+            );
+            diagnostic
+                .related_source_roles
+                .resize(diagnostic.related.len(), None);
+            for ((file, span), role) in diagnostic
+                .related
+                .iter_mut()
+                .zip(&mut diagnostic.related_source_roles)
+            {
                 self.resolve(file, span, role);
             }
         }
     }
 
     fn resolve(&self, file: &str, span: &mut Span, role: &mut Option<DiagnosticSourceRole>) {
-        if role.is_some() { return; }
+        if *role == Some(DiagnosticSourceRole::Unavailable) {
+            *span = Span::new(0, 1, 0);
+            return;
+        }
+        if role.is_some() {
+            return;
+        }
         if let Some(source) = self.statements.get(&(file.into(), span.line)) {
             *span = source.span;
             *role = Some(source.role);

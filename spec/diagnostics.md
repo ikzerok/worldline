@@ -16,7 +16,7 @@ Diagnostic {
   code: String          // 见 §2 编号表
   message: String       // 中文,面向作者
   file: String          // 源文件路径(include 场景下指向真实文件)
-  span: Span { line: u32, column: u32, length: u32 }  // 行/列均 1-based,长度按字符数
+  span: Span { line: u32, column: u32, length: u32 }  // 有效来源行/列均1-based，长度按Unicode scalar；line=0为无可定位来源哨兵
   note: Option<String>      // 补充说明
   suggestion: Option<String> // 可选修复文本(编辑器可做一键替换)
   related: Vec<(String, Span)> // 关联位置,如重复符号的另一处

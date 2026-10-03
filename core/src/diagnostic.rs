@@ -72,6 +72,7 @@ pub struct Diagnostic {
     pub suggestion: Option<String>,
     pub related: Vec<(String, Span)>,
     pub source_role: Option<DiagnosticSourceRole>,
+    pub(crate) source_bound: bool,
     pub related_source_roles: Vec<Option<DiagnosticSourceRole>>,
 }
 
@@ -87,6 +88,7 @@ impl Diagnostic {
             suggestion: None,
             related: Vec::new(),
             source_role: None,
+            source_bound: false,
             related_source_roles: Vec::new(),
         }
     }
@@ -102,6 +104,7 @@ impl Diagnostic {
             suggestion: None,
             related: Vec::new(),
             source_role: None,
+            source_bound: false,
             related_source_roles: Vec::new(),
         }
     }
@@ -117,6 +120,7 @@ impl Diagnostic {
             suggestion: None,
             related: Vec::new(),
             source_role: None,
+            source_bound: false,
             related_source_roles: Vec::new(),
         }
     }

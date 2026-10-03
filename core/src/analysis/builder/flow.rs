@@ -1,7 +1,8 @@
 use super::{flow_summary::FlowSummary, Ctx};
 use crate::analysis_helpers::nodes_on_cycles;
 use crate::ast::*;
-use crate::diagnostic::{Diagnostic, Span};
+use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
+use crate::source_provenance::{SourceOwner, StatementKind};
 use std::collections::{HashSet, VecDeque};
 impl<'a> Ctx<'a> {
     /// 流分析:A201 不可达、A202 缺尾、A205 once、A206 闭环、A107 未读变量。
@@ -61,9 +62,22 @@ impl<'a> Ctx<'a> {
                 site.span,
                 format!("节点 {names} 构成没有选择暂停或出口的闭环；请补可退出分支或选择暂停"),
             );
+            diagnostic.source_role = Some(if site.source_known {
+                DiagnosticSourceRole::Target
+            } else {
+                DiagnosticSourceRole::Unavailable
+            });
             for (index, site) in group {
                 if index != first {
-                    diagnostic = diagnostic.with_related(&site.file, site.span);
+                    diagnostic = diagnostic.with_related_source_role(
+                        &site.file,
+                        site.span,
+                        if site.source_known {
+                            DiagnosticSourceRole::Target
+                        } else {
+                            DiagnosticSourceRole::Unavailable
+                        },
+                    );
                 }
             }
             self.diags.push(diagnostic);
@@ -113,6 +127,7 @@ impl<'a> Ctx<'a> {
                 ));
             }
             let body = self.program.events[idx].body.clone();
+            self.source_owner = Some(SourceOwner::new(&self.cur_file, loc.line));
             self.check_once_acyclic(&body, &name, &cyclic);
         }
         // A107
@@ -124,12 +139,15 @@ impl<'a> Ctx<'a> {
             .map(|(n, v)| (n.clone(), v.decl_span, v.decl_file.clone()))
             .collect();
         for (name, span, file) in unused {
-            self.diags.push(Diagnostic::warning(
-                "A107",
-                &file,
-                span,
-                format!("变量 `{name}` 声明后从未被读取"),
-            ));
+            self.diags.push(
+                Diagnostic::warning(
+                    "A107",
+                    &file,
+                    span,
+                    format!("变量 `{name}` 声明后从未被读取"),
+                )
+                .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+            );
         }
     }
 
@@ -141,12 +159,14 @@ impl<'a> Ctx<'a> {
                 match st {
                     Stmt::Choice(c) => {
                         if c.once && !on_cycle {
+                            let scope = ctx.enter_source(c.loc, StatementKind::Choice);
                             ctx.diags.push(Diagnostic::warning(
                                 "A205",
                                 &ctx.cur_file,
                                 Span::new(c.loc.line, c.loc.column, 10),
                                 "`once` 所在节点不会被重访,与默认粘性行为相同,可省略",
                             ));
+                            ctx.leave_source(scope);
                         }
                         rec(&c.body, node, ctx, cyclic);
                     }

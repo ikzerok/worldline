@@ -4,12 +4,14 @@ use crate::analysis::{NodePath, Symbols};
 use crate::ast::*;
 use crate::diagnostic::Span;
 use crate::graph::GraphNode;
+use crate::source_provenance::{SourceOwner, StatementKind};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 #[derive(Clone)]
 pub(super) struct Site {
     pub file: String,
     pub span: Span,
+    pub source_known: bool,
 }
 
 #[derive(Clone, Default)]
@@ -107,7 +109,12 @@ impl Summarizer<'_> {
                         .iter()
                         .map(|parameter| parameter.name.clone()),
                 );
-                self.block(&fragment.body, &fragment.file, &initialized)
+                self.block(
+                    &fragment.body,
+                    &fragment.file,
+                    &initialized,
+                    &SourceOwner::new(&fragment.file, fragment.loc.line),
+                )
             })
             .unwrap_or_else(Summary::unknown);
         self.active.remove(name);
@@ -115,7 +122,13 @@ impl Summarizer<'_> {
         summary
     }
 
-    fn block(&mut self, body: &[Stmt], file: &str, known: &HashSet<String>) -> Summary {
+    fn block(
+        &mut self,
+        body: &[Stmt],
+        file: &str,
+        known: &HashSet<String>,
+        owner: &SourceOwner,
+    ) -> Summary {
         let mut initialized = known.clone();
         let mut out = Summary::continuing();
         let mut index = 0;
@@ -132,7 +145,17 @@ impl Summarizer<'_> {
                             next.jumps.insert(
                                 target.clone(),
                                 Site {
-                                    file: file.to_string(),
+                                    file: self
+                                        .program
+                                        .source_provenance
+                                        .statement_file(owner, divert.loc, StatementKind::Divert)
+                                        .unwrap_or(file)
+                                        .to_string(),
+                                    source_known: self
+                                        .program
+                                        .source_provenance
+                                        .statement_file(owner, divert.loc, StatementKind::Divert)
+                                        .is_some(),
                                     span: Span::new(
                                         divert.loc.line,
                                         divert.loc.column,
@@ -170,7 +193,7 @@ impl Summarizer<'_> {
                             .is_some_and(|condition| !expression_safe(condition, &initialized));
                         let condition = truth(condition.as_ref());
                         if condition != Some(false) {
-                            next.merge(self.block(body, file, &initialized));
+                            next.merge(self.block(body, file, &initialized, owner));
                         }
                         if condition == Some(true) {
                             remainder = false;
@@ -201,7 +224,7 @@ impl Summarizer<'_> {
                         }
                         if visible != Some(false) && enabled != Some(false) {
                             next.pause = true;
-                            next.merge(self.block(&choice.body, file, &initialized));
+                            next.merge(self.block(&choice.body, file, &initialized, owner));
                             guaranteed |=
                                 !choice.once && visible == Some(true) && enabled == Some(true);
                         }
@@ -211,7 +234,7 @@ impl Summarizer<'_> {
                     out.then(next);
                     continue;
                 }
-                Stmt::Scene(scene) => self.block(&scene.body, file, &initialized),
+                Stmt::Scene(scene) => self.block(&scene.body, file, &initialized, owner),
                 Stmt::Text(text) | Stmt::Say(crate::language::SayStmt { text, .. }) => Summary {
                     unknown: !text_safe(&text.parts, &initialized),
                     ..Summary::continuing()
@@ -270,12 +293,13 @@ impl Summarizer<'_> {
             body = &scene.body;
         }
         let initialized = globals(program);
-        let mut summary = self.block(body, file, &initialized);
+        let owner = SourceOwner::new(file, event.loc.line);
+        let mut summary = self.block(body, file, &initialized, &owner);
         for continuation in continuations.into_iter().rev() {
             if !summary.fallthrough {
                 break;
             }
-            summary.then(self.block(continuation, file, &initialized));
+            summary.then(self.block(continuation, file, &initialized, &owner));
         }
         // 准入可能拒绝重入。即使同事件场景无需再准入，也选择保守地不作闭环断言。
         summary.unknown |= truth(event.after.as_ref()) != Some(true)

@@ -318,22 +318,25 @@ pub(crate) fn collect_changes(
         site: &StateChangeSite,
         catalog: &mut Catalog,
         diags: &mut Vec<Diagnostic>,
+        program: &Program,
+        owner: &crate::source_provenance::SourceOwner,
     ) {
         for stmt in body {
+            let start = diags.len();
             match stmt {
                 Stmt::Change(c) => add_change(&c.change, site.clone(), catalog, diags),
                 Stmt::DynamicChange(c) => language::add_dynamic(c, site.clone(), catalog),
                 Stmt::Scene(s) => {
                     let mut inner = site.clone();
                     inner.node = format!("{}.{}", site.node, s.name);
-                    walk(&s.body, &inner, catalog, diags);
+                    walk(&s.body, &inner, catalog, diags, program, owner);
                 }
                 Stmt::Choice(c) => {
                     let mut inner = site.clone();
                     inner
                         .contexts
                         .push(format!("选择：{}（第 {} 行）", c.label_raw, c.loc.line));
-                    walk(&c.body, &inner, catalog, diags);
+                    walk(&c.body, &inner, catalog, diags, program, owner);
                 }
                 Stmt::If(i) => {
                     for (index, (_, body)) in i.branches.iter().enumerate() {
@@ -343,11 +346,17 @@ pub(crate) fn collect_changes(
                             i.loc.line,
                             index + 1
                         ));
-                        walk(body, &inner, catalog, diags);
+                        walk(body, &inner, catalog, diags, program, owner);
                     }
                 }
                 _ => {}
             }
+            let file = program.source_provenance.statement_file(
+                owner,
+                crate::language::statement_loc(stmt),
+                crate::source_provenance::StatementKind::of(stmt),
+            );
+            crate::source_provenance::bind_diagnostics(&mut diags[start..], file);
         }
     }
     for (event, file) in program.events.iter().zip(&program.event_files) {
@@ -365,7 +374,8 @@ pub(crate) fn collect_changes(
             file: file.clone(),
             line: event.loc.line,
         };
-        walk(&event.body, &site, catalog, diags);
+        let owner = crate::source_provenance::SourceOwner::new(file, event.loc.line);
+        walk(&event.body, &site, catalog, diags, program, &owner);
         for effect in &event.effects {
             let mut site = site.clone();
             site.timing = match effect.when {
@@ -379,7 +389,14 @@ pub(crate) fn collect_changes(
                     .push(format!("受第 {} 行效果条件约束", effect.loc.line));
             }
             for action in &effect.actions {
+                let start = diags.len();
                 add_change(action, site.clone(), catalog, diags);
+                let file = program.source_provenance.statement_file(
+                    &owner,
+                    action.loc,
+                    crate::source_provenance::StatementKind::Change,
+                );
+                crate::source_provenance::bind_diagnostics(&mut diags[start..], file);
             }
         }
     }
@@ -398,7 +415,8 @@ pub(crate) fn collect_changes(
             file: fragment.file.clone(),
             line: fragment.loc.line,
         };
-        walk(&fragment.body, &site, catalog, diags);
+        let owner = crate::source_provenance::SourceOwner::new(&fragment.file, fragment.loc.line);
+        walk(&fragment.body, &site, catalog, diags, program, &owner);
     }
     for state in catalog.states.values_mut() {
         state

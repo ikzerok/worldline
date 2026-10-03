@@ -19,7 +19,10 @@ pub(super) fn classify_catalog(
         }
         "property" => {
             let (name, value_src) = rest_trim.split_once('=').unwrap_or((rest_trim, ""));
-            source.value = source.remainder + rest_trim[..rest_trim.len() - value_src.trim_start().len()].chars().count() as u32;
+            source.value = source.remainder
+                + rest_trim[..rest_trim.len() - value_src.trim_start().len()]
+                    .chars()
+                    .count() as u32;
             let name = name.trim();
             if !valid_identifier(name) || value_src.trim().is_empty() {
                 diags.push(Diagnostic::error(

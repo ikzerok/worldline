@@ -159,6 +159,14 @@ pub fn validate(program: &Program, catalog: &Catalog) -> SchemaIndex {
         });
         index.diagnostics.extend(diagnostics);
     }
+    program
+        .source_provenance
+        .resolve_diagnostics(&mut index.diagnostics);
+    for instance in &mut index.instances {
+        program
+            .source_provenance
+            .resolve_diagnostics(&mut instance.diagnostics);
+    }
     crate::sort_diagnostics(&mut index.diagnostics);
     index
 }

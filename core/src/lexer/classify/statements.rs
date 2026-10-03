@@ -219,7 +219,8 @@ pub(super) fn classify_statement(
             let label = match parse_quoted(&rc, i, file, no, diags) {
                 Ok((s, end)) => {
                     source.label = off + label_start as u32;
-                    source.label_boundaries = super::super::source::decoded_boundaries(&rc[label_start..end - 1]);
+                    source.label_boundaries =
+                        super::super::source::decoded_boundaries(&rc[label_start..end - 1]);
                     i = skip_spaces(&rc, end);
                     s
                 }
@@ -290,7 +291,9 @@ pub(super) fn classify_statement(
             // else if ...
             let s: String = rc.iter().collect();
             if let Some(cond) = s.strip_prefix("if") {
-                source.condition = source.remainder + 2 + cond.chars().take_while(|c| c.is_whitespace()).count() as u32;
+                source.condition = source.remainder
+                    + 2
+                    + cond.chars().take_while(|c| c.is_whitespace()).count() as u32;
                 let cond = cond.trim().to_string();
                 if cond.is_empty() {
                     diags.push(Diagnostic::error(

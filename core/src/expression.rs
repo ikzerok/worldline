@@ -2,17 +2,17 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
-use crate::source_provenance::ExpressionSource;
 use crate::lexer;
+use crate::source_provenance::ExpressionSource;
 mod quoted;
 mod reference;
 pub(crate) use reference::static_ref_id_range;
 mod text;
 pub use quoted::parse_quoted_interpolations_with_options;
 pub(crate) use quoted::parse_with_sources as parse_quoted_with_sources;
-pub(crate) use text::parse_with_sources as parse_text_with_sources;
-pub(crate) use quoted::{static_literal_ranges, remap_parts};
+pub(crate) use quoted::{remap_parts, static_literal_ranges};
 pub(crate) use text::literal_ranges;
+pub(crate) use text::parse_with_sources as parse_text_with_sources;
 pub use text::{parse_interpolations, parse_interpolations_with_options};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,13 +55,20 @@ fn lex_expr(
             }
             let raw: String = chars[start..i].iter().collect();
             match raw.parse::<f64>() {
-                Ok(n) => toks.push((Tok::Num(n), base_col + start as u32 + 1, base_col + i as u32 + 1)),
-                Err(_) => diags.push(Diagnostic::error(
-                    "P006",
-                    file,
-                    Span::new(line, col, raw.chars().count() as u32),
-                    format!("非法数字 `{raw}`"),
+                Ok(n) => toks.push((
+                    Tok::Num(n),
+                    base_col + start as u32 + 1,
+                    base_col + i as u32 + 1,
                 )),
+                Err(_) => diags.push(
+                    Diagnostic::error(
+                        "P006",
+                        file,
+                        Span::new(line, col, raw.chars().count() as u32),
+                        format!("非法数字 `{raw}`"),
+                    )
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                ),
             }
             continue;
         }
@@ -69,7 +76,9 @@ fn lex_expr(
             let diagnostic_start = diags.len();
             let result = lexer::parse_quoted(&chars, i, file, line, diags);
             for diagnostic in &mut diags[diagnostic_start..] {
-                diagnostic.span.column += base_col;
+                let end = result.as_ref().map(|(_, end)| *end).unwrap_or(chars.len());
+                diagnostic.span =
+                    Span::new(line, base_col + i as u32 + 1, end.saturating_sub(i) as u32);
                 diagnostic.source_role = Some(DiagnosticSourceRole::Expression);
             }
             match result {
@@ -123,12 +132,15 @@ fn lex_expr(
             ')' => Tok::RParen,
             ',' => Tok::Comma,
             _ => {
-                diags.push(Diagnostic::error(
-                    "P006",
-                    file,
-                    Span::new(line, col, 1),
-                    format!("表达式中出现非法字符 `{c}`"),
-                ));
+                diags.push(
+                    Diagnostic::error(
+                        "P006",
+                        file,
+                        Span::new(line, col, 1),
+                        format!("表达式中出现非法字符 `{c}`"),
+                    )
+                    .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                );
                 i += 1;
                 continue;
             }
@@ -151,26 +163,53 @@ struct ExprParser<'a> {
 
 impl<'a> ExprParser<'a> {
     fn err_here(&self, msg: String, diags: &mut Vec<Diagnostic>) {
-        let col = self.toks.get(self.pos).map(|t| t.1).unwrap_or(self.end_column);
-        diags.push(Diagnostic::error(
+        let col = self
+            .toks
+            .get(self.pos)
+            .map(|t| t.1)
+            .unwrap_or(self.end_column);
+        let mut diagnostic = Diagnostic::error(
             "P006",
             &self.file,
-            Span::new(self.line, col, self.toks.get(self.pos).map(|t| t.2 - t.1).unwrap_or(0)),
+            Span::new(
+                self.line,
+                col,
+                self.toks.get(self.pos).map(|t| t.2 - t.1).unwrap_or(0),
+            ),
             msg,
-        ));
+        );
+        if self.toks.get(self.pos).is_some() {
+            diagnostic.source_role = Some(DiagnosticSourceRole::Target);
+        }
+        diags.push(diagnostic);
     }
 
     fn combine_source(&mut self, count: usize, start: Option<u32>) {
-        let children = self.sources.split_off(self.sources.len().saturating_sub(count));
+        let children = self
+            .sources
+            .split_off(self.sources.len().saturating_sub(count));
         let start = start.or_else(|| children.first().and_then(|s| s.span.map(|s| s.column)));
         let end = self.toks.get(self.pos.saturating_sub(1)).map(|t| t.2);
-        let span = start.zip(end).map(|(start, end)| Span::new(self.line, start, end.saturating_sub(start)));
-        self.sources.push(ExpressionSource { span, children });
+        let span = start
+            .zip(end)
+            .map(|(start, end)| Span::new(self.line, start, end.saturating_sub(start)));
+        self.sources.push(ExpressionSource {
+            span,
+            file: self.file.clone(),
+            children,
+        });
     }
 
     fn leaf_source(&mut self, column: u32) {
-        let end = self.toks.get(self.pos.saturating_sub(1)).map(|t| t.2).unwrap_or(column);
-        self.sources.push(ExpressionSource::leaf(Span::new(self.line, column, end.saturating_sub(column))));
+        let end = self
+            .toks
+            .get(self.pos.saturating_sub(1))
+            .map(|t| t.2)
+            .unwrap_or(column);
+        self.sources.push(ExpressionSource::leaf(
+            Span::new(self.line, column, end.saturating_sub(column)),
+            &self.file,
+        ));
     }
 
     fn parse_expr(&mut self, diags: &mut Vec<Diagnostic>) -> Expr {
@@ -407,7 +446,11 @@ impl<'a> ExprParser<'a> {
                     self.err_here("括号未闭合".into(), diags);
                 }
                 if let Some(source) = self.sources.last_mut() {
-                    let end = self.toks.get(self.pos.saturating_sub(1)).map(|t| t.2).unwrap_or(col);
+                    let end = self
+                        .toks
+                        .get(self.pos.saturating_sub(1))
+                        .map(|t| t.2)
+                        .unwrap_or(col);
                     source.span = Some(Span::new(self.line, col, end.saturating_sub(col)));
                 }
                 inner
@@ -438,9 +481,12 @@ pub fn parse_expr_src(
 }
 
 pub(crate) fn parse_expr_with_source(
-    src: &str, file: &str, line: u32, base_col: u32, diags: &mut Vec<Diagnostic>,
+    src: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
 ) -> (Expr, ExpressionSource) {
-    let diagnostics_start = diags.len();
     let toks = lex_expr(src, file, line, base_col, diags);
     let mut p = ExprParser {
         toks: &toks,
@@ -453,9 +499,6 @@ pub(crate) fn parse_expr_with_source(
     let expr = p.parse_expr(diags);
     if p.pos < toks.len() {
         p.err_here("表达式后有多余内容".into(), diags);
-    }
-    for diagnostic in &mut diags[diagnostics_start..] {
-        diagnostic.source_role = Some(DiagnosticSourceRole::Expression);
     }
     let source = p.sources.pop().unwrap_or_default();
     (expr, source)

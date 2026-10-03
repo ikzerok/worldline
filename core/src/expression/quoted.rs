@@ -9,15 +9,37 @@ pub fn parse_quoted_interpolations_with_options(
     diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
 ) -> Vec<TextPart> {
-    parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut Vec::new())
+    parse_with_ranges(
+        raw,
+        file,
+        line,
+        base_col,
+        diags,
+        options,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
 }
 
 pub(crate) fn parse_with_sources(
-    raw: &str, file: &str, line: u32, base_col: u32, diags: &mut Vec<Diagnostic>,
+    raw: &str,
+    file: &str,
+    line: u32,
+    base_col: u32,
+    diags: &mut Vec<Diagnostic>,
     options: crate::CompileOptions,
 ) -> (Vec<TextPart>, Vec<ExpressionSource>) {
     let mut sources = Vec::new();
-    let parts = parse_with_ranges(raw, file, line, base_col, diags, options, &mut Vec::new(), &mut sources);
+    let parts = parse_with_ranges(
+        raw,
+        file,
+        line,
+        base_col,
+        diags,
+        options,
+        &mut Vec::new(),
+        &mut sources,
+    );
     (parts, sources)
 }
 
@@ -32,6 +54,7 @@ pub(super) fn parse_with_ranges(
     ranges: &mut Vec<std::ops::Range<usize>>,
     sources: &mut Vec<ExpressionSource>,
 ) -> Vec<TextPart> {
+    let raw_diagnostics_start = diags.len();
     let chars: Vec<char> = raw.chars().collect();
     let mut normalized = String::new();
     let mut positions = Vec::new();
@@ -113,10 +136,23 @@ pub(super) fn parse_with_ranges(
         i += consumed;
     }
     positions.push(chars.len());
+    for diagnostic in &mut diags[raw_diagnostics_start..] {
+        diagnostic.source_role = Some(DiagnosticSourceRole::Target);
+    }
     let diagnostics_start = diags.len();
-    let mut parts =
-        super::text::parse_with_ranges(&normalized, file, line, base_col, diags, options, ranges, sources);
-    for source in sources.iter_mut() { source.map_boundaries(base_col, &positions); }
+    let mut parts = super::text::parse_with_ranges(
+        &normalized,
+        file,
+        line,
+        base_col,
+        diags,
+        options,
+        ranges,
+        sources,
+    );
+    for source in sources.iter_mut() {
+        source.map_boundaries(base_col, &positions);
+    }
     for range in ranges.iter_mut() {
         range.start = positions[range.start];
         range.end = positions[range.end];

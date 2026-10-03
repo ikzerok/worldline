@@ -12,6 +12,7 @@ mod flow_safety;
 mod flow_summary;
 mod fragment_flow;
 mod language;
+mod source;
 mod variables;
 mod walk;
 struct Ctx<'a> {
@@ -27,6 +28,9 @@ struct Ctx<'a> {
     in_fragment: bool,
     in_rule: bool,
     expression_fallback: Loc,
+    expression_sources: BTreeMap<usize, (String, Span)>,
+    source_owner: Option<crate::source_provenance::SourceOwner>,
+    source_file: Option<String>,
 }
 
 /// 节点执行上下文(引用解析与诊断归属)。
@@ -52,6 +56,9 @@ pub(super) fn analyze(
         in_fragment: false,
         in_rule: false,
         expression_fallback: Loc::new(0, 1),
+        expression_sources: BTreeMap::new(),
+        source_owner: None,
+        source_file: None,
         cur_file: program.files.first().cloned().unwrap_or_default(),
     };
 

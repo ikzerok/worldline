@@ -471,7 +471,7 @@ pub fn lex_source_with_options(
         let mut indent = 0u32;
         let mut chars: Vec<char> = Vec::new();
         let mut leading = true;
-        let mut bad_tab = false;
+        let mut bad_tab = None;
         let mut physical_base = 0u32;
         for c in raw_line.chars() {
             if leading && c == ' ' {
@@ -480,20 +480,23 @@ pub fn lex_source_with_options(
                 continue;
             }
             if leading && c == '\t' {
-                bad_tab = true;
+                bad_tab.get_or_insert(physical_base + 1);
                 physical_base += 1;
                 continue;
             }
             leading = false;
             chars.push(c);
         }
-        if bad_tab {
-            diags.push(Diagnostic::error(
-                "P002",
-                file,
-                Span::new(no, 1, 1),
-                "缩进使用了 Tab:worldline 只允许空格缩进",
-            ));
+        if let Some(column) = bad_tab {
+            diags.push(
+                Diagnostic::error(
+                    "P002",
+                    file,
+                    Span::new(no, column, 1),
+                    "缩进使用了 Tab:worldline 只允许空格缩进",
+                )
+                .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+            );
         }
         if chars.is_empty() {
             continue;
@@ -504,7 +507,11 @@ pub fn lex_source_with_options(
             continue;
         }
         let chars: Vec<char> = content_trim.chars().collect();
-        let mut source = LineSource { base: physical_base, length: chars.len() as u32, ..LineSource::default() };
+        let mut source = LineSource {
+            base: physical_base,
+            length: chars.len() as u32,
+            ..LineSource::default()
+        };
         let diagnostics_start = diags.len();
         let kind = classify::classify(file, no, &chars, diags, options, &mut source);
         for diagnostic in &mut diags[diagnostics_start..] {

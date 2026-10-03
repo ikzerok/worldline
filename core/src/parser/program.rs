@@ -84,7 +84,14 @@ impl<'a> Parser<'a> {
                     name_span: _,
                 } => {
                     self.next();
-                    let expr = self.sourced_expr(expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                    let expr = self.sourced_expr(
+                        expr_src,
+                        &file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
+                    );
                     program.lets.push(LetStmt {
                         name: name.clone(),
                         expr,
@@ -100,7 +107,14 @@ impl<'a> Parser<'a> {
                     name_span: _,
                 } => {
                     self.next();
-                    let expr = self.sourced_expr(expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                    let expr = self.sourced_expr(
+                        expr_src,
+                        &file,
+                        line.no,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
+                    );
                     program.lets.push(LetStmt {
                         name: name.clone(),
                         expr,
@@ -352,6 +366,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        self.sources.resolve_diagnostics(self.diags);
         program.source_provenance = std::mem::take(&mut self.sources);
         program
     }
@@ -367,7 +382,14 @@ impl<'a> Parser<'a> {
                 loc,
                 name_span: _,
             } => {
-                let expr = self.sourced_expr(expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                let expr = self.sourced_expr(
+                    expr_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
+                );
                 program.lets.push(LetStmt {
                     name: name.clone(),
                     expr,
@@ -382,7 +404,14 @@ impl<'a> Parser<'a> {
                 loc,
                 name_span: _,
             } => {
-                let expr = self.sourced_expr(expr_src, &file, line.no, line.no, line.source.base + line.source.value, ExpressionSlot::Value);
+                let expr = self.sourced_expr(
+                    expr_src,
+                    &file,
+                    line.no,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
+                );
                 program.lets.push(LetStmt {
                     name: name.clone(),
                     expr,
@@ -435,9 +464,21 @@ impl<'a> Parser<'a> {
             ),
             _ => return,
         };
-        let after = after_src.map(|src| self.sourced_expr(&src, &file, line.no, line.no,
-            line.source.base + line.source.condition, ExpressionSlot::After));
+        let after = after_src.map(|src| {
+            self.sourced_expr(
+                &src,
+                &file,
+                line.no,
+                line.no,
+                line.source.base + line.source.condition,
+                ExpressionSlot::After,
+            )
+        });
+        let previous_owner = self
+            .source_owner
+            .replace(crate::source_provenance::SourceOwner::new(&file, line.no));
         let body = self.parse_block(indent, &file, true);
+        self.source_owner = previous_owner;
         let (effects, body) = extract_effects(body, &file, self.diags);
         if program.entry.is_empty() && file == main_file {
             program.entry = name.clone();
