@@ -96,7 +96,7 @@ ExpressionSource 保留实际词法文件；结构 owner/slot 和物理输入文
 | analysis::builder::expressions 未知变量 | A102 | Var token，target | 无 |
 | expressions 类型/操作数/调用签名/rnd | A103/A230 | 所属完整 ExpressionSource，包括纯 literal 和嵌套参数 | 无 |
 | expressions visits/seen 目标 | A101 | 正式调用 expression，不能截去括号或定位同名正文 | 无 |
-| builder::variables、collect_decl_symbols、collect_nodes | A104 | 对应声明的真实 target 或 declaration | 前一声明独立来源 |
+| builder::variables、collect_decl_symbols、collect_nodes | A104 | 已绑定声明给真实 target/declaration；下述跨 include 场景预收集例外仅 document | 已保留的前一声明独立来源；例外可能无 related |
 | builder::walk set | A102/A106 | set 左值 target；类型不匹配使用右值 expression | 无 |
 | builder::walk divert | A101/A209 | 真实跃迁目标 target | 无 |
 | builder::walk choice 组 | A203/A207 | choice 完整 statement 或真实标签 | 无 |
@@ -118,6 +118,8 @@ ExpressionSource 保留实际词法文件；结构 owner/slot 和物理输入文
 
 P001、A108、A204 当前没有活动生产入口；保留原编号定义，不为覆盖而新增诊断。
 `schemas::edit` 等只筛选既有 code 的消费者不算新生产者。
+
+已实证的保守边界：跨 include 的缩进 `scene` 重复定义，经声明预收集产生的 A104 可能仅保留所属 event 的文档上下文，`related_count=0`，不保证取得 scene 自身物理文件与精确 token。此时 `document` 明确表示 event 文档证据，不得当作“已找到该 scene 原文”；不靠界内坐标或同名搜索补出 span，也不为提升精度改变既有解析/恢复事实。该例外不连带降低其他已有准确声明来源。
 
 ## 4. 不变量与验证
 
