@@ -23,7 +23,9 @@ Diagnostic {
 }
 ```
 
-排序规则:severity 降序 → 行号 → 列号。同位置多诊断按 code 升序。
+排序规则:明确按 Error → Warning → Hint，再按行号 → 列号 → code 升序；同键保持输入次序。不得反转枚举次序。Diagnostic JSON 字段不变。
+
+工具 0.18 的跨域工程问题、路径排序、覆盖范围、精度与分页另见 [problems.md](problems.md)。旧 Diagnostic 的文档级占位 span 不代表精确位置，消费者不得从 message 猜列号。
 
 ## 2. 编号表
 

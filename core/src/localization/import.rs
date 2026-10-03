@@ -434,37 +434,14 @@ fn prepare_sidecar(
             "entries": {}
         })
     };
+    super::document::validate_header(
+        &sidecar,
+        &exchange.target_locale,
+        Some(&exchange.source_locale),
+    )?;
     let object = sidecar
         .as_object_mut()
         .ok_or("locale sidecar 顶层必须是 JSON 对象")?;
-    if object
-        .get("schema_version")
-        .and_then(serde_json::Value::as_u64)
-        != Some(1)
-    {
-        return Err("locale sidecar schema_version 不受支持".into());
-    }
-    let features = object
-        .get("required_features")
-        .and_then(serde_json::Value::as_array)
-        .ok_or("locale sidecar 缺少 required_features 数组")?;
-    if !features
-        .iter()
-        .any(|feature| feature.as_str() == Some(LOCALIZATION_REQUIRED_FEATURE))
-    {
-        return Err("locale sidecar 缺少 content.localization.v1".into());
-    }
-    if object
-        .get("source_locale")
-        .and_then(serde_json::Value::as_str)
-        != Some(exchange.source_locale.as_str())
-        || object
-            .get("target_locale")
-            .and_then(serde_json::Value::as_str)
-            != Some(exchange.target_locale.as_str())
-    {
-        return Err("locale sidecar 的 source/target locale 不匹配".into());
-    }
     let entries = object
         .get_mut("entries")
         .and_then(serde_json::Value::as_object_mut)

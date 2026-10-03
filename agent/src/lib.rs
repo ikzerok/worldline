@@ -32,6 +32,8 @@ mod entities;
 mod localization;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
+#[path = "lib/problems.rs"]
+mod problems;
 #[path = "lib/projects.rs"]
 mod projects;
 #[path = "lib/reader_exports.rs"]
@@ -112,6 +114,7 @@ struct ProjectUnit {
     project: Project,
     entry: PathBuf,
     scene_revision: worldline_core::presentation_commands::Revision,
+    problems_report: Option<problems::CachedReport>,
 }
 
 struct CompileInput {
@@ -207,6 +210,7 @@ impl Server {
                 "server": "wl-agent",
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
+                    "authoring.problems.v1",
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,
@@ -297,6 +301,7 @@ impl Server {
             }
             "project.open" => self.project_open(params),
             "project.analyze" => self.project_analyze(params),
+            "project.problems" => self.project_problems(params),
             "workspace.check" => self.workspace_check(params),
             "maps.list" => self.maps_list(params),
             "world.context" => self.world_context(params, "context"),

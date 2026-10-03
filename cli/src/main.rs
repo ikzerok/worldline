@@ -17,6 +17,7 @@ fn main() -> ExitCode {
         Ok(code) => ExitCode::from(code as u8),
         Err(msg) => {
             eprintln!("wl: {msg}");
+            eprintln!("      wl problems <目录或入口> [--query-json JSON] [--cursor-json JSON] [--limit N] [--options-json JSON] [--related ID] [--json]");
             eprintln!("用法: wl check <文件.wl> [--json]");
             eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json] [--choice-presentation] [--json]");
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");

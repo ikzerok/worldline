@@ -1,0 +1,103 @@
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "$ref": "problems.schema.json#/$defs/query"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "$ref": "problems.schema.json#/$defs/cursor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 200,
+      "default": 50
+    },
+    "options": {
+      "$ref": "problems.schema.json#/$defs/options"
+    },
+    "related_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "从 page.entries[].id 原样回传的报告绑定不透明身份；不按序号构造，旧报告 ID 返回业务错误 STALE_REPORT。"
+    },
+    "refresh": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worldline.dev/schemas/problems-request.schema.json",
+  "title": "project.problems 严格参数",
+  "oneOf": [
+    {
+      "required": [
+        "path"
+      ],
+      "not": {
+        "required": [
+          "project_id"
+        ]
+      }
+    },
+    {
+      "required": [
+        "project_id"
+      ],
+      "not": {
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "related_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "query": {
+            "type": "object",
+            "properties": {
+              "severities": {
+                "const": []
+              },
+              "domains": {
+                "const": []
+              },
+              "path": {
+                "type": "null"
+              },
+              "text": {
+                "const": ""
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}

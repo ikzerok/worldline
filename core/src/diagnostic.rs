@@ -3,7 +3,8 @@
 
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Severity {
     Error,
     Warning,
@@ -31,7 +32,7 @@ impl fmt::Display for Severity {
 }
 
 /// 1-based 行,1-based 列(字符计),length 为字符数。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub struct Span {
     pub line: u32,
     pub column: u32,
@@ -126,10 +127,10 @@ impl fmt::Display for Diagnostic {
     }
 }
 
-/// 规范定义的排序:severity 降序 → 行 → 列 → code。
+/// 规范定义的排序:Error → Warning → Hint → 行 → 列 → code。
 pub fn sort_diagnostics(diags: &mut [Diagnostic]) {
     diags.sort_by(|a, b| {
-        let sev = (b.severity).cmp(&a.severity);
+        let sev = a.severity.cmp(&b.severity);
         sev.then(a.span.line.cmp(&b.span.line))
             .then(a.span.column.cmp(&b.span.column))
             .then(a.code.cmp(b.code))

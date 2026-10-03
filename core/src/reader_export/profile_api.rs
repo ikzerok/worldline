@@ -14,22 +14,38 @@ impl Project {
     pub fn reader_profiles(&self) -> Result<Vec<ReaderPublicationProfile>, String> {
         let mut profiles = Vec::new();
         for (id, path) in self.reader_profile_paths() {
-            let document = self.authoring_document(&path)?;
-            if document.is_deleted() || document.is_read_only() {
-                return Err(format!("发布配置 {id} 缺失或只读，请先核对文档"));
-            }
-            let profile: ReaderPublicationProfile = serde_json::from_value(
-                parse_unique_json(document.bytes())
-                    .map_err(|e| format!("发布配置 JSON 无效：{e}"))?,
-            )
-            .map_err(|e| format!("发布配置结构无效：{e}"))?;
-            validate_profile(&profile)?;
-            if profile.id != id {
-                return Err("发布配置 ID 与清单注册不一致".into());
-            }
+            let profile = self.read_reader_profile_document(&id, &path)?;
             profiles.push(profile);
         }
         Ok(profiles)
+    }
+
+    /// 单个已注册配置的只读静态校验，不进行发布预览或裁剪选择。
+    pub fn read_reader_profile_document(
+        &self,
+        id: &str,
+        path: &std::path::Path,
+    ) -> Result<ReaderPublicationProfile, String> {
+        if self.reader_profile_paths().get(id).map(PathBuf::as_path) != Some(path) {
+            return Err("发布配置路径与清单注册不一致".into());
+        }
+        let document = self.authoring_document(path)?;
+        if document.is_deleted() {
+            return Err(format!("发布配置 {id} 缺失或已删除"));
+        }
+        let profile: ReaderPublicationProfile = serde_json::from_value(
+            parse_unique_json(document.bytes()).map_err(|e| format!("发布配置 JSON 无效：{e}"))?,
+        )
+        .map_err(|e| format!("发布配置结构无效：{e}"))?;
+        validate_profile(&profile)?;
+        super::plan::validate_selection(&profile.selection)?;
+        if profile.id != id {
+            return Err("发布配置 ID 与清单注册不一致".into());
+        }
+        if document.is_read_only() {
+            return Err(format!("发布配置 {id} 是只读文档，请先核对版本与能力"));
+        }
+        Ok(profile)
     }
 
     pub fn create_reader_profile(

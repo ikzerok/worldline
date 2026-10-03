@@ -27,6 +27,7 @@ impl Server {
                 project,
                 entry,
                 scene_revision: Default::default(),
+                problems_report: None,
             },
         );
         Ok(response)

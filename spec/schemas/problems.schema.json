@@ -1,0 +1,607 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worldline.dev/schemas/problems.schema.json",
+  "title": "工程问题 CLI 与 JSON-RPC 结果",
+  "description": "authoring.problems.v1，语义、预算和游标约束见 spec/problems.md。report 仅含摘要，完整相关位置按需分页。",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/success"
+    },
+    {
+      "$ref": "#/$defs/failure"
+    }
+  ],
+  "$defs": {
+    "severity": {
+      "enum": [
+        "error",
+        "warning",
+        "hint"
+      ]
+    },
+    "domain": {
+      "enum": [
+        "content",
+        "workspace",
+        "maps",
+        "graph_views",
+        "presets",
+        "comments",
+        "proposals",
+        "templates",
+        "saved_queries",
+        "manuscripts",
+        "reader_profiles",
+        "localizations"
+      ]
+    },
+    "span": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "line",
+        "column",
+        "length"
+      ],
+      "additionalProperties": false
+    },
+    "range": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    "cursor": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "type": "string"
+        },
+        "query_key": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "report_version",
+        "query_key",
+        "offset"
+      ],
+      "additionalProperties": false
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "max_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20000,
+          "default": 20000
+        },
+        "max_related_locations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50000,
+          "default": 50000
+        },
+        "max_report_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432,
+          "default": 33554432
+        },
+        "max_text_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384,
+          "default": 16384
+        },
+        "max_excerpt_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512,
+          "default": 512
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "object",
+      "properties": {
+        "severities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/severity"
+          }
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/domain"
+          }
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/domain"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "checked",
+            "partial",
+            "unavailable",
+            "not_applicable"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "domain",
+        "path",
+        "state",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "precision": {
+          "enum": [
+            "span",
+            "document",
+            "unavailable"
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "byte_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/range"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "char_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/range"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerpt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excerpt_truncated": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "precision",
+        "span",
+        "byte_range",
+        "char_range",
+        "excerpt",
+        "excerpt_truncated",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "仅在当前 report_version 内有效的不透明身份，消费者必须原样传回。"
+        },
+        "domain": {
+          "$ref": "#/$defs/domain"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "suggestion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "primary": {
+          "$ref": "#/$defs/location"
+        },
+        "related_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text_truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "domain",
+        "severity",
+        "code",
+        "message",
+        "note",
+        "suggestion",
+        "primary",
+        "related_count",
+        "text_truncated"
+      ],
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "type": "string"
+        },
+        "content_baseline": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entry"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "report_version",
+        "content_baseline",
+        "total",
+        "matched",
+        "entries",
+        "next_cursor",
+        "complete",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "related_page": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "type": "string"
+        },
+        "problem_id": {
+          "type": "string",
+          "description": "对应当前报告 page.entries[].id 的完整不透明身份。"
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/location"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/cursor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "report_version",
+        "problem_id",
+        "total",
+        "locations",
+        "next_cursor",
+        "truncated"
+      ],
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "report_version": {
+          "type": "string"
+        },
+        "content_baseline": {
+          "type": "string"
+        },
+        "language_version": {
+          "type": "string"
+        },
+        "content_has_errors": {
+          "type": "boolean"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/coverage"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "compile_count": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "source_observation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "report_version",
+        "content_baseline",
+        "language_version",
+        "content_has_errors",
+        "read_only",
+        "complete",
+        "truncated",
+        "reasons",
+        "coverage",
+        "limits",
+        "compile_count",
+        "source_observation"
+      ],
+      "additionalProperties": false
+    },
+    "success": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "report": {
+          "$ref": "#/$defs/report"
+        },
+        "page": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/page"
+            },
+            {
+              "$ref": "#/$defs/related_page"
+            }
+          ]
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "report",
+        "page"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20000,
+          "default": 20000
+        },
+        "max_related_locations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50000,
+          "default": 50000
+        },
+        "max_report_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432,
+          "default": 33554432
+        },
+        "max_text_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384,
+          "default": 16384
+        },
+        "max_excerpt_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512,
+          "default": 512
+        }
+      },
+      "required": [
+        "max_entries",
+        "max_related_locations",
+        "max_report_bytes",
+        "max_text_bytes",
+        "max_excerpt_bytes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

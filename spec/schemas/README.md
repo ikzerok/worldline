@@ -13,3 +13,8 @@ Schema检查形状、基础类型与数值范围；跨文件引用、图层顺�
 未知可选字段允许保存，生产读取器需要原文/flatten或等价机制保留，不能只依赖Schema允许就声称serde一定保留。
 
 格式Schema覆盖设计目标，不表示M1客户端具备全部能力。清单required_features还须校验客户端能力：点标记为`presentation.maps.v1`；线面额外要求`presentation.geometry.line_area.v1`，不支持者只读。语义实体/关系须明确启用语言1.10及对应内容能力；本包关系DTO用于查询输出的契约验证。
+
+`problems.schema.json` 约束 `wl problems --json` 与 `project.problems` 的结果，
+`problems-request.schema.json` 约束 RPC 严格参数。报告摘要不传完整 entries/related；
+主列表与相关位置页共用 core DTO。重复键须在 JSON 解码阶段拒绝，Schema 无法替代此检查；
+路径安全、游标身份、报告字节预算和缓存观测语义见 [工程问题报告](../problems.md)。
