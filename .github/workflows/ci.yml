@@ -1,5 +1,9 @@
 name: worldline
 on: [push, pull_request]
+# 只合并同事件的工作分支CI；main/release等事件使用唯一run_id，连pending也不互相替换。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/work/')) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'work/') && !startsWith(github.base_ref, 'release/'))) && (github.event.pull_request.number || github.ref) || github.run_id }}
+  cancel-in-progress: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/work/')) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'work/') && !startsWith(github.base_ref, 'release/')) }}
 permissions:
   contents: read
 jobs:
