@@ -1,5 +1,5 @@
 use super::parse_relation_edits::parse_target_ref;
-use super::support::{open_workspace_snapshot, query_payload_base, write_query_failure};
+use super::support::{open_workspace_snapshot, query_payload_base};
 use super::*;
 use worldline_core::WorldContextOptions;
 
@@ -17,7 +17,16 @@ pub(super) fn command(args: &[String], out: &mut impl Write, mode: &str) -> Resu
     let args = parse(args, mode)?;
     let snapshot = match open_workspace_snapshot(&args.path) {
         Ok(snapshot) => snapshot,
-        Err(message) => return write_query_failure(&args.path, args.json, &message, out),
+        Err(message) => {
+            output(
+                out,
+                args.json,
+                json!({"ok":false,"schema_version":1,"language_version":null,
+                "workspace_revision":null,"diagnostics":[],"workspace_diagnostics":[],"read_only":false,
+                "truncated":false,"continuation":null,"error":{"code":"IO_ERROR","message":message}}),
+            )?;
+            return Ok(2);
+        }
     };
     let mut payload = query_payload_base(&snapshot);
     let mut ok = !snapshot.result.has_errors();

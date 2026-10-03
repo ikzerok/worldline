@@ -1,4 +1,4 @@
-use super::projects::{query_payload_base, refreshed_workspace};
+use super::projects::{query_failure, query_payload_base, refreshed_workspace};
 use super::*;
 use worldline_core::WorldContextOptions;
 
@@ -27,11 +27,7 @@ impl Server {
         let path = nonempty(params, "path")?;
         let mut project = match Project::open(Path::new(path)) {
             Ok(project) => project,
-            Err(message) => {
-                return Ok(
-                    json!({"ok":false,"error":{"code":"IO_ERROR","message":message},"workspace_revision":null}),
-                )
-            }
+            Err(message) => return Ok(query_failure("IO_ERROR", message, None, None, None, &[])),
         };
         Ok(execute(&mut project, request, mode))
     }
@@ -114,7 +110,15 @@ fn execute(project: &mut Project, request: Request, mode: &str) -> Value {
     let snapshot = match refreshed_workspace(project) {
         Ok(snapshot) => snapshot,
         Err(message) => {
-            return json!({"ok":false,"error":{"code":"IO_ERROR","message":message},"workspace_revision":project.content_baseline()})
+            let result = project.compile();
+            return query_failure(
+                "IO_ERROR",
+                message,
+                Some(&result.diagnostics),
+                Some(project.content_baseline()),
+                Some(result.options.language_version.as_str()),
+                project.authoring_diagnostics(),
+            );
         }
     };
     let mut payload = query_payload_base(&snapshot);
@@ -146,6 +150,9 @@ fn execute(project: &mut Project, request: Request, mode: &str) -> Value {
         {
             Ok(mut context) => {
                 context.content_baseline = Some(snapshot.baseline.clone());
+                if !snapshot.conflicts.is_empty() || !project.recovery_conflicts().is_empty() {
+                    context.mark_source_conflict();
+                }
                 payload.insert("truncated".into(), json!(context.truncated));
                 payload.insert("context".into(), json!(context));
             }
@@ -159,7 +166,11 @@ fn execute(project: &mut Project, request: Request, mode: &str) -> Value {
             }
         },
         "temporal" => {
-            if request
+            if !snapshot.conflicts.is_empty() || !project.recovery_conflicts().is_empty() {
+                ok = false;
+                payload.insert("comparison".into(), Value::Null);
+                payload.insert("error".into(), json!({"code":"CONFLICT","message":"当前稿件与磁盘存在冲突，请先保留并核对两个版本"}));
+            } else if request
                 .expected_baseline
                 .as_ref()
                 .is_some_and(|value| value != &snapshot.baseline)
@@ -190,4 +201,67 @@ fn execute(project: &mut Project, request: Request, mode: &str) -> Value {
         payload.insert("conflicts".into(), json!(snapshot.conflicts));
     }
     Value::Object(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temporal_rpc_refuses_dirty_external_conflict_even_with_current_baseline() {
+        let root = std::env::temp_dir().join(format!(
+            "agent-world-context-conflict-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(root.join(".world")).unwrap();
+        std::fs::write(
+            root.join(".world/project.json"),
+            r#"{"schema_version":1,"language_version":"1.13"}"#,
+        )
+        .unwrap();
+        let path = root.join("world.wl");
+        let source = "period night\nevent a during night\n  -> END\nevent b during night follows a\n  -> END\n";
+        std::fs::write(&path, source).unwrap();
+        let mut server = Server::default();
+        server
+            .project_open(&json!({"path":root}))
+            .unwrap_or_else(|error| panic!("{}", error.message));
+        let project = &mut server.projects.get_mut("p1").unwrap().project;
+        project
+            .set_text(&path, format!("{source}// local\n"))
+            .unwrap();
+        let baseline = project.content_baseline();
+        std::fs::write(&path, format!("{source}// external\n")).unwrap();
+        let value = server
+            .world_context(
+                &json!({"project_id":"p1","left":"a","right":"b","expected_baseline":baseline}),
+                "temporal",
+            )
+            .unwrap_or_else(|error| panic!("{}", error.message));
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "CONFLICT");
+        assert!(value["comparison"].is_null());
+        assert!(!value["conflicts"].as_array().unwrap().is_empty());
+        let context = server
+            .world_context(
+                &json!({"project_id":"p1","target":{"kind":"event","id":"a"}}),
+                "context",
+            )
+            .unwrap_or_else(|error| panic!("{}", error.message));
+        assert_eq!(context["ok"], true);
+        assert_eq!(context["context"]["complete"], false);
+        assert_eq!(context["context"]["truncated"], false);
+        assert!(context["context"]["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("source_conflict")));
+        assert!(!context["conflicts"].as_array().unwrap().is_empty());
+        assert!(server.projects["p1"].project.documents[&path]
+            .text
+            .contains("// local"));
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("// external"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

@@ -310,3 +310,37 @@ fn duplicate_legacy_occurrences_are_preserved_even_when_diagnosed() {
     assert_ne!(query.records[0].id, query.records[1].id);
     assert!(!query.complete);
 }
+
+#[test]
+fn formal_relation_keeps_scope_qualifiers_in_typed_provenance() {
+    let source = SOURCE.replace(
+        "relation_def guard_1 type guards from character lingzhou to entity north_lighthouse\n",
+        "relation_def guard_1 type guards from character lingzhou to entity north_lighthouse\n  scope period night\n",
+    );
+    let result = compile(&source);
+    assert!(!result.has_errors(), "{:?}", result.diagnostics);
+    let context = result
+        .query_world_context(&target(), Default::default())
+        .unwrap();
+    let relation = context
+        .records
+        .iter()
+        .find(|record| record.id == "relation:guard_1")
+        .unwrap();
+    assert!(matches!(&relation.provenance,
+        WorldContextProvenance::FormalRelation { scope_refs, .. }
+        if scope_refs == &vec![TargetRef::new("period", "night")]));
+    let json = serde_json::to_value(relation).unwrap();
+    assert_eq!(
+        json["provenance"]["scope_refs"],
+        serde_json::json!([{"kind":"period","id":"night"}])
+    );
+    let unscoped = context
+        .records
+        .iter()
+        .find(|record| record.id == "relation:guard_2")
+        .unwrap();
+    assert!(
+        matches!(&unscoped.provenance, WorldContextProvenance::FormalRelation { scope_refs, .. } if scope_refs.is_empty())
+    );
+}

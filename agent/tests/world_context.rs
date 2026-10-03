@@ -127,3 +127,36 @@ fn comparison_and_invalid_source_are_readable_business_results() {
         .unwrap()
         .contains(&json!("invalid_source")));
 }
+
+#[test]
+fn io_failures_keep_the_common_query_envelope() {
+    let root = std::env::temp_dir().join(format!("world-context-missing-{}", std::process::id()));
+    let responses = exchange(vec![
+        request(
+            "world.context",
+            json!({"path":root,"target":{"kind":"character","id":"b"}}),
+        ),
+        request(
+            "world.object",
+            json!({"path":root,"target":{"kind":"character","id":"b"}}),
+        ),
+        request(
+            "temporal.compare",
+            json!({"path":root,"left":"a","right":"b"}),
+        ),
+    ]);
+    for response in responses {
+        let value = &response["result"];
+        assert_eq!(value["error"]["code"], "IO_ERROR");
+        assert_eq!(value["schema_version"], 1);
+        for field in [
+            "language_version",
+            "workspace_revision",
+            "diagnostics",
+            "workspace_diagnostics",
+            "read_only",
+        ] {
+            assert!(value.get(field).is_some(), "missing {field}: {value}");
+        }
+    }
+}

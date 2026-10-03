@@ -81,12 +81,26 @@ pub struct WorldContextSource {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorldContextProvenance {
-    FormalRelation { relation_id: String, relation_type: String },
-    LegacyCharacterRelation { occurrence: u32 },
-    PropertyReference { property: String },
-    EventParticipation { event: String },
-    ExplicitBodyLink { label: String },
-    TextMention { preview: String },
+    FormalRelation {
+        relation_id: String,
+        relation_type: String,
+        scope_refs: Vec<TargetRef>,
+    },
+    LegacyCharacterRelation {
+        occurrence: u32,
+    },
+    PropertyReference {
+        property: String,
+    },
+    EventParticipation {
+        event: String,
+    },
+    ExplicitBodyLink {
+        label: String,
+    },
+    TextMention {
+        preview: String,
+    },
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldContextRecord {
@@ -113,6 +127,7 @@ pub struct WorldContextNode {
 #[serde(rename_all = "snake_case")]
 pub enum WorldContextLimit {
     InvalidSource,
+    SourceConflict,
     CandidateBudget,
     NodeLimit,
     RecordLimit,
@@ -133,12 +148,23 @@ pub struct WorldContextResult {
     pub reasons: Vec<WorldContextLimit>,
     pub diagnostics: Vec<Diagnostic>,
 }
+impl WorldContextResult {
+    /// 标明已知源码冲突；资料仍来自本结果的缓冲快照，不将冲突伪装成范围截断。
+    pub fn mark_source_conflict(&mut self) {
+        self.complete = false;
+        if !self.reasons.contains(&WorldContextLimit::SourceConflict) {
+            self.reasons.push(WorldContextLimit::SourceConflict);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorldContextError {
     UnknownTarget(TargetRef),
     InvalidOptions,
     StaleSnapshot,
     Cancelled,
+    SourceUnavailable(String),
 }
 impl WorldContextError {
     pub fn code(&self) -> &'static str {
@@ -147,6 +173,7 @@ impl WorldContextError {
             Self::InvalidOptions => "INVALID_OPTIONS",
             Self::StaleSnapshot => "STALE_SNAPSHOT",
             Self::Cancelled => "CANCELLED",
+            Self::SourceUnavailable(_) => "SOURCE_UNAVAILABLE",
         }
     }
 }
@@ -157,6 +184,7 @@ impl std::fmt::Display for WorldContextError {
             Self::InvalidOptions => write!(f, "上下文选项超出范围，请收窄深度或预算"),
             Self::StaleSnapshot => write!(f, "源码快照已变化，请重新查询当前对象"),
             Self::Cancelled => write!(f, "上下文查询已取消"),
+            Self::SourceUnavailable(message) => write!(f, "无法确认源码冲突状态：{message}"),
         }
     }
 }

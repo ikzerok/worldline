@@ -10,7 +10,7 @@ Project 同名包装在当前缓冲编译一次并附 `content_baseline`；不�
 `WorldContextKind` 分为 `formal_relation`、`legacy_character_relation`、
 `property_reference`、`event_participation`、`explicit_body_link`、`text_mention`。
 前五类分别复用关系目录及邻接索引、legacy handle、正式 AST 属性、分析人物事件资料、
-目录正文链接。`provenance` 是带 kind 的类型枚举：正式关系含 relation_id/relation_type，
+目录正文链接。`provenance` 是带 kind 的类型枚举：正式关系含 relation_id/relation_type/scope_refs（保留所有限定范围，空数组才无范围），
 旧关系含 occurrence，属性含 property，参与含 event，链接含 label，提及含 preview。
 不通过中文 `ReferenceInfo.kind` 判断语义；普通字符串与同名显示文字不产生强边。
 
@@ -50,3 +50,12 @@ max_candidates默认10000、最大100000；不合法选项返回 INVALID_OPTIONS
 
 取消 API 每一轮及收集相关记录时检查回调；编译与可选既有 wiki 建索引阶段不是可抢占的。
 本预算约束投影相关候选与输出，不宣称限制已有编译/索引构建的内存或墙钟时间。
+
+### 缓冲完整性与未决源码冲突
+
+CompileResult 的 complete 仅描述所选不可变缓冲快照，不证明磁盘仍为最新版，也不授权保存。
+Project 包装不偷偷 refresh；只读检查既有交叉修改/恢复冲突，已知未决冲突时保留缓冲资料，
+设置 complete=false、reason=source_conflict。冲突本身不属于范围截断，truncated 保持其
+原有预算/显示含义，不改变 read_only。无法读取冲突状态时返回 SOURCE_UNAVAILABLE，
+不得把不可检查当成无冲突。没有冲突也不承诺查询返回后磁盘不会再次改变。
+调用方若已有 CompileResult 与已知冲突，可用结果的 mark_source_conflict 标注同样状态。

@@ -656,3 +656,11 @@ comparison 和上述工作区公共字段。比较结果完全来自 core Timeli
 的 evidence 只含同快照真实 follows 边，完整语义见 [temporal-explanations.md](temporal-explanations.md)。
 expected_baseline 不匹配返回业务错误 STALE_BASELINE，不展示旧证据为当前事实。未知事件为
 comparison.relation=unknown，业务 ok:false；invalid 同样 ok:false。协议形状错误仍与业务分开。
+
+时间比较在 refresh 报告未解决外部冲突或恢复事务冲突时返回 CONFLICT、comparison:null，
+即使保留的本地缓冲基线未变化也不能将旧比较解释为当前磁盘一致证据。Project 只读包装不
+隐式刷新，基线绑定当前缓冲；发现已存在的交叉修改冲突会拒绝比较。
+
+`world.context` 在 refresh 已知未决外部/恢复冲突时保留同一缓冲 context，附原 conflicts，
+并设置 context.complete=false、reasons 包含 source_conflict；冲突本身不置 truncated，
+不改变 read_only，也不清空或覆盖任何一侧。源码快照摘要不能证明当前磁盘最新版。
