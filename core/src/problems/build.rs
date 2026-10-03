@@ -20,7 +20,7 @@ impl Project {
     ) -> Result<ProblemsReport, ProblemsError> {
         options.validate()?;
         checkpoint(progress, ProblemDomain::Content)?;
-        let content = self.compile_current();
+        let content = self.compile_problems_snapshot();
         build(self, &content, options, progress, 1)
     }
     pub fn problems_report_with_content(
@@ -30,9 +30,14 @@ impl Project {
         options: &ProblemsOptions,
     ) -> Result<ProblemsReport, ProblemsError> {
         options.validate()?;
+        let sources = self.sources();
+        let entry = self.entry.to_string_lossy();
         if self.content_baseline() != expected_baseline
-            || content.sources != self.sources()
+            || content.sources != sources
+            || (sources.contains_key(&self.entry)
+                && content.program.files.first().map(String::as_str) != Some(entry.as_ref()))
             || content.options != self.compile_options()
+            || !super::observation::assets_current(self, content)
         {
             return Err(ProblemsError::new(
                 "STALE_REPORT",
@@ -191,6 +196,12 @@ fn build(
     }) {
         report.reasons.push("coverage_incomplete".into());
     }
+    if project.problems_observation_key().ok().as_deref()
+        != Some(report.source_observation.as_str())
+        || !super::observation::assets_current(project, content)
+    {
+        report.reasons.push("external_observation_changed".into());
+    }
     report.complete = report.reasons.is_empty();
     assemble(project, diagnostics, report)
 }
@@ -227,14 +238,16 @@ fn assemble(
         .collect();
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     rows.dedup_by(|a, b| a.0 == b.0);
-    let mut used_bytes = serde_json::to_vec(&report).expect("报告可序列化").len() + 4096;
+    let mut used_bytes = serde_json::to_vec(&report).expect("报告可序列化").len()
+        + 4096
+        + report.coverage.len().saturating_mul(96);
     let mut related_used = 0;
     for (_, domain, diagnostic) in rows {
         if report.entries.len() >= report.limits.max_entries {
             truncate(&mut report, "entry_limit");
             break;
         }
-        let id = format!("p{}", report.entries.len() + 1);
+        let id = format!("0000000000000000:p{}", report.entries.len() + 1);
         let exact = domain == ProblemDomain::Content;
         let location = |file: &str, span| {
             super::location::project_location(
@@ -322,6 +335,13 @@ fn assemble(
         ))
         .expect("报告可序列化"),
     );
+    for entry in &mut report.entries {
+        let old = entry.id.clone();
+        entry.id.replace_range(..16, &report.report_version);
+        if let Some(related) = report.related.remove(&old) {
+            report.related.insert(entry.id.clone(), related);
+        }
+    }
     if serde_json::to_vec(&report).expect("报告可序列化").len() > report.limits.max_report_bytes
     {
         return Err(ProblemsError::new(

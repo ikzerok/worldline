@@ -25,17 +25,16 @@ pub(super) fn validate_header(
     {
         return Err("locale sidecar 缺少 content.localization.v1".into());
     }
-    if features
-        .iter()
-        .any(|feature| feature.as_str() != Some(LOCALIZATION_REQUIRED_FEATURE))
-    {
+    if !crate::workspace_documents::features_supported(&Value::Array(features.clone())) {
         return Err("locale sidecar 含未知必需能力，只读保留原文".into());
     }
     let source = object
         .get("source_locale")
         .and_then(Value::as_str)
         .ok_or("locale sidecar 缺少 source_locale")?;
-    if source.trim().is_empty()
+    if !crate::workspace_documents::valid_id(source)
+        || !crate::workspace_documents::valid_id(target_locale)
+        || source == target_locale
         || source_locale.is_some_and(|expected| source != expected)
         || object.get("target_locale").and_then(Value::as_str) != Some(target_locale)
     {
@@ -73,7 +72,7 @@ impl Project {
             let fields = entry
                 .as_object()
                 .ok_or_else(|| format!("sidecar 条目 `{id}` 不是对象"))?;
-            if id.trim().is_empty()
+            if !crate::workspace_documents::valid_id(id)
                 || fields
                     .get("source_revision")
                     .and_then(Value::as_str)

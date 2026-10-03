@@ -371,3 +371,6 @@ fn unknown_registered_capabilities_stay_partial_and_raw() {
         assert_eq!(before, f.project.content_baseline());
     }
 }
+
+#[path = "problems/matrix.rs"]
+mod matrix;

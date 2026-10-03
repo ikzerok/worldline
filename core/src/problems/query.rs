@@ -33,6 +33,24 @@ fn limit(value: usize) -> Result<usize, ProblemsError> {
     }
 }
 impl ProblemsReport {
+    pub(crate) fn check_problem_id(&self, id: &str) -> Result<(), ProblemsError> {
+        let Some((version, index)) = id.split_once(":p") else {
+            return Err(ProblemsError::new("UNKNOWN_PROBLEM", "问题身份格式无效"));
+        };
+        if version.len() != 16
+            || !version.bytes().all(|c| c.is_ascii_hexdigit())
+            || index.parse::<usize>().ok().is_none_or(|n| n == 0)
+        {
+            return Err(ProblemsError::new("UNKNOWN_PROBLEM", "问题身份格式无效"));
+        }
+        if version != self.report_version {
+            return Err(ProblemsError::new(
+                "STALE_REPORT",
+                "问题身份属于旧报告，请重新选择当前问题",
+            ));
+        }
+        Ok(())
+    }
     fn offset(
         &self,
         cursor: Option<&ProblemCursor>,
@@ -128,6 +146,7 @@ impl ProblemsReport {
         requested_limit: usize,
     ) -> Result<ProblemRelatedPage, ProblemsError> {
         let limit = limit(requested_limit)?;
+        self.check_problem_id(problem_id)?;
         let entry = self
             .entries
             .iter()

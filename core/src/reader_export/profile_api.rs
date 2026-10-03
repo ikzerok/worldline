@@ -38,6 +38,7 @@ impl Project {
         )
         .map_err(|e| format!("发布配置结构无效：{e}"))?;
         validate_profile(&profile)?;
+        super::plan::validate_selection(&profile.selection)?;
         if profile.id != id {
             return Err("发布配置 ID 与清单注册不一致".into());
         }

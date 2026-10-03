@@ -67,6 +67,11 @@ impl Server {
                 && unit.problems_report.as_ref().is_some_and(|cache| {
                     cache.report.content_baseline == baseline
                         && !cache.report.source_observation.is_empty()
+                        && !cache
+                            .report
+                            .reasons
+                            .iter()
+                            .any(|reason| reason == "external_observation_changed")
                         && observation.as_deref() == Some(cache.report.source_observation.as_str())
                         && cache.report.limits == params.options
                         && cache.conflicts == conflicts

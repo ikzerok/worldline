@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeSet;
 use worldline_core::problems::{ProblemCursor, ProblemQuery, ProblemsOptions, ProblemsReport};
 
-const HELP: &str = "用法: wl problems <目录或入口> [--query-json '<JSON>'] [--cursor-json '<JSON>'] [--limit N] [--options-json '<JSON>'] [--related ID] [--json]\n只读工程问题快照；默认每页50条，最多200条。--related不能搭配非空查询。";
+const HELP: &str = "用法: wl problems <目录或入口> [--query-json '<JSON>'] [--cursor-json '<JSON>'] [--limit N] [--options-json '<JSON>'] [--related ID] [--json]\n只读工程问题快照；默认每页50条，最多200条。--related不能搭配非空查询；ID须从page.entries[].id完整复制，旧报告ID不可沿用。";
 
 struct Args {
     path: PathBuf,

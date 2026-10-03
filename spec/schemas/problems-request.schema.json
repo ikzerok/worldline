@@ -33,7 +33,8 @@
     },
     "related_id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "从 page.entries[].id 原样回传的报告绑定不透明身份；不按序号构造，旧报告 ID 返回业务错误 STALE_REPORT。"
     },
     "refresh": {
       "type": "boolean",

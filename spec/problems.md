@@ -16,6 +16,7 @@ Diagnostic JSON 字段和诊断含义保持兼容，旧 `wl check` 仍仅检查�
 templates、saved_queries、manuscripts、reader_profiles、localizations。content 只消费
 活动源码；未注册普通 JSON 不解析、不接管。每份注册文档失败独立记录，不能阻止
 后续文档检查。墓碑、缺失、坏 UTF-8/JSON、重复键、未知版本和必需能力保留原文。
+`READER001` 表示已注册读者配置的静态读取/结构错误，`LOC001` 表示已注册 locale sidecar 的静态读取/结构错误；均为error及document或unavailable位置，不替换既有操作级结果code。
 reader_profiles 只检查配置结构、注册身份和路由结构，不执行发布、授权闭包或资源
 可交付性检查。本地化只检查已注册 sidecar 的既有结构（版本、能力、locale、entries
 及已存译文结构）；缺失译文、选中字符串的陈旧性、源保护 token 一致性是 import/
@@ -74,8 +75,8 @@ Project::problem_location(&self, report: &ProblemsReport, problem_id: &str,
     related_index: Option<usize>) -> Result<ProblemLocation, ProblemsError>
 ```
 
-普通构建恰好调用一次 compile_current（不使用会收养 include 缓冲的可变 compile）；
-with_content 校验 expected_baseline、活动 sources 与 CompileOptions 后零编译复用。
+普通构建恰好调用一次报告专用buffer-only编译（复用同一Compiler/语言管线，禁止磁盘include fallback，不使用会收养include缓冲的可变compile）；未载入目标以A105报告，必须显式refresh进入活动缓冲后才参与。既有一般编译/check/runtime的磁盘加载合同不变。
+with_content 校验 expected_baseline、活动 sources、CompileOptions，以及活动入口存在时实际program.files首项属于该入口后零编译复用；缺入口坏稿不因首项变化而误拒。
 map/graph/preset/comment/proposal/template/manuscript 等验证器复用同一 CompileResult；
 筛选、选择、分页、位置读取均零编译。`compile_count` 是本次 API 内实际次数（0/1），
 测试同时以路径调用结构/计数回归证明，不允许仅写常量掩盖重复 compile。
@@ -104,7 +105,7 @@ domain、message、note、suggestion、related 的完整稳定并列键。仅完
 合并；同 basename 不合并。相关来源维持 producer 次序，不擅自丢弃重复证据。
 
 report_version 是 schema、基线、覆盖、问题与预算的确定性摘要；不是安全签名。
-问题 ID 仅在该报告内有效，不是跨稿件永久身份。报告/基线/筛选或分页种类不符，游标
+问题 ID 为不透明 `<report_version>:pN`，仅在该报告内有效，不是跨稿件永久身份。先对同长度16个0占位前缀的ID及其余完整事实计算report_version，再把前缀替换为摘要，避免自引用；输出预算按完整定长前缀计。首次related或location请求的ID前缀不是当前报告版本时也返回STALE_REPORT，不能因序号碰撞重定向。畸形或不存在ID返回UNKNOWN_PROBLEM。报告/基线/筛选或分页种类不符，游标
 拒绝；游标非权限凭证。相同输入相同结果，分页无漏无重。
 
 编辑器只能把旧项标为“不在当前结果／未重新检查”；本合同不提供跨快照语义身份，
@@ -119,7 +120,7 @@ root身份、非受管普通文件的相对路径和本次 readable 状态、已
 保留可检查缓冲并标不完整，不能把失败当空磁盘。WASM仅观察已授权挂载快照，live及
 worker均使用 `/world`；原生worker保留原root，不能任意改root后比较。该摘要不承诺
 附件内容摘要或实时权限，仅给缓存失效依据。report.source_observation 纳入report_version；
-RPC缓存须比较 baseline/options/此key，位置守卫也拒绝不匹配。
+RPC缓存须比较 baseline/options/此key，位置守卫也拒绝不匹配。with_content还比较编译快照中的资产可读性与当前core观测，不一致拒绝STALE_REPORT；报告首尾观测发生变化时标external_observation_changed及不完整，不承诺原子磁盘快照。
 
 ## 4. 有界输出与性能验收（实现前冻结）
 
@@ -157,7 +158,9 @@ content_has_errors,read_only,complete,truncated,reasons,coverage,limits,compile_
 
 RPC `project.problems` params：path 或 project_id 二选一；可选 query、cursor、limit、
 options、related_id。结果同 CLI；project_id 沿用会话 refresh/conflicts，并缓存本次报告，
-相同基线与 options 下后续筛选/分页复用、零编译。显式 `refresh:true` 可重建报告；无
+相同基线与 options 下后续筛选/分页复用、零编译。含 `external_observation_changed`
+的报告不得缓存复用，下一次请求须重新构建；其他 partial 报告仍按既有缓存键复用。
+显式 `refresh:true` 可重建报告；无
 会话的 path 请求每次重新观测并构建。每次构建最多一次编译。方法严格拒绝未知字段、
 重复 key、非法类型和不兼容 related/query 组合。形状错误 -32602，重复 key -32700；
 业务失败 `{ok:false,error:{code,message}}`，与“存在工程错误”区分。WASM 复用 core DTO

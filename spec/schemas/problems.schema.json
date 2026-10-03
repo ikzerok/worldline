@@ -275,7 +275,8 @@
       "type": "object",
       "properties": {
         "id": {
-          "type": "string"
+          "type": "string",
+          "description": "仅在当前 report_version 内有效的不透明身份，消费者必须原样传回。"
         },
         "domain": {
           "$ref": "#/$defs/domain"
@@ -385,7 +386,8 @@
           "type": "string"
         },
         "problem_id": {
-          "type": "string"
+          "type": "string",
+          "description": "对应当前报告 page.entries[].id 的完整不透明身份。"
         },
         "total": {
           "type": "integer",

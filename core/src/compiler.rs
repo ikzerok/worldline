@@ -282,6 +282,19 @@ pub(crate) fn compile_sources_excluding_inactive_with_options(
     inactive: HashSet<PathBuf>,
     options: CompileOptions,
 ) -> CompileResult {
+    compile_sources_with_access(entry, sources, deleted, inactive, options, true)
+}
+
+pub(crate) fn compile_sources_with_access(
+    entry: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+    deleted: HashSet<PathBuf>,
+    inactive: HashSet<PathBuf>,
+    options: CompileOptions,
+    allow_disk_fallback: bool,
+) -> CompileResult {
+    #[cfg(test)]
+    crate::problems::COMPILE_RUNS.with(|count| count.set(count.get() + 1));
     let entry = entry_path(entry);
     let overrides = sources
         .iter()
@@ -289,6 +302,7 @@ pub(crate) fn compile_sources_excluding_inactive_with_options(
         .collect();
     let mut compiler = Compiler {
         root: entry.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        allow_disk_fallback,
         overrides,
         deleted,
         inactive,
@@ -353,6 +367,7 @@ fn finish(
 
 struct Compiler {
     root: PathBuf,
+    allow_disk_fallback: bool,
     overrides: BTreeMap<PathBuf, String>,
     deleted: HashSet<PathBuf>,
     inactive: HashSet<PathBuf>,
@@ -412,8 +427,16 @@ impl Compiler {
             .get(&path)
             .cloned()
             .map(Ok)
-            .unwrap_or_else(|| crate::file_access::read_to_string(&path))
-        {
+            .unwrap_or_else(|| {
+                if self.allow_disk_fallback {
+                    crate::file_access::read_to_string(&path)
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "来源未载入当前已应用缓冲",
+                    ))
+                }
+            }) {
             Ok(text) => text,
             Err(e) => {
                 self.diags.push(Diagnostic::error(

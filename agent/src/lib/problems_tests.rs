@@ -240,10 +240,11 @@ fn response_budget_includes_metadata_and_continues_without_skipping() {
     entry.message = "m".repeat(16384);
     entry.note = Some("n".repeat(16384));
     entry.suggestion = Some("s".repeat(16384));
-    report.entries = (0..80)
+    let version = report.report_version.clone();
+    report.entries = (1..=80)
         .map(|index| {
             let mut entry = entry.clone();
-            entry.id = format!("p{index}");
+            entry.id = format!("{version}:p{index}");
             entry
         })
         .collect();
@@ -271,11 +272,129 @@ fn response_budget_includes_metadata_and_continues_without_skipping() {
     }
     assert_eq!(
         seen,
-        (0..80).map(|index| format!("p{index}")).collect::<Vec<_>>()
+        (1..=80)
+            .map(|index| format!("{version}:p{index}"))
+            .collect::<Vec<_>>()
     );
     report.reasons = vec!["x".repeat(1024 * 1024)];
     assert_eq!(
         response(&report, &Params::default(), true, &[])["error"]["code"],
         "BUDGET_EXCEEDED"
     );
+}
+
+#[test]
+fn related_first_request_rejects_old_identity_after_same_ordinal_changes() {
+    let fixture = Fixture::new("event old\n  -> END\nevent old\n  -> END\n");
+    let mut server = Server::default();
+    open(&mut server, &fixture);
+    let original = problems(&mut server, json!({"project_id":"p1"}));
+    let old = original["page"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["related_count"].as_u64().unwrap() > 0)
+        .unwrap();
+    let old_id = old["id"].as_str().unwrap();
+    std::fs::write(
+        fixture.root.join("world.wl"),
+        "event new\n  -> END\nevent new\n  -> END\n",
+    )
+    .unwrap();
+    for target in [
+        json!({"project_id":"p1","related_id":old_id}),
+        json!({"path":fixture.root,"related_id":old_id}),
+    ] {
+        let stale = call(&mut server, "project.problems", target);
+        assert!(stale.get("error").is_none());
+        assert_eq!(stale["result"]["error"]["code"], "STALE_REPORT");
+        assert!(stale["result"].get("page").is_none());
+    }
+    let current = problems(&mut server, json!({"project_id":"p1"}));
+    let new = current["page"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["related_count"].as_u64().unwrap() > 0)
+        .unwrap();
+    let new_id = new["id"].as_str().unwrap();
+    assert_ne!(old_id, new_id);
+    assert_eq!(
+        old_id.rsplit_once(':').unwrap().1,
+        new_id.rsplit_once(':').unwrap().1
+    );
+    let fresh = problems(&mut server, json!({"project_id":"p1","related_id":new_id}));
+    assert_eq!(fresh["ok"], true);
+    assert_eq!(fresh["report"]["compile_count"], 0);
+    assert!(fresh["page"]["locations"][0]["excerpt"]
+        .as_str()
+        .unwrap()
+        .contains("event new"));
+}
+
+#[test]
+fn unstable_observation_reports_rebuild_but_stable_partial_reports_reuse() {
+    let fixture = Fixture::new(&format!(
+        "asset cover image \"cover.png\" as \"封面\"\n{GOOD}"
+    ));
+    let mut server = Server::default();
+    open(&mut server, &fixture);
+    std::fs::write(fixture.root.join("cover.png"), b"image placeholder").unwrap();
+    let unit = server.projects.get_mut("p1").unwrap();
+    // Produce a real unstable report: the compile/start observation see the file,
+    // then it disappears during validators and is restored before the next request.
+    let report = unit
+        .project
+        .problems_report_with_progress(&Default::default(), &mut |domain| {
+            if domain == worldline_core::problems::ProblemDomain::Workspace {
+                std::fs::remove_file(fixture.root.join("cover.png")).unwrap();
+            }
+            true
+        })
+        .unwrap();
+    assert!(!report.complete);
+    assert!(report
+        .reasons
+        .iter()
+        .any(|reason| reason == "external_observation_changed"));
+    std::fs::write(fixture.root.join("cover.png"), b"image placeholder").unwrap();
+    assert_eq!(
+        report.source_observation,
+        unit.project.problems_observation_key().unwrap()
+    );
+    assert_eq!(report.content_baseline, unit.project.content_baseline());
+    unit.problems_report = Some(CachedReport {
+        report,
+        conflicts: Vec::new(),
+    });
+    let rebuilt = problems(&mut server, json!({"project_id":"p1"}));
+    assert_eq!(rebuilt["report"]["compile_count"], 1);
+    assert_eq!(rebuilt["report"]["complete"], true);
+    assert!(!rebuilt["report"]["reasons"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("external_observation_changed")));
+    assert!(!rebuilt["page"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["code"] == "A215"));
+    assert_eq!(
+        problems(&mut server, json!({"project_id":"p1"}))["report"]["compile_count"],
+        0
+    );
+    std::fs::write(fixture.root.join("world.wl"), BAD).unwrap();
+    let partial = problems(
+        &mut server,
+        json!({"project_id":"p1","options":{"max_entries":0}}),
+    );
+    assert_eq!(partial["report"]["complete"], false);
+    assert_eq!(partial["report"]["truncated"], true);
+    assert_eq!(partial["report"]["compile_count"], 1);
+    let cached = problems(
+        &mut server,
+        json!({"project_id":"p1","options":{"max_entries":0}}),
+    );
+    assert_eq!(cached["report"]["compile_count"], 0);
+    assert_eq!(cached["page"], partial["page"]);
 }

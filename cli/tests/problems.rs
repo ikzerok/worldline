@@ -163,3 +163,46 @@ fn old_check_scope_and_help_are_unchanged() {
     );
     assert!(String::from_utf8(output).unwrap().contains("--related"));
 }
+
+#[test]
+fn related_first_request_rejects_old_identity_after_same_ordinal_changes() {
+    let fixture = Fixture::new("event old\n  -> END\nevent old\n  -> END\n");
+    let (_, original) = invoke(&fixture, &[]);
+    let old = original["page"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["related_count"].as_u64().unwrap() > 0)
+        .unwrap();
+    let old_id = old["id"].as_str().unwrap();
+    assert_eq!(invoke(&fixture, &["--related", old_id]).1["ok"], true);
+    std::fs::write(
+        fixture.root.join("world.wl"),
+        "event new\n  -> END\nevent new\n  -> END\n",
+    )
+    .unwrap();
+    let (_, current) = invoke(&fixture, &[]);
+    let new = current["page"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["related_count"].as_u64().unwrap() > 0)
+        .unwrap();
+    let new_id = new["id"].as_str().unwrap();
+    assert_ne!(old_id, new_id);
+    // Deliberately collide the report-local ordinal; clients still copy the full ID.
+    assert_eq!(
+        old_id.rsplit_once(':').unwrap().1,
+        new_id.rsplit_once(':').unwrap().1
+    );
+    let (code, stale) = invoke(&fixture, &["--related", old_id]);
+    assert_eq!(code, 2);
+    assert_eq!(stale["error"]["code"], "STALE_REPORT");
+    assert!(stale.get("page").is_none());
+    let (_, fresh) = invoke(&fixture, &["--related", new_id]);
+    assert_eq!(fresh["ok"], true);
+    assert!(fresh["page"]["locations"][0]["excerpt"]
+        .as_str()
+        .unwrap()
+        .contains("event new"));
+}

@@ -23,3 +23,12 @@ pub(crate) fn clipped(text: &str, limit: usize) -> (String, bool) {
     }
     (text[..end].to_owned(), end < text.len())
 }
+
+#[cfg(test)]
+mod budget_tests;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+thread_local! {
+    pub(crate) static COMPILE_RUNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}

@@ -15,7 +15,7 @@ result = jsonschema.Draft202012Validator(result_schema, registry=registry)
 request = jsonschema.Draft202012Validator(request_schema, registry=registry)
 for value in [
     {'path': '.'}, {'project_id': 'p1', 'limit': 0, 'query': {}},
-    {'path': '.', 'related_id': 'p1', 'query': {'text': '', 'domains': [], 'path': None}},
+    {'path': '.', 'related_id': '0123456789abcdef:p1', 'query': {'text': '', 'domains': [], 'path': None}},
     {'path': '.', 'options': {'max_entries': 0}},
 ]:
     request.validate(value)
@@ -24,7 +24,7 @@ for value in [
     {'path': '.', 'limit': 201}, {'path': '.', 'query': {'unknown': 1}},
     {'path': '.', 'query': {'severities': ['fatal']}},
     {'path': '.', 'options': {'max_entries': 20001}},
-    {'path': '.', 'related_id': 'p1', 'query': {'text': 'filtered'}},
+    {'path': '.', 'related_id': '0123456789abcdef:p1', 'query': {'text': 'filtered'}},
     {'path': '.', 'cursor': {'report_version': 'r', 'query_key': 'q', 'offset': 0, 'extra': 1}},
 ]:
     assert not request.is_valid(value), value

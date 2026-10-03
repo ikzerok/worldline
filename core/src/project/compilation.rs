@@ -101,6 +101,18 @@ impl Project {
     }
 
     fn compile_source_buffers(&self, sources: &BTreeMap<PathBuf, String>) -> CompileResult {
+        self.compile_source_buffers_with_access(sources, true)
+    }
+
+    pub(crate) fn compile_problems_snapshot(&self) -> CompileResult {
+        self.compile_source_buffers_with_access(&self.sources(), false)
+    }
+
+    fn compile_source_buffers_with_access(
+        &self,
+        sources: &BTreeMap<PathBuf, String>,
+        allow_disk_fallback: bool,
+    ) -> CompileResult {
         let deleted = self
             .documents
             .iter()
@@ -118,12 +130,13 @@ impl Project {
                     .collect()
             })
             .unwrap_or_default();
-        crate::compiler::compile_sources_excluding_inactive_with_options(
+        crate::compiler::compile_sources_with_access(
             &self.entry,
             sources,
             deleted,
             inactive,
             self.compile_options(),
+            allow_disk_fallback,
         )
     }
 }

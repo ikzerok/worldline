@@ -58,8 +58,7 @@ pub(crate) fn project_location(
         location.reason = Some("source_unavailable".into());
         return location;
     };
-    let excerpt;
-    if exact {
+    let excerpt = if exact {
         let Some((bytes, chars, line)) = ranges(text, span) else {
             location.reason = Some("invalid_span".into());
             return location;
@@ -68,12 +67,12 @@ pub(crate) fn project_location(
         location.span = Some(span);
         location.byte_range = Some(bytes);
         location.char_range = Some(chars);
-        excerpt = line;
+        line
     } else {
         location.precision = ProblemPrecision::Document;
         location.reason = Some("document_only".into());
-        excerpt = text;
-    }
+        text
+    };
     let (text, truncated) = clipped(excerpt, excerpt_limit);
     location.excerpt = Some(text);
     location.excerpt_truncated = truncated;
@@ -131,6 +130,7 @@ impl Project {
                 "问题报告不属于当前已应用缓冲，请刷新",
             ));
         }
+        report.check_problem_id(problem_id)?;
         let entry = report
             .entries
             .iter()
