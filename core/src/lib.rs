@@ -56,6 +56,7 @@ mod topic_projection;
 pub mod vector_scene;
 pub mod wiki;
 mod workspace_documents;
+pub mod world_context;
 pub use workspace_documents::parse_unique_json;
 pub mod workspace_snapshot;
 
@@ -92,6 +93,11 @@ pub use topic_projection::{
     TopicProjectionHistoryEvent, TopicProjectionHistoryItem, TopicProjectionHistorySource,
     TopicProjectionOptions, TopicProjectionRelationResult, TopicProjectionResult,
     TopicProjectionTimeStatus,
+};
+pub use world_context::{
+    WorldContextError, WorldContextIdentity, WorldContextKind, WorldContextLimit, WorldContextNode,
+    WorldContextOptions, WorldContextPrecision, WorldContextProvenance, WorldContextRecord,
+    WorldContextResult, WorldContextSource,
 };
 
 /// 编译快照:源文件、程序、分析与全部诊断。

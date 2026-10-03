@@ -1,4 +1,5 @@
 //! 单源码生命周期：纯预览、完整重校验、一次内存提交；不改变语言能力。
+mod error;
 mod plan;
 mod proof;
 mod registered;
@@ -7,8 +8,10 @@ pub(crate) mod safety;
 mod source;
 use crate::project::Project;
 use crate::refactor::RefactorOccurrence;
+pub use error::{SourceLifecycleFailure, SourceLifecycleFailureKind};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use SourceLifecycleFailure as Failure;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -70,8 +73,24 @@ impl Project {
     pub fn preview_source_lifecycle_cancellable(
         &self,
         request: &SourceLifecycleRequest,
-        mut cancelled: impl FnMut() -> bool,
+        cancelled: impl FnMut() -> bool,
     ) -> Result<SourceLifecyclePlan, String> {
+        self.preview_source_lifecycle_cancellable_classified(request, cancelled)
+            .map_err(|failure| failure.message)
+    }
+
+    pub fn preview_source_lifecycle_classified(
+        &self,
+        request: &SourceLifecycleRequest,
+    ) -> Result<SourceLifecyclePlan, SourceLifecycleFailure> {
+        self.preview_source_lifecycle_cancellable_classified(request, || false)
+    }
+
+    pub fn preview_source_lifecycle_cancellable_classified(
+        &self,
+        request: &SourceLifecycleRequest,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<SourceLifecyclePlan, SourceLifecycleFailure> {
         plan::prepare(self, request, &mut cancelled).map(|(_, plan)| plan)
     }
 
@@ -88,11 +107,31 @@ impl Project {
         &mut self,
         request: &SourceLifecycleRequest,
         plan_digest: &str,
-        mut cancelled: impl FnMut() -> bool,
+        cancelled: impl FnMut() -> bool,
     ) -> Result<SourceLifecyclePlan, String> {
+        self.apply_source_lifecycle_cancellable_classified(request, plan_digest, cancelled)
+            .map_err(|failure| failure.message)
+    }
+
+    pub fn apply_source_lifecycle_classified(
+        &mut self,
+        request: &SourceLifecycleRequest,
+        plan_digest: &str,
+    ) -> Result<SourceLifecyclePlan, SourceLifecycleFailure> {
+        self.apply_source_lifecycle_cancellable_classified(request, plan_digest, || false)
+    }
+
+    pub fn apply_source_lifecycle_cancellable_classified(
+        &mut self,
+        request: &SourceLifecycleRequest,
+        plan_digest: &str,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<SourceLifecyclePlan, SourceLifecycleFailure> {
         let (candidate, plan) = plan::prepare(self, request, &mut cancelled)?;
         if plan.plan_digest != plan_digest {
-            return Err("源码组织预览已过期或摘要不符，工程未修改；请重新预览".into());
+            return Err(Failure::changed(
+                "源码组织预览已过期或摘要不符，工程未修改；请重新预览",
+            ));
         }
         check_cancelled(&mut cancelled)?;
         safety::revalidate(self, &plan)?;
@@ -104,9 +143,24 @@ impl Project {
         &mut self,
         plan: &SourceLifecyclePlan,
     ) -> Result<SourceLifecyclePlan, String> {
+        self.apply_source_lifecycle_plan_classified(plan)
+            .map_err(|failure| failure.message)
+    }
+
+    pub fn apply_source_lifecycle_plan_classified(
+        &mut self,
+        plan: &SourceLifecyclePlan,
+    ) -> Result<SourceLifecyclePlan, SourceLifecycleFailure> {
+        if self.content_baseline() != plan.content_baseline {
+            return Err(Failure::changed(
+                "源码组织计划或逐处预览已变化，工程未修改；请重新预览",
+            ));
+        }
         let (candidate, expected) = plan::prepare(self, &plan.request, &mut || false)?;
         if &expected != plan {
-            return Err("源码组织计划或逐处预览已变化，工程未修改；请重新预览".into());
+            return Err(Failure::changed(
+                "源码组织计划或逐处预览已变化，工程未修改；请重新预览",
+            ));
         }
         safety::revalidate(self, &expected)?;
         *self = candidate;
@@ -114,7 +168,7 @@ impl Project {
     }
 }
 
-fn check_cancelled(cancelled: &mut impl FnMut() -> bool) -> Result<(), String> {
+fn check_cancelled(cancelled: &mut impl FnMut() -> bool) -> Result<(), Failure> {
     if cancelled() {
         Err("源码组织已取消，工程未修改".into())
     } else {

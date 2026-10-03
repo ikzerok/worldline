@@ -341,6 +341,8 @@ mod story;
 mod support;
 #[path = "lib/workspace.rs"]
 mod workspace;
+#[path = "lib/world_context.rs"]
+mod world_context;
 
 /// 返回值 = 进程退出码。
 pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> Result<i32, String> {
@@ -350,6 +352,8 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     let rest = &args[1..];
     match cmd.as_str() {
         "scene" => scene::command(rest, out),
+        "world-context" => world_context::command(rest, out, "context"),
+        "world-object" => world_context::command(rest, out, "object"),
         "workspace" => workspace::cmd_workspace(&workspace::parse_workspace_args(rest)?, out),
         "maps" => workspace::cmd_maps(&workspace::parse_maps_args(rest)?, out),
         "relations" => {
@@ -373,6 +377,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
             let f = parse_files::parse_file_args(cmd, rest, false)?;
             story::cmd_graph(&f, out)
         }
+        "timeline" if rest.first().is_some_and(|arg| arg == "compare") => world_context::command(&rest[1..], out, "temporal"),
         "timeline" => {
             let f = parse_files::parse_file_args(cmd, rest, false)?;
             story::cmd_timeline(&f, out)
@@ -397,7 +402,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

@@ -49,6 +49,16 @@ tag 的语义类似指向对象的引用集合:存储稳定对象 ID,不复制�
 递归查询不向对象自动写入祖先标签;删除某个分类关系只改变索引路径。
 所有查询保留来源文件和行号,可定位标记或原始声明。
 
+### 正式引用的确定性枚举（工具 0.17）
+
+`catalog.references` 及其筛选返回值按 `(file, line, source.kind, source.id,
+target.kind, target.id, kind)` 升序枚举，不依赖符号表的 HashMap/HashSet 遍历次序。
+这是保留重复次数的引用多重集：同一行上的重复正文链接、同端点的重复关系和多处
+同目标引用仍分别保留，不用去重后的对象集合代替引用数量。此排序只定义只读目录
+投影的稳定性，不定义语句执行或声明先后；正文链接、状态变化等有序出处列表继续
+保留正式解析所得的源顺序。安全路径移动在身份映射后重新排序这一派生引用索引，
+其余等价及运行指纹守卫见 [source-lifecycle.md](source-lifecycle.md)。
+
 ## 1.2 语言 1.10 独立关系
 
 `catalog.relation_types: BTreeMap<String, RelationTypeInfo>` 保存稳定类型 ID、

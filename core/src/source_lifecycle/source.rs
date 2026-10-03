@@ -7,7 +7,7 @@ pub(super) fn rewrite(
     old: &Path,
     new: &Path,
     cancelled: &mut impl FnMut() -> bool,
-) -> Result<(Vec<SourceLifecycleChange>, Vec<SourceLifecycleResource>), String> {
+) -> Result<(Vec<SourceLifecycleChange>, Vec<SourceLifecycleResource>), Failure> {
     let mut changes = Vec::new();
     let mut resources = Vec::new();
     let mut digests = std::collections::BTreeMap::<std::path::PathBuf, String>::new();
@@ -30,10 +30,7 @@ pub(super) fn rewrite(
             .iter()
             .any(|item| item.severity == crate::Severity::Error)
         {
-            return Err(format!(
-                "源码含无法证明完整路径语义的词法错误：{}",
-                path.display()
-            ));
+            return Err(format!("源码含无法证明完整路径语义的词法错误：{}", path.display()).into());
         }
         let spans = crate::lexer::path_source_spans(
             &path.to_string_lossy(),
@@ -42,7 +39,7 @@ pub(super) fn rewrite(
         );
         let mut edits = Vec::new();
         for span in spans {
-            let target = resolve(project, path, &span.target.id)?;
+            let target = resolve(project, path, &span.target.id).map_err(Failure::path)?;
             let moved_target = if target == old {
                 new.to_path_buf()
             } else {
@@ -57,10 +54,10 @@ pub(super) fn rewrite(
                 .get(&target)
                 .is_some_and(|document| document.is_deleted())
             {
-                return Err(format!(
+                return Err(Failure::changed(format!(
                     "正式路径指向待删除源码，不能从旧磁盘内容补回：{}",
                     target.display()
-                ));
+                )));
             }
             let content_digest = if let Some(digest) = digests.get(&target) {
                 digest.clone()
@@ -75,10 +72,9 @@ pub(super) fn rewrite(
                 hash
             };
             if span.target.kind == "include_path" && !project.documents.contains_key(&target) {
-                return Err(format!(
-                    "include 源码未载入，无法证明完整移动：{}",
-                    target.display()
-                ));
+                return Err(
+                    format!("include 源码未载入，无法证明完整移动：{}", target.display()).into(),
+                );
             }
             if span.target.kind == "asset_path" && target == old {
                 return Err(
@@ -107,9 +103,9 @@ pub(super) fn rewrite(
             if affected && after_relative != span.target.id {
                 let replacement = if span.field.contains(".link.") {
                     if after_relative.contains(['[', ']', '{', '}', '\\', '"', '#', '~', '|']) {
-                        return Err(
-                            "目标路径不能安全写入正式正文链接，请改用不含链接分隔符的路径".into(),
-                        );
+                        return Err(Failure::path(
+                            "目标路径不能安全写入正式正文链接，请改用不含链接分隔符的路径",
+                        ));
                     }
                     after_relative
                 } else {
@@ -147,7 +143,7 @@ pub(super) fn rewrite(
             return Err("候选正式路径数量变化，无法证明引用完整，工程未修改".into());
         }
         for (before, after) in old_spans.iter().zip(&new_spans) {
-            let before_target = resolve(project, path, &before.target.id)?;
+            let before_target = resolve(project, path, &before.target.id).map_err(Failure::path)?;
             let expected = if before_target == old {
                 new.to_path_buf()
             } else {
@@ -155,9 +151,10 @@ pub(super) fn rewrite(
             };
             if before.field != after.field
                 || before.target.kind != after.target.kind
-                || resolve(project, after_path, &after.target.id)? != expected
+                || resolve(project, after_path, &after.target.id).map_err(Failure::path)?
+                    != expected
             {
-                return Err("候选正式路径解析目标变化，工程未修改".into());
+                return Err(Failure::semantic("候选正式路径解析目标变化，工程未修改"));
             }
         }
         if after != *source || path == old {

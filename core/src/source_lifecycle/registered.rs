@@ -1,4 +1,5 @@
 //! 仅迁移已登记、已通过正式读取器校验的源码路径；未知可选字段保持原字节。
+use super::Failure;
 use super::SourceLifecycleChange;
 use crate::catalog::TargetRef;
 use crate::collaboration::CommentIndex;
@@ -98,7 +99,7 @@ pub(super) fn rewrite(
 }
 
 /// 必须在完整源码与 JSON 候选装入后检查；不重写 quote/hash 来假造批注确认。
-pub(super) fn validate_candidate(before: &Project, after: &Project) -> Result<(), String> {
+pub(super) fn validate_candidate(before: &Project, after: &Project) -> Result<(), Failure> {
     let old_registry = checked_registry(before)?;
     let new_registry = checked_registry(after)?;
     let old_comments = validate_documents(before, &old_registry)?;
@@ -109,9 +110,9 @@ pub(super) fn validate_candidate(before: &Project, after: &Project) -> Result<()
             .get(&id)
             .ok_or("源码移动丢失了已登记批注")?;
         if comment.anchor_status != current.anchor_status {
-            return Err(format!(
+            return Err(Failure::semantic(format!(
                 "源码移动将改变批注 `{id}` 的附着状态；引用行正文发生改动时不能自动重新确认 quote/hash"
-            ));
+            )));
         }
     }
     Ok(())

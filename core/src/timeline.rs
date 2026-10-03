@@ -4,7 +4,12 @@ use serde::Serialize;
 use std::collections::HashSet;
 
 mod analyze;
+mod cycles;
+mod evidence;
+mod explain;
 pub(crate) use analyze::analyze;
+pub use cycles::{TemporalBlockedEvent, TemporalCycle};
+pub use explain::{TemporalComparison, TemporalComparisonReason, TemporalRelation};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,7 +47,7 @@ pub struct TemporalEvent {
     pub root_rank: Option<u32>,
     pub status: TimelineStatus,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TemporalEdge {
     pub before: String,
     pub after: String,
@@ -58,6 +63,10 @@ pub struct Timeline {
     pub edges: Vec<TemporalEdge>,
     pub order_scope: TemporalOrderScope,
     pub status: TimelineStatus,
+    /// 无 during 的已知事件，不伪造 events 中的时段。
+    pub unplaced_events: Vec<String>,
+    pub cycles: Vec<TemporalCycle>,
+    pub blocked: Vec<TemporalBlockedEvent>,
 }
 
 /// 编译与作者候选投影共用的比较范围规则；根由 analyze 唯一解析。

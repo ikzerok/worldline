@@ -185,6 +185,10 @@ severity 序列化为小写字符串。编辑器据此渲染面板并跳转。
 
 状态操作与旧权限归一规则见 [states.md](states.md)；独立锚点见 [catalog.md](catalog.md) §4。标记/附件的未知引用使用 A214；执行图回环不使用时间环错误 A213。
 
+工具 0.17 保留 A213 error 与 partial 保护，消息区分真正强连通环成员和受环阻断的
+下游；note/related 提供闭环及受阻路径的真实 follows 位置。机器结构化见证与比较
+合同见 [temporal-explanations.md](temporal-explanations.md)。
+
 ### 语言1.11新增诊断
 
 A230（error）表示规则/片段的静态调用环、纯规则中的随机副作用或不允许的执行上下文。未知规则/片段、错误签名、局部重复等继续使用A101/A103/A104及明确中文消息；参见language-1.11.md。

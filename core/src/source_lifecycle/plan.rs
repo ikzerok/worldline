@@ -6,16 +6,17 @@ pub(super) fn prepare(
     project: &Project,
     request: &SourceLifecycleRequest,
     cancelled: &mut impl FnMut() -> bool,
-) -> Result<(Project, SourceLifecyclePlan), String> {
+) -> Result<(Project, SourceLifecyclePlan), Failure> {
     check_cancelled(cancelled)?;
     project.ensure_workspace_writable()?;
-    project.source_lifecycle_disk_baselines_match()?;
+    project.source_lifecycle_disk_baselines_match_classified()?;
     safety::inventory(project)?;
     let before = project.compile_current();
     let mut candidate = project.clone();
     let (source_path, destination_path, membership, changes, resources) = match request {
         SourceLifecycleRequest::Create { path } => {
-            safety::relative(path)?;
+            safety::relative(path).map_err(Failure::path)?;
+            safety::destination(project, path)?;
             let destination = candidate.add_file(path)?;
             (
                 None,
@@ -26,7 +27,7 @@ pub(super) fn prepare(
             )
         }
         SourceLifecycleRequest::Include { path } => {
-            safety::relative(path)?;
+            safety::relative(path).map_err(Failure::path)?;
             let source = project.root.join(path);
             candidate.include_file(&source)?;
             (
@@ -38,15 +39,16 @@ pub(super) fn prepare(
             )
         }
         SourceLifecycleRequest::Move { from, to } => {
-            safety::relative(from)?;
-            let old = crate::file_access::within(&project.root, &project.root.join(from))?;
+            safety::relative(from).map_err(Failure::path)?;
+            let old = crate::file_access::within(&project.root, &project.root.join(from))
+                .map_err(Failure::path)?;
             if old == project.entry {
-                return Err("本版不支持移动工程入口；请保留入口路径".into());
+                return Err(Failure::path("本版不支持移动工程入口；请保留入口路径"));
             }
-            project.document(&old)?;
+            project.document(&old).map_err(Failure::path)?;
             let new = safety::destination(project, to)?;
             if old == new {
-                return Err("源码新旧路径相同".into());
+                return Err(Failure::path("源码新旧路径相同"));
             }
             if before.has_errors() {
                 return Err("安全移动需要当前活动源码编译通过；新建/引用不受此限制".into());
@@ -75,7 +77,7 @@ pub(super) fn prepare(
                     && digest(&resource_bytes(&candidate, &resource.resolved_after)?)
                         != resource.content_digest
                 {
-                    return Err("移动会改变被当作原始附件的源码/展示文档字节，无法证明素材保持不变，工程未修改".into());
+                    return Err(Failure::semantic("移动会改变被当作原始附件的源码/展示文档字节，无法证明素材保持不变，工程未修改"));
                 }
             }
             // 清单新路径与缓冲移动同时在私有候选中完成，再检查正式语义。
@@ -83,7 +85,9 @@ pub(super) fn prepare(
             registered::validate_candidate(project, &candidate)?;
             let membership = member(project, &old);
             if membership != member(&candidate, &new) {
-                return Err("移动改变了 active/archive 成员身份，工程未修改".into());
+                return Err(Failure::semantic(
+                    "移动改变了 active/archive 成员身份，工程未修改",
+                ));
             }
             (Some(old), Some(new), membership, changes, resources)
         }

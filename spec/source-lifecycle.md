@@ -76,6 +76,29 @@ required feature、未知 schema、无效 JSON、只读或未受支持路径语�
 不偷偷新增 include 或升级 source_sets。运行指纹不同（例如 file 所属状态的运行身份）
 明确拒绝，不迁移 Story save、checkpoint 或 trace。
 
+#### 确定性与顺序边界（工具 0.17）
+
+`catalog.references` 是保留重复次数的正式引用多重集，数组次序不表示声明或执行
+次序。core 按来源路径、行号、source.kind/id、target.kind/id、kind 完整键稳定排序；
+同键重复项全部保留，即使两次正文链接处于同一行、具有相同目标和标签，也不得去重。
+移动证明先对有类型的来源路径和 file TargetRef 作 old→new 映射，再按同一完整键
+排序比较；新路径改变排序位置不能成为拒绝理由。对象索引按 TargetRef 排序，关系邻接
+索引按 TargetRef 键映射后重建；所有条目、关系端点和重复关系 ID 均保留。
+
+此规范化仅作用于上述派生索引。`program.files`、默认入口、声明和语句次序、正文
+链接出现顺序、选择顺序、条件分支、效果与状态变更顺序均保持有序比较，不能递归排序
+全部数组或把它们改成集合。显示名、说明、属性原值、关系 from/to/type/scope、
+文件/行号及旧式关系的重复项序号都参与证明。只允许正式路径重基引起的文件默认显示名、
+素材原始相对路径及正文链接列偏移变化；它们须分别由身份映射、资源字节与精确 token
+改写保证，不忽略整项资料或任意源位置。
+
+同一 Project 内容与同一请求的预览计划及摘要须跨重复编译和独立进程稳定；apply
+重新计算也使用同一确定性证明。不得用重试、忽略错误、去重引用或关闭等价守卫来消除
+随机误拒绝。回归至少包含最小两人物一事件和完整作者 fixture：同 Project 100 次
+预览、100 个独立进程预览及同一成功计划在 100 个独立 Project 副本上应用。保留
+真实引用改变、执行顺序改变、默认入口/加载顺序改变、过期、外改、入口移动和越界
+的零修改拒绝，并验证 save/reopen、源字节/路径撤销与未引用普通文件保留。
+
 ## 事务和 DTO
 
 `SourceLifecycleRequest` 使用 `operation` 标签：
@@ -96,6 +119,24 @@ load_order_before/after、resources。occurrences 复用 RefactorOccurrence 的�
 成功返回实际计划。调用者在 apply 前保存一个 Project snapshot，用 restore 实现一次
 undo/redo；core 不偷偷保存。保存复用既有 recoverable journal 的旧路径删除与新路径
 写入，保存失败保留可恢复事务，不宣称磁盘跨文件物理原子。
+
+### 有类型的失败回执（工具 0.17）
+
+Rust 的兼容新增入口 `preview_source_lifecycle_classified`、
+`apply_source_lifecycle_classified`、`apply_source_lifecycle_plan_classified` 及前两者的
+`_cancellable_classified` 形式返回 `Result<_, SourceLifecycleFailure>`。
+`SourceLifecycleFailure { kind, message }` 保留原始中文详情；`kind` 为
+`SourceLifecycleFailureKind`，按 snake_case 序列化：
+
+- `SourceChanged`：内容基线/完整预览不符、外部保存基线变化、新增未载入源码、提交前资源变化或未解决保存事务；提示保留稿件、检查外改并重新预览
+- `IllegalPath`：相对路径/边界不符、目的碰撞、入口移动或不允许写入的路径；提示选择合法的非入口工作区路径
+- `SemanticChange`：明确检出的加载/默认入口、运行指纹、正式引用或资料、资源字节、成员身份或批注附着变化；提示修正造成变化的内容或保留原路径
+- `UnableToProve`：坏稿、未知能力/注册语义、预算、取消、内部投影或读取错误等无法完成证明的情形；保留详情，不冒称已经证明语义改变
+
+类别必须在 core 已知守卫产生错误时指定，不解析中文消息猜类别；未分类的旧底层
+错误仅归入 `UnableToProve`。旧 String API 包装同一实现并仅取 message，既有 CLI/agent
+错误协议不变。分类只服务解释和下一步提示，不授权重试、不自动刷新/保存，不削弱
+任何拒绝或零修改保护；编辑器直接消费 enum，技术详情可展开。
 
 CLI：`wl source-lifecycle preview|apply <workspace> --request-json JSON [--plan-digest DIGEST] --json`。
 agent：`project.source_lifecycle_preview` / `project.source_lifecycle_apply`，params 仅指定

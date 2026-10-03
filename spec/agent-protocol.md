@@ -629,3 +629,38 @@ CLI 退出码 2；其他业务失败退出码 1。
 `saved:false` 仅表示未确认保存完成，不表示磁盘零修改；磁盘可能已部分写入，须通过
 既有重新打开/刷新恢复事务。RPC 的 project_id 会话继续保留应用后的内容。只有
 `saved:true` 才能声明保存成功；本接口不承诺跨文件物理原子性。
+
+## 世界对象焦点与时间解释（工具 0.17）
+
+initialize.capabilities 新增 `authoring.world_context.v1` 与 `authoring.temporal_explanations.v1`。
+协议仍为 1；消费者先检查能力后显式调用新方法即选择该能力，不改变旧方法或旧会话字段。
+世界上下文完整 DTO、精度与预算见 [world-context.md](world-context.md)。
+
+CLI `wl world-context DIR --target KIND:ID [--options-json '<WorldContextOptions>'] --json`
+以及 `wl world-object DIR --target KIND:ID --json` 使用同快照 core API；前者输出 context，
+后者输出 object。RPC `world.context` / `world.object` 接受 path 或 project_id（二选一），
+target 为 `{kind,id}`；world.context 可传 options。新方法拒绝未知字段、未知 options 字段、
+重复 key 及非法字段类型；RPC形状错误 -32602，重复key沿用 -32700，CLI用法错误退出2。
+业务错误 UNKNOWN_TARGET/STALE_SNAPSHOT/CANCELLED 为 `{ok:false,error:{code,message}}`；
+坏稿返回 ok:false 和包含 invalid_source 的 context，CLI退出1。截断本身不表示编译失败，
+ok:true 仍须检查 complete/truncated/reasons；不会以空表表示预算失败。
+
+两接口均带 schema_version、language_version、workspace_revision、diagnostics、
+workspace_diagnostics、read_only；project_id 请求先 refresh 并报告 conflicts。只读工作区
+允许查询。content_baseline 与 workspace_revision 相同，source snapshot 属于实际编译产物。
+world-object 还返回 snapshot，精确 lookup 不受无关目录总数量影响。
+
+CLI `wl timeline compare DIR --left ID --right ID [--expected-baseline BASELINE] --json`
+与 RPC `temporal.compare`（path 或 project_id、left/right、可选 expected_baseline）返回
+comparison 和上述工作区公共字段。比较结果完全来自 core Timeline::compare；before/after
+的 evidence 只含同快照真实 follows 边，完整语义见 [temporal-explanations.md](temporal-explanations.md)。
+expected_baseline 不匹配返回业务错误 STALE_BASELINE，不展示旧证据为当前事实。未知事件为
+comparison.relation=unknown，业务 ok:false；invalid 同样 ok:false。协议形状错误仍与业务分开。
+
+时间比较在 refresh 报告未解决外部冲突或恢复事务冲突时返回 CONFLICT、comparison:null，
+即使保留的本地缓冲基线未变化也不能将旧比较解释为当前磁盘一致证据。Project 只读包装不
+隐式刷新，基线绑定当前缓冲；发现已存在的交叉修改冲突会拒绝比较。
+
+`world.context` 在 refresh 已知未决外部/恢复冲突时保留同一缓冲 context，附原 conflicts，
+并设置 context.complete=false、reasons 包含 source_conflict；冲突本身不置 truncated，
+不改变 read_only，也不清空或覆盖任何一侧。源码快照摘要不能证明当前磁盘最新版。

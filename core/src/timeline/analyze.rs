@@ -1,8 +1,9 @@
 use super::{
-    PeriodInfo, TemporalEdge, TemporalEvent, TemporalOrderScope, Timeline, TimelineStatus,
+    cycles::analyze_cycles, evidence::EdgeGraph, PeriodInfo, TemporalCycle, TemporalEdge,
+    TemporalEvent, TemporalOrderScope, Timeline, TimelineStatus,
 };
 use crate::{Diagnostic, Program, Span};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 pub(crate) fn analyze(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> Timeline {
     let root_order = program.language_version.supports_language_113();
@@ -153,23 +154,11 @@ pub(crate) fn analyze(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> T
             });
         }
     }
-    let (root_rank, blocked) = ranks(&adjacency);
-    let (direct_rank, _) = ranks(&direct);
+    (timeline.cycles, timeline.blocked) = analyze_cycles(&timeline.edges);
+    report_cycles(program, diagnostics, &timeline);
+    let root_rank = ranks(&adjacency);
+    let direct_rank = ranks(&direct);
     for (i, event) in program.events.iter().enumerate() {
-        if blocked[i] {
-            let before = event
-                .predecessors
-                .iter()
-                .filter_map(|p| ids.get(p.as_str()).copied())
-                .find(|&p| blocked[p]);
-            report(
-                program,
-                diagnostics,
-                i,
-                before,
-                format!("事件 `{}` 的时间约束有环或依赖环路", event.name),
-            );
-        }
         if let Some(period) = &event.period {
             timeline.events.push(TemporalEvent {
                 event: event.name.clone(),
@@ -184,8 +173,12 @@ pub(crate) fn analyze(program: &Program, diagnostics: &mut Vec<Diagnostic>) -> T
                 root_rank: (root_order && event_roots[i].is_some()).then_some(root_rank[i]),
                 status: TimelineStatus::Complete,
             });
+        } else {
+            timeline.unplaced_events.push(event.name.clone());
         }
     }
+    timeline.unplaced_events.sort();
+    timeline.unplaced_events.dedup();
     timeline.mark_incomplete(diagnostics);
     timeline
 }
@@ -212,7 +205,90 @@ fn report(
     diagnostics.push(diagnostic);
 }
 
-fn ranks(adjacency: &[Vec<usize>]) -> (Vec<u32>, Vec<bool>) {
+fn report_cycles(program: &Program, diagnostics: &mut Vec<Diagnostic>, timeline: &Timeline) {
+    let cycles: BTreeMap<_, _> = timeline.cycles.iter().map(|c| (c.id.as_str(), c)).collect();
+    let members: BTreeMap<_, _> = timeline
+        .cycles
+        .iter()
+        .flat_map(|c| c.members.iter().map(move |id| (id.as_str(), c)))
+        .collect();
+    let blocked: BTreeMap<_, _> = timeline
+        .blocked
+        .iter()
+        .map(|b| (b.event.as_str(), &b.cycle_ids))
+        .collect();
+    let graph = EdgeGraph::new(&timeline.edges);
+    for (i, event) in program.events.iter().enumerate() {
+        let (message, causes): (_, Vec<&TemporalCycle>) =
+            if let Some(cycle) = members.get(event.name.as_str()) {
+                (
+                    format!("事件 `{}` 属于时间约束环 `{}`", event.name, cycle.id),
+                    vec![*cycle],
+                )
+            } else if let Some(ids) = blocked.get(event.name.as_str()) {
+                (
+                    format!(
+                        "事件 `{}` 受时间约束环 {} 阻断（本事件不是环成员）",
+                        event.name,
+                        ids.join("、")
+                    ),
+                    ids.iter().map(|id| cycles[id.as_str()]).collect(),
+                )
+            } else {
+                continue;
+            };
+        let mut diagnostic = Diagnostic::error(
+            "A213",
+            &program.event_files[i],
+            Span::new(event.loc.line, 1, 5),
+            message,
+        );
+        let mut notes = Vec::new();
+        for cycle in causes {
+            notes.push(format!(
+                "环 `{}` 的闭环见证：{}",
+                cycle.id,
+                path_label(&cycle.witness)
+            ));
+            add_locations(&mut diagnostic, &cycle.witness);
+            if !members.contains_key(event.name.as_str()) {
+                if let Some(path) = graph.path(
+                    graph.indices[cycle.id.as_str()],
+                    graph.indices[event.name.as_str()],
+                    None,
+                ) {
+                    notes.push(format!("受阻路径：{}", path_label(&path)));
+                    add_locations(&mut diagnostic, &path);
+                }
+            }
+        }
+        diagnostic.note = Some(notes.join("；"));
+        diagnostics.push(diagnostic);
+    }
+}
+
+fn path_label(edges: &[TemporalEdge]) -> String {
+    edges
+        .first()
+        .map(|first| {
+            std::iter::once(first.before.as_str())
+                .chain(edges.iter().map(|e| e.after.as_str()))
+                .collect::<Vec<_>>()
+                .join(" → ")
+        })
+        .unwrap_or_default()
+}
+
+fn add_locations(diagnostic: &mut Diagnostic, edges: &[TemporalEdge]) {
+    for edge in edges {
+        let location = (edge.file.clone(), Span::new(edge.line, 1, 5));
+        if !diagnostic.related.contains(&location) {
+            diagnostic.related.push(location);
+        }
+    }
+}
+
+fn ranks(adjacency: &[Vec<usize>]) -> Vec<u32> {
     let mut degree = vec![0usize; adjacency.len()];
     let mut rank = vec![0u32; adjacency.len()];
     for targets in adjacency {
@@ -235,5 +311,5 @@ fn ranks(adjacency: &[Vec<usize>]) -> (Vec<u32>, Vec<bool>) {
             }
         }
     }
-    (rank, degree.into_iter().map(|d| d > 0).collect())
+    rank
 }
