@@ -211,6 +211,7 @@ impl Server {
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
                     "authoring.problems.v1",
+                    worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,

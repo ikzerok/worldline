@@ -16,7 +16,7 @@ fn unicode_crlf_ranges_are_core_projected_and_invalid_spans_never_clamp() {
     let project = project();
     let file = project.entry.to_string_lossy();
     let location =
-        super::location::project_location(&project, &file, Span::new(2, 5, 1), true, 512);
+        super::location::project_location(&project, &file, Span::new(2, 5, 1), Some(ProblemSourceRole::Target), 512);
     assert_eq!(location.precision, ProblemPrecision::Span);
     let bytes = location.byte_range.unwrap();
     let chars = location.char_range.unwrap();
@@ -37,7 +37,7 @@ fn unicode_crlf_ranges_are_core_projected_and_invalid_spans_never_clamp() {
         Span::new(2, 3, 500),
         Span::new(2, u32::MAX, u32::MAX),
     ] {
-        let location = super::location::project_location(&project, &file, span, true, 512);
+        let location = super::location::project_location(&project, &file, span, Some(ProblemSourceRole::Target), 512);
         assert_eq!(
             location.precision,
             ProblemPrecision::Unavailable,
@@ -49,12 +49,12 @@ fn unicode_crlf_ranges_are_core_projected_and_invalid_spans_never_clamp() {
                 && location.span.is_none()
         );
     }
-    let doc = super::location::project_location(&project, &file, Span::new(1, 1, 1), false, 5);
+    let doc = super::location::project_location(&project, &file, Span::new(1, 1, 1), None, 5);
     assert_eq!(doc.precision, ProblemPrecision::Document);
     assert!(doc.byte_range.is_none());
     assert!(doc.excerpt_truncated);
     let outside =
-        super::location::project_location(&project, "/outside.json", Span::new(1, 1, 1), true, 512);
+        super::location::project_location(&project, "/outside.json", Span::new(1, 1, 1), Some(ProblemSourceRole::Target), 512);
     assert_eq!(outside.precision, ProblemPrecision::Unavailable);
     assert!(outside.path.is_none());
 }
@@ -128,7 +128,7 @@ fn workspace_identity_and_tampered_ranges_cannot_redirect_navigation() {
         &project.entry.to_string_lossy(),
         Span::new(2, 5, 1),
         "一个问题",
-    )];
+    ).with_source_role(ProblemSourceRole::Target)];
     let mut report = project
         .problems_report_with_content(
             &content,

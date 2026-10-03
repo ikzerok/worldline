@@ -26,9 +26,10 @@ pub(crate) fn project_location(
     project: &Project,
     file: &str,
     span: crate::Span,
-    exact: bool,
+    role: Option<ProblemSourceRole>,
     excerpt_limit: usize,
 ) -> ProblemLocation {
+    let role = role.unwrap_or(ProblemSourceRole::Document);
     let path = Path::new(file);
     let relative = relative(project, path);
     let mut location = ProblemLocation {
@@ -40,9 +41,20 @@ pub(crate) fn project_location(
         excerpt: None,
         excerpt_truncated: false,
         reason: None,
+        context: Some(ProblemSourceContext::empty(role)),
     };
     if location.path.is_none() {
         location.reason = Some("outside_workspace".into());
+        return location;
+    }
+    if role == ProblemSourceRole::Unavailable {
+        location.reason = Some("source_unavailable".into());
+        return location;
+    }
+    if project.documents.contains_key(path)
+        && project.source_selection().is_some_and(|selection| !selection.is_active(path))
+    {
+        location.reason = Some("inactive_source".into());
         return location;
     }
     let text = if let Some(document) = project.documents.get(path).filter(|d| !d.is_deleted()) {
@@ -58,60 +70,81 @@ pub(crate) fn project_location(
         location.reason = Some("source_unavailable".into());
         return location;
     };
-    let excerpt = if exact {
-        let Some((bytes, chars, line)) = ranges(text, span) else {
+    let exact = matches!(
+        role,
+        ProblemSourceRole::Target | ProblemSourceRole::Expression
+            | ProblemSourceRole::Statement | ProblemSourceRole::Declaration
+    );
+    let context = if exact {
+        let Some(line) = ranges(text, span) else {
             location.reason = Some("invalid_span".into());
             return location;
         };
         location.precision = ProblemPrecision::Span;
         location.span = Some(span);
-        location.byte_range = Some(bytes);
-        location.char_range = Some(chars);
-        line
+        location.byte_range = Some(ProblemRange {
+            start: line.byte_base + line.hit.start,
+            end: line.byte_base + line.hit.end,
+        });
+        location.char_range = Some(ProblemRange {
+            start: line.char_base + span.column as usize - 1,
+            end: line.char_base + span.column as usize - 1 + span.length as usize,
+        });
+        super::context::project(
+            line.text, line.byte_base, line.char_base, Some(line.hit), role, excerpt_limit,
+        )
     } else {
         location.precision = ProblemPrecision::Document;
         location.reason = Some("document_only".into());
-        text
+        super::context::project(text, 0, 0, None, role, excerpt_limit)
     };
-    let (text, truncated) = clipped(excerpt, excerpt_limit);
-    location.excerpt = Some(text);
-    location.excerpt_truncated = truncated;
+    location.excerpt = context.text.clone();
+    location.excerpt_truncated = context.prefix_clipped || context.suffix_clipped
+        || context.visibility == ProblemContextVisibility::Partial;
+    location.context = Some(context);
     location
 }
 
-fn ranges(text: &str, span: Span) -> Option<(ProblemRange, ProblemRange, &str)> {
+struct SourceLine<'a> {
+    text: &'a str,
+    byte_base: usize,
+    char_base: usize,
+    hit: ProblemRange,
+}
+fn ranges(text: &str, span: Span) -> Option<SourceLine<'_>> {
     let line_index = usize::try_from(span.line.checked_sub(1)?).ok()?;
     let column = usize::try_from(span.column.checked_sub(1)?).ok()?;
     let length = usize::try_from(span.length).ok()?;
     let mut byte_base = 0;
     let mut char_base = 0;
-    // split preserves an empty last physical line and removes only CRLF's CR.
+    // Preserve the empty final line and remove only the CR belonging to CRLF.
     let mut lines = text.split('\n');
     for _ in 0..line_index {
         let line = lines.next()?;
         byte_base += line.len() + 1;
         char_base += line.chars().count() + 1;
     }
-    let line = lines.next()?.trim_end_matches('\r');
+    let raw = lines.next()?;
+    let line = if byte_base + raw.len() < text.len() {
+        raw.strip_suffix('\r').unwrap_or(raw)
+    } else {
+        raw
+    };
     let boundaries: Vec<usize> = line
         .char_indices()
         .map(|(i, _)| i)
         .chain(std::iter::once(line.len()))
         .collect();
     let end_column = column.checked_add(length)?;
-    let start = *boundaries.get(column)?;
-    let end = *boundaries.get(end_column)?;
-    Some((
-        ProblemRange {
-            start: byte_base + start,
-            end: byte_base + end,
+    Some(SourceLine {
+        text: line,
+        byte_base,
+        char_base,
+        hit: ProblemRange {
+            start: *boundaries.get(column)?,
+            end: *boundaries.get(end_column)?,
         },
-        ProblemRange {
-            start: char_base + column,
-            end: char_base + end_column,
-        },
-        line,
-    ))
+    })
 }
 
 impl Project {
@@ -144,15 +177,27 @@ impl Project {
                 .ok_or_else(|| ProblemsError::new("UNKNOWN_PROBLEM", "关联来源不存在或已截断"))?,
             None => &entry.primary,
         };
-        let Some(path) = location.path.as_deref() else {
-            return Ok(location.clone());
-        };
-        if !super::query::valid_path(path) {
+        if location.path.as_deref().is_some_and(|path| !super::query::valid_path(path)) {
             return Err(ProblemsError::new(
                 "INVALID_QUERY",
                 "问题来源路径不在工作区内",
             ));
         }
+        if report.schema_version != 1
+            || location.context.as_ref().is_none_or(|context| context.version != 1)
+            || report.report_version != super::version::of(report)
+            || report.reasons.iter().any(|reason| matches!(
+                reason.as_str(), "source_conflict" | "external_observation_changed"
+            ))
+        {
+            return Err(ProblemsError::new(
+                "STALE_REPORT",
+                "问题来源证据不属于当前格式或稿件，请刷新",
+            ));
+        }
+        let Some(path) = location.path.as_deref() else {
+            return Ok(location.clone());
+        };
         // Re-project from the current loaded buffers; never trust transported byte offsets.
         if location.precision == ProblemPrecision::Unavailable {
             return Ok(location.clone());
@@ -161,7 +206,7 @@ impl Project {
             self,
             &self.root.join(path).to_string_lossy(),
             location.span.unwrap_or_default(),
-            location.precision == ProblemPrecision::Span,
+            location.context.as_ref().map(|context| context.role),
             report.limits.max_excerpt_bytes,
         );
         if &current != location {

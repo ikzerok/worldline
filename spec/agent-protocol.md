@@ -668,3 +668,9 @@ comparison.relation=unknown，业务 ok:false；invalid 同样 ok:false。协议
 ## 工程问题报告（工具 0.18）
 
 新增 `authoring.problems.v1`、只读 `project.problems` 与 `wl problems`。完整 DTO、分页/游标、coverage、位置精度、预算和退出码见 [problems.md](problems.md)。旧 `wl check` 的检查范围与成功语义不变；报告列出 sidecar error 不改变任何运行、发布或只读门禁。
+
+工具 0.19 的 `initialize.capabilities` 新增 `authoring.problem_source_context.v1`。
+`project.problems` 与 `wl problems` 保持 schema1 与旧请求形状；响应位置增加可选
+context（version=1），旧 report 仅只读，导航必须刷新。DTO、窗口与精度、字节/字符
+坐标和兼容边界见 [problem-source-context.md](problem-source-context.md)。该工具能力
+不进入作品 required_features 或 Story save。

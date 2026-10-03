@@ -206,3 +206,33 @@ fn related_first_request_rejects_old_identity_after_same_ordinal_changes() {
         .unwrap()
         .contains("event new"));
 }
+
+#[test]
+fn source_context_is_additive_bounded_and_keeps_tail_hit_in_cli_json() {
+    let source = format!("event start\n  {}{{missing}}\n  -> END\n", "长中文😀".repeat(400));
+    let fixture = Fixture::new(&source);
+    for budget in [0, 1, 2, 3, 4, 511, 512] {
+        let options = format!("{{\"max_excerpt_bytes\":{budget}}}");
+        let (exit, response) = invoke(&fixture, &["--options-json", &options]);
+        assert_eq!(exit, 1);
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["report"]["schema_version"], 1);
+        assert!(response.to_string().len() <= 1024 * 1024);
+        let primary = &response["page"]["entries"].as_array().unwrap().iter()
+            .find(|entry| entry["code"] == "A102").unwrap()["primary"];
+        assert_eq!(primary["precision"], "span");
+        assert_eq!(primary["context"]["version"], 1);
+        assert_eq!(primary["context"]["role"], "target");
+        assert_eq!(primary["excerpt"], primary["context"]["text"]);
+        if budget == 0 {
+            assert_eq!(primary["context"]["visibility"], "no_text");
+        } else {
+            assert!(primary["context"]["text"].as_str().unwrap().len() <= budget);
+        }
+        if budget >= 7 {
+            assert_eq!(primary["context"]["visibility"], "full");
+            assert!(primary["context"]["text"].as_str().unwrap().contains("missing"));
+        }
+    }
+    assert_eq!(std::fs::read_to_string(fixture.root.join("world.wl")).unwrap(), source);
+}

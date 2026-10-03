@@ -398,3 +398,42 @@ fn unstable_observation_reports_rebuild_but_stable_partial_reports_reuse() {
     assert_eq!(cached["report"]["compile_count"], 0);
     assert_eq!(cached["page"], partial["page"]);
 }
+
+#[test]
+fn context_capability_tail_hit_and_cached_pages_preserve_schema_one_requests() {
+    let source = format!("event start\n  {}{{missing}}\n  -> END\n", "长中文😀".repeat(400));
+    let fixture = Fixture::new(&source);
+    let mut server = Server::default();
+    let initialized = call(&mut server, "initialize", json!({}));
+    assert!(initialized["result"]["capabilities"].as_array().unwrap().contains(
+        &json!(worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY)
+    ));
+    open(&mut server, &fixture);
+    for budget in [0, 1, 2, 3, 4, 511, 512] {
+        let params = json!({"project_id":"p1","options":{"max_excerpt_bytes":budget}});
+        let response = problems(&mut server, params.clone());
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["report"]["schema_version"], 1);
+        assert!(response.to_string().len() <= 1024 * 1024);
+        let primary = &response["page"]["entries"].as_array().unwrap().iter()
+            .find(|entry| entry["code"] == "A102").unwrap()["primary"];
+        assert_eq!(primary["precision"], "span");
+        assert_eq!(primary["context"]["version"], 1);
+        assert_eq!(primary["context"]["role"], "target");
+        if budget == 0 {
+            assert_eq!(primary["context"]["visibility"], "no_text");
+        } else {
+            assert!(primary["context"]["text"].as_str().unwrap().len() <= budget);
+        }
+        if budget >= 7 {
+            assert_eq!(primary["context"]["visibility"], "full");
+            assert!(primary["context"]["text"].as_str().unwrap().contains("missing"));
+        }
+        let cached = problems(&mut server, params);
+        assert_eq!(cached["report"]["compile_count"], 0);
+        assert_eq!(cached["page"], response["page"]);
+    }
+    assert_eq!(call(&mut server, "project.problems", json!({
+        "project_id":"p1", "context":true
+    }))["error"]["code"], -32602);
+}
