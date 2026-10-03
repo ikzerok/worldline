@@ -31,6 +31,8 @@ pub(super) struct ReplayExecutionBudget<'a> {
     pub(super) slice: Option<ReplayBudget>,
     pub(super) slice_started: MonotonicInstant,
     pub(super) slice_steps: u64,
+    pub(crate) comparison_limit: Option<usize>,
+    pub(crate) output_usage: Option<&'a mut crate::route_comparison::OutputUsage>,
 }
 
 impl ReplayExecutionBudget<'_> {
@@ -257,7 +259,8 @@ impl<'p> Story<'p> {
                     }
                 }
                 Stmt::Change(c) => {
-                    self.apply_change(&c.change)?;
+                    let source = self.action_source(c.change.kind, c.change.loc.line);
+                    self.apply_change(&c.change, source)?;
                     self.frames[fi].idx += 1;
                 }
                 Stmt::Anchor(a) => {

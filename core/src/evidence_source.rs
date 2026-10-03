@@ -1,9 +1,11 @@
 //! 非语义证据来源投影；声明头范围由 core 的 AST 与正式词法共同确认。
-use crate::ast::Stmt;
+use crate::ast::{ChangeKind, Stmt};
 use crate::lexer::LineKind;
 use crate::CompileResult;
 use serde::{Deserialize, Serialize};
 use std::{ops::Range, path::PathBuf};
+mod state_actions;
+pub use state_actions::state_action_source;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvidenceSource {
@@ -16,8 +18,19 @@ pub struct EvidenceSource {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EvidenceSourceOwner {
-    Choice { node: String },
-    Rule { name: String },
+    Choice {
+        node: String,
+    },
+    Rule {
+        name: String,
+    },
+    StateAction {
+        node: String,
+        action: ChangeKind,
+        timing: String,
+        effect_index: Option<usize>,
+        action_index: Option<usize>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,6 +61,7 @@ pub fn resolve_evidence_source(
         .sources
         .get(&path)
         .ok_or("证据来源不属于此编译快照")?;
+    let state_action = state_actions::find(&snapshot.program, source.line, &source.owner);
     let valid = match &source.owner {
         EvidenceSourceOwner::Choice { node } => choice_body(snapshot, &source.file, node)
             .is_some_and(|body| count_choices(body, source.line) == 1),
@@ -62,6 +76,9 @@ pub fn resolve_evidence_source(
                 .count()
                 == 1
         }
+        EvidenceSourceOwner::StateAction { .. } => state_action
+            .as_ref()
+            .is_some_and(|action| action.file == source.file),
     };
     if !valid {
         return Err("证据所属声明已变化或无法唯一确认".into());
@@ -75,10 +92,13 @@ pub fn resolve_evidence_source(
     .into_iter()
     .find(|line| line.no == source.line)
     .ok_or("证据声明头已不存在")?;
-    let classified = match (&source.owner, line.kind) {
+    let classified = match (&source.owner, line.physical().kind) {
         (EvidenceSourceOwner::Choice { .. }, LineKind::Choice { .. }) => true,
         (EvidenceSourceOwner::Rule { .. }, LineKind::Language111 { keyword, .. }) => {
             keyword == "rule"
+        }
+        (EvidenceSourceOwner::StateAction { action, .. }, kind) => {
+            state_action.is_some_and(|source| source.matches_header(*action, &kind))
         }
         _ => false,
     };

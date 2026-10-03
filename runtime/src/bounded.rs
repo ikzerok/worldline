@@ -92,6 +92,8 @@ impl<'p> Story<'p> {
             slice: None,
             slice_started: started,
             slice_steps: 0,
+            comparison_limit: None,
+            output_usage: None,
         };
         let result = self.continue_story_inner(&mut budget)?;
         let outcome = match result.stop {

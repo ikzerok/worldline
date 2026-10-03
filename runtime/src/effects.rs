@@ -73,7 +73,7 @@ impl<'p> Story<'p> {
         when: EffectWhen,
     ) -> Result<(), RunError> {
         let effects = self.program.events[event_idx].effects.clone();
-        for fx in effects {
+        for (effect_index, fx) in effects.into_iter().enumerate() {
             if fx.when != when {
                 continue;
             }
@@ -82,8 +82,24 @@ impl<'p> Story<'p> {
                     continue;
                 }
             }
-            for a in &fx.actions {
-                self.apply_change(a)?;
+            for (action_index, a) in fx.actions.iter().enumerate() {
+                let source = worldline_core::evidence_source::state_action_source(
+                    self.program,
+                    a.loc.line,
+                    &worldline_core::evidence_source::EvidenceSourceOwner::StateAction {
+                        node: self.program.events[event_idx].name.clone(),
+                        action: a.kind,
+                        timing: match when {
+                            EffectWhen::Enter => "enter",
+                            EffectWhen::Exit => "exit",
+                            EffectWhen::Done => "done",
+                        }
+                        .into(),
+                        effect_index: Some(effect_index),
+                        action_index: Some(action_index),
+                    },
+                );
+                self.apply_change(a, source)?;
             }
         }
         Ok(())
@@ -110,7 +126,11 @@ impl<'p> Story<'p> {
     }
 
     /// 应用一次变动并写入对应历史。
-    pub(super) fn apply_change(&mut self, a: &Change) -> Result<(), RunError> {
+    pub(super) fn apply_change(
+        &mut self,
+        a: &Change,
+        source: Option<worldline_core::evidence_source::EvidenceSource>,
+    ) -> Result<(), RunError> {
         match a.kind {
             ChangeKind::Become | ChangeKind::AddTags | ChangeKind::RemoveTags => {
                 let before = self.states.get(&a.id).cloned().ok_or_else(|| RunError {
@@ -141,6 +161,13 @@ impl<'p> Story<'p> {
                     note: a.note.clone(),
                     turn: self.turns,
                 });
+                if let Some(record) = self.state_history.last() {
+                    self.state_actions.record(
+                        record,
+                        self.catalog.states.get(&a.id).map(|state| &state.target),
+                        source,
+                    );
+                }
                 // 旧锚点机器字段派生自身份状态动作，绝不另存一份权限集合。
                 if let Some(m) = &self.program.permission_migration {
                     if a.id == m.state
