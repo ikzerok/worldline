@@ -21,6 +21,7 @@ mod tests;
 pub(crate) struct ReplayCursor {
     pub(crate) initial_state: serde_json::Value,
     pub(crate) initial_pending: bool,
+    pub(crate) initial_verified: bool,
     pub(crate) pending_outputs: Vec<Output>,
     pub(crate) step_index: usize,
     pub(crate) completed_choices: usize,
@@ -33,6 +34,7 @@ impl ReplayCursor {
         Self {
             initial_state: story.state_view(),
             initial_pending: true,
+            initial_verified: false,
             pending_outputs: Vec::new(),
             step_index: 0,
             completed_choices: 0,
@@ -269,11 +271,6 @@ pub(crate) fn run_replay_slice(
                     });
                 }
             };
-            if let Some(usage) = budget.output_usage.as_mut() {
-                if !usage.include(&outcome.outputs) {
-                    return ReplayProgress::OutputBudgetExceeded;
-                }
-            }
             if let Some(limit) = budget.comparison_limit {
                 if let Err(error) = crate::route_comparison::check_story(story, limit) {
                     return ReplayProgress::Rejected(error);
@@ -283,6 +280,12 @@ pub(crate) fn run_replay_slice(
             if let Some(stop) = outcome.stop {
                 match stop {
                     ReplayStop::Yield => return ReplayProgress::Yielded,
+                    ReplayStop::OutputBudgetExceeded => {
+                        return ReplayProgress::OutputBudgetExceeded
+                    }
+                    ReplayStop::ComparisonRejected(error) => {
+                        return ReplayProgress::Rejected(error)
+                    }
                     ReplayStop::Status(status) => {
                         let outputs = std::mem::take(&mut cursor.pending_outputs);
                         story.record_continuation(&outputs);
@@ -311,6 +314,7 @@ pub(crate) fn run_replay_slice(
                 });
             }
         }
+        cursor.initial_verified = trace.initial_observation.is_some();
         cursor.initial_pending = false;
     }
 
@@ -347,7 +351,7 @@ pub(crate) fn run_replay_slice(
                     initial_state: (&cursor.initial_state).clone(),
                 });
             };
-            let selected = if budget.comparison_limit.is_some() {
+            let selected = if budget.comparison_limit.is_some() && cursor.initial_verified {
                 story
                     .choice_evidence()
                     .and_then(|choices| {
@@ -397,11 +401,6 @@ pub(crate) fn run_replay_slice(
                 });
             }
         };
-        if let Some(usage) = budget.output_usage.as_mut() {
-            if !usage.include(&outcome.outputs) {
-                return ReplayProgress::OutputBudgetExceeded;
-            }
-        }
         if let Some(limit) = budget.comparison_limit {
             if let Err(error) = crate::route_comparison::check_story(story, limit) {
                 return ReplayProgress::Rejected(error);
@@ -411,6 +410,8 @@ pub(crate) fn run_replay_slice(
         if let Some(stop) = outcome.stop {
             match stop {
                 ReplayStop::Yield => return ReplayProgress::Yielded,
+                ReplayStop::OutputBudgetExceeded => return ReplayProgress::OutputBudgetExceeded,
+                ReplayStop::ComparisonRejected(error) => return ReplayProgress::Rejected(error),
                 ReplayStop::Status(status) => {
                     let outputs = std::mem::take(&mut cursor.pending_outputs);
                     story.record_continuation(&outputs);

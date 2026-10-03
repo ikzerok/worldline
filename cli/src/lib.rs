@@ -331,6 +331,8 @@ mod reader_export;
 mod relation_edit;
 #[path = "lib/relation_query.rs"]
 mod relation_query;
+#[path = "lib/route_comparison.rs"]
+mod route_comparison;
 #[path = "lib/scene.rs"]
 mod scene;
 #[path = "lib/source_edit.rs"]
@@ -343,8 +345,6 @@ mod story;
 mod support;
 #[path = "lib/workspace.rs"]
 mod workspace;
-#[path = "lib/route_comparison.rs"]
-mod route_comparison;
 #[path = "lib/world_context.rs"]
 mod world_context;
 

@@ -9,6 +9,7 @@ use worldline_core::Analysis;
 
 mod bounded;
 mod choices;
+mod comparison_boundary;
 mod effects;
 mod evidence;
 mod execution;

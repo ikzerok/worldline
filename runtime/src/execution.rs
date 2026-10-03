@@ -16,6 +16,8 @@ use super::{
 pub(super) enum ReplayStop {
     Status(ReplayStatus),
     Yield,
+    OutputBudgetExceeded,
+    ComparisonRejected(crate::RouteComparisonError),
 }
 
 pub(super) struct ContinueOutcome {
@@ -61,7 +63,8 @@ impl ReplayExecutionBudget<'_> {
     pub(super) fn slice_exhausted(&self) -> bool {
         self.slice.is_some_and(|slice| {
             self.slice_steps >= slice.max_steps
-                || self.slice_started.elapsed() >= Duration::from_millis(slice.time_budget_ms)
+                || ((self.comparison_limit.is_none() || self.slice_steps > 0)
+                    && self.slice_started.elapsed() >= Duration::from_millis(slice.time_budget_ms))
         })
     }
 }
@@ -74,25 +77,23 @@ impl<'p> Story<'p> {
         budget: &mut ReplayExecutionBudget<'_>,
     ) -> Result<ContinueOutcome, RunError> {
         let mut out = Vec::new();
+        let mut counted_outputs = 0;
         if self.paused.is_some() {
-            return Ok(ContinueOutcome {
-                outputs: out,
-                stop: None,
-            });
+            return Ok(self.comparison_outcome(budget, out, None, counted_outputs));
         }
         loop {
-            let Some(fi) = self.frames.len().checked_sub(1) else {
-                out.push(Output::Ended);
-                return Ok(ContinueOutcome {
-                    outputs: out,
-                    stop: None,
-                });
-            };
-            if let Some(stop) = budget.consume_step() {
+            if let Some(stop) = self.comparison_boundary(budget, &mut out, &mut counted_outputs) {
                 return Ok(ContinueOutcome {
                     outputs: out,
                     stop: Some(stop),
                 });
+            }
+            let Some(fi) = self.frames.len().checked_sub(1) else {
+                out.push(Output::Ended);
+                return Ok(self.comparison_outcome(budget, out, None, counted_outputs));
+            };
+            if let Some(stop) = budget.consume_step() {
+                return Ok(self.comparison_outcome(budget, out, Some(stop), counted_outputs));
             }
             if self.frames[fi].idx >= self.frames[fi].stmts.len() {
                 // 事件自然完成先 done 后 exit；弹栈前保留记录的事件归属。
@@ -206,10 +207,7 @@ impl<'p> Story<'p> {
                             self.run_exit_effects(false)?;
                             self.frames.clear();
                             out.push(Output::Ended);
-                            return Ok(ContinueOutcome {
-                                outputs: out,
-                                stop: None,
-                            });
+                            return Ok(self.comparison_outcome(budget, out, None, counted_outputs));
                         }
                         DivertTarget::Node(target) => {
                             let current_event = self.current_event_name();
@@ -273,10 +271,7 @@ impl<'p> Story<'p> {
                 }
                 Stmt::Choice(_) => {
                     if self.pause_choices(fi)? {
-                        return Ok(ContinueOutcome {
-                            outputs: out,
-                            stop: None,
-                        });
+                        return Ok(self.comparison_outcome(budget, out, None, counted_outputs));
                     }
                 }
             }
@@ -362,6 +357,7 @@ impl<'p> Story<'p> {
         self.anchors.clear();
         self.states.clone_from(&self.initial_states);
         self.state_history.clear();
+        self.state_actions = Default::default();
         self.choice_coverage.clear();
         self.rng.set(self.seed);
         self.init_vars()?;

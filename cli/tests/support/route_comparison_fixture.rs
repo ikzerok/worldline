@@ -69,7 +69,8 @@ pub fn checkpoint_trace(result: &CompileResult) -> ReplayTrace {
     story.choose(0).unwrap();
     story.continue_story().unwrap();
     let checkpoint = story.checkpoint().unwrap();
-    let mut restored = Story::from_checkpoint(&result.program, &result.analysis, &checkpoint).unwrap();
+    let mut restored =
+        Story::from_checkpoint(&result.program, &result.analysis, &checkpoint).unwrap();
     restored.continue_story().unwrap();
     restored.replay_trace()
 }

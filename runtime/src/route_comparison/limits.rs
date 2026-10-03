@@ -50,12 +50,17 @@ pub(crate) fn check_story(story: &Story<'_>, maximum: usize) -> Result<(), Route
             "比较数据记录数超过限制",
         ));
     }
-    let mut remaining = maximum;
+    // 固定状态字段与调用帧结构开销预留；内容仍逐项借用计数。
+    let overhead = 512usize.saturating_add(story.frames.len().saturating_mul(256));
+    let mut remaining = maximum
+        .checked_sub(overhead)
+        .ok_or_else(|| RouteComparisonError::new("output_limit", "比较状态结构超过输出额度"))?;
     macro_rules! count {
         ($value:expr) => {
             remaining = remaining.saturating_sub(encoded_size($value, remaining)?);
         };
     }
+    count!(&story.storyline);
     count!(&story.vars);
     count!(&story.states);
     count!(&story.visits);
@@ -67,6 +72,19 @@ pub(crate) fn check_story(story: &Story<'_>, maximum: usize) -> Result<(), Route
     count!(&story.met);
     for frame in &story.frames {
         count!(&frame.locals);
+        count!(&frame.node);
+        count!(&frame.fragment);
+        if let Some(name) = &frame.fragment {
+            if let Some(fragment) = story
+                .program
+                .fragments
+                .iter()
+                .find(|fragment| &fragment.name == name)
+            {
+                count!(&fragment.file);
+                count!(&frame.fragment); // 后续调用的 caller 身份
+            }
+        }
     }
     let _ = remaining;
     Ok(())
@@ -98,4 +116,51 @@ impl OutputUsage {
         }
         true
     }
+}
+
+pub(super) fn check_report(
+    left: &super::RouteSideResult,
+    right: &super::RouteSideResult,
+    has_choice_difference: bool,
+) -> Result<(), RouteComparisonError> {
+    fn coverage(value: &crate::AccessCoverage) -> usize {
+        value.visited_nodes.len() + value.selected_choices.len()
+    }
+    let mut records = usize::from(has_choice_difference) * 2;
+    for side in [left, right] {
+        records = records
+            .saturating_add(side.states.as_ref().map_or(0, |values| values.len()))
+            .saturating_add(side.vars.as_ref().map_or(0, |values| values.len()))
+            .saturating_add(side.state_actions.records.len())
+            .saturating_add(coverage(&side.coverage.inherited))
+            .saturating_add(coverage(&side.coverage.executed))
+            .saturating_add(coverage(&side.coverage.total));
+    }
+    records = records
+        .saturating_add(difference_count(
+            left.states.as_ref(),
+            right.states.as_ref(),
+        ))
+        .saturating_add(difference_count(left.vars.as_ref(), right.vars.as_ref()));
+    if records > MAX_ROUTE_REPORT_RECORDS {
+        return Err(RouteComparisonError::new(
+            "output_limit",
+            "两侧比较报告的合计记录数超过限制",
+        ));
+    }
+    Ok(())
+}
+fn difference_count<T: PartialEq>(
+    left: Option<&std::collections::BTreeMap<String, T>>,
+    right: Option<&std::collections::BTreeMap<String, T>>,
+) -> usize {
+    let (Some(left), Some(right)) = (left, right) else {
+        return 0;
+    };
+    left.keys()
+        .chain(right.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|key| left.get(*key) != right.get(*key))
+        .count()
 }

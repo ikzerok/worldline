@@ -81,12 +81,15 @@ impl Side {
             self.cursor = Some(ReplayCursor::new(&story));
         }
         let cursor = self.cursor.as_mut().expect("比较游标已建立");
+        // 恢复本身不可抢占；重新开始执行片的时钟，避免大检查点在每次恢复后零推进让出。
+        budget.slice_started = crate::execution::MonotonicInstant::now();
         let start_steps = budget.steps;
         let progress = run_replay_slice(&self.trace, cursor, &mut story, budget);
         self.steps += budget.steps - start_steps;
         check_story(&story, options.max_output_bytes)?;
         match progress {
             ReplayProgress::Yielded => {
+                super::checkpoint_limit::check_checkpoint(&story, options.max_output_bytes)?;
                 self.checkpoint =
                     Some(story.checkpoint().map_err(|error| {
                         RouteComparisonError::new("output_limit", error.message)

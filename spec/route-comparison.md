@@ -10,7 +10,7 @@ runtime 导出 `ROUTE_COMPARISON_SCHEMA_VERSION = 1`、`ROUTE_COMPARISON_CAPABIL
 - `RouteComparisonSession::new(snapshot: &CompileResult, left: ReplayTrace, right: ReplayTrace, options: RouteComparisonOptions, cancellation: ReplayCancellation) -> Result<Self, RouteComparisonError>`：验证输入并绑定源快照；不借用 snapshot，允许 native worker 与 WASM 跨帧持有
 - `RouteComparisonSession::advance(&mut self, snapshot: &CompileResult, slice: ReplayBudget) -> Result<Option<RouteComparisonResult>, RouteComparisonError>`：每次让出返回 `None`，最终返回 `Some`；同会话不得更换快照，完成后不得继续推进。快照绑定包含源文件路径和全部源字节，并分别冻结与核对CompileOptions全部字段及analysis.fingerprint；source_snapshot非安全摘要不能替代选项与fingerprint的显式检查，不仅 runtime fingerprint
 
-会话轮流推进左右两侧，分别保留自己的 Story 检查点、随机流、待完成输出、选择进度和瞬态证据；不从入口重新执行已完成语句。`options.budget` 是两侧合计解释器步数及从会话创建起算的墙钟预算，不是每侧各享一份。`slice` 是一次调用的合计上限；零 slice 让出且不推进。全局取消和总预算耗尽使尚未结束的两侧各自返回明确停止状态，已结束侧保留原结果。零总步数/时间预算仍可验证并建立起点（entry构造可能执行其既有enter效果），但不得推进正文；侧结果保留真实起点与实际效果，不伪装零动作。若令牌在创建前已取消，两侧仍可完成只读输入兼容校验但不创建Story，返回cancelled且states/vars为null。单条解释器语句、起点创建及检查点恢复不可抢占，不承诺硬实时。
+会话轮流推进左右两侧，分别保留自己的 Story 检查点、随机流、待完成输出、选择进度和瞬态证据；不从入口重新执行已完成语句。`options.budget` 是两侧合计解释器步数及从会话创建起算的墙钟预算，不是每侧各享一份。`slice.max_steps` 是一次调用的合计硬上限，时间片是语句边界上的合作式让出目标；零 slice 让出且不推进。检查点恢复和计量本身不可抢占，恢复后开始执行片计时；如果计量已耗尽时间片，正步数额度仍允许至多一个解释器步骤以免重复恢复却永不推进。全局步数、总墙钟和取消守卫仍先检查，不因这条进展保障放宽。全局取消和总预算耗尽使尚未结束的两侧各自返回明确停止状态，已结束侧保留原结果。零总步数/时间预算仍可验证并建立起点（entry构造可能执行其既有enter效果），但不得推进正文；侧结果保留真实起点与实际效果，不伪装零动作。若令牌在创建前已取消，两侧仍可完成只读输入兼容校验但不创建Story，返回cancelled且states/vars为null。单条解释器语句、起点创建及检查点恢复不可抢占，不承诺硬实时。
 
 CLI/RPC 是同步有界调用，沿现有单线程 agent 模型，不声称能用后来的 RPC 中断正在处理的比较。取消令牌由 runtime 与 editor native/WASM 使用；不新增 agent 作业数据库。
 
@@ -26,7 +26,7 @@ CLI/RPC 是同步有界调用，沿现有单线程 agent 模型，不声称能�
 
 `RouteComparisonError { code: String, message: String }`：code 为 `invalid_options`、`input_limit`、`invalid_trace`、`invalid_snapshot`、`snapshot_changed`、`session_finished` 或 `output_limit`；message 中文。trace/schema/runtime/checkpoint结构与兼容性错误是调用错误，任一无效输入使整个请求失败，不把错误伪装为一侧空结果。可执行故事失败、分歧、预算与取消属于结构化侧结果。`output_limit` 明确表示完整结果不能在请求额度中返回，不表示无差异；协议宿主为含请求 id 与换行的总响应另留有界 envelope 预算。
 
-只接受完整已编译且无 error 的快照。trace未知可选字段沿既有 serde 读取兼容规则；新 options 不接受未知字段。不得篡改 trace/runtime_version 或移除观察来“修复”输入。
+只接受完整已编译且无 error 的快照；源集合最多4096文件、路径与源码总计64 MiB，在复制冻结源集合前检查。会话只保留一份完整源集合副本，advance逐项精确相等校验，摘要仅显示。trace未知可选字段沿既有 serde 读取兼容规则；新 options 不接受未知字段。不得篡改 trace/runtime_version 或移除观察来“修复”输入。
 
 ## 结果 DTO
 

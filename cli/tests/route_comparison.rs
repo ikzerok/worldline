@@ -27,16 +27,23 @@ fn same_nodes_different_inputs_and_results_are_the_shared_runtime_projection() {
     let fixture = Fixture::new();
     let (left, right) = fixture.traces();
     let expected = compare_routes(
-        &fixture.compile(), &left, &right, RouteComparisonOptions::default(),
+        &fixture.compile(),
+        &left,
+        &right,
+        RouteComparisonOptions::default(),
         &ReplayCancellation::new(),
-    ).unwrap();
+    )
+    .unwrap();
     let (code, value) = invoke(&fixture, &json!(left), &json!(right), &[]);
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["ok"], true);
     let pair = &value["comparison"];
     assert_eq!(*pair, json!(expected));
     assert_eq!(pair["schema_version"], 1);
-    assert_eq!(pair["left"]["coverage"]["total"]["visited_nodes"], pair["right"]["coverage"]["total"]["visited_nodes"]);
+    assert_eq!(
+        pair["left"]["coverage"]["total"]["visited_nodes"],
+        pair["right"]["coverage"]["total"]["visited_nodes"]
+    );
     assert_eq!(pair["alignment"]["first_difference"]["index"], 0);
     assert_eq!(pair["left"]["states"]["bell_fate"], json!(["restored"]));
     assert_eq!(pair["right"]["states"]["bell_fate"], json!(["traded"]));
@@ -63,7 +70,13 @@ fn partial_checkpoint_and_zero_budget_keep_their_actual_scope() {
     assert_eq!(side["origin"]["kind"], "checkpoint");
     assert_eq!(side["coverage"]["executed"]["visited_nodes"], json!({}));
     assert_eq!(side["coverage"]["executed"]["selected_choices"], json!([]));
-    assert!(side["coverage"]["inherited"]["visited_nodes"].as_object().unwrap().len() >= 2);
+    assert!(
+        side["coverage"]["inherited"]["visited_nodes"]
+            .as_object()
+            .unwrap()
+            .len()
+            >= 2
+    );
     assert_eq!(side["state_actions"]["total_actions"], 0);
     let (code, result) = invoke(&fixture, &partial, &complete, &["--max-steps=0"]);
     assert_eq!(code, 1);
@@ -101,9 +114,18 @@ fn comment_shift_uses_current_verified_action_and_choice_locations() {
     let (code, result) = invoke(&fixture, &original, &json!(right), &[]);
     assert_eq!(code, 0, "{result}");
     let pair = &result["comparison"];
-    assert_eq!(pair["left"]["state_actions"]["records"][0]["source"]["line"], 12);
-    assert_eq!(pair["right"]["state_actions"]["records"][0]["source"]["line"], 15);
-    assert_eq!(pair["alignment"]["first_difference"]["left"]["source"]["line"], 11);
+    assert_eq!(
+        pair["left"]["state_actions"]["records"][0]["source"]["line"],
+        12
+    );
+    assert_eq!(
+        pair["right"]["state_actions"]["records"][0]["source"]["line"],
+        15
+    );
+    assert_eq!(
+        pair["alignment"]["first_difference"]["left"]["source"]["line"],
+        11
+    );
     assert_eq!(json!(left), original);
     assert_eq!(fixture.source(), before);
 }
@@ -114,12 +136,30 @@ fn invalid_and_excessive_inputs_are_usage_failures_but_bad_source_is_business_fa
     let (left, right) = fixture.traces();
     let left = json!(left);
     let right = json!(right);
-    for args in [vec!["--unknown"], vec!["--max-steps=-1"], vec!["--max-steps=100001"], vec!["--time-budget-ms=30001"], vec!["--max-steps=1", "--max-steps=2"]] {
+    for args in [
+        vec!["--unknown"],
+        vec!["--max-steps=-1"],
+        vec!["--max-steps=100001"],
+        vec!["--time-budget-ms=30001"],
+        vec!["--max-steps=1", "--max-steps=2"],
+    ] {
         let (code, value) = invoke(&fixture, &left, &right, &args);
         assert_eq!(code, 2, "{value}");
         assert_eq!(value["ok"], false);
     }
-    for invalid in [json!({}), { let mut v = left.clone(); v["runtime_version"] = json!("0.19.0"); v }, { let mut v = left.clone(); v["schema_version"] = json!(99); v }] {
+    for invalid in [
+        json!({}),
+        {
+            let mut v = left.clone();
+            v["runtime_version"] = json!("0.19.0");
+            v
+        },
+        {
+            let mut v = left.clone();
+            v["schema_version"] = json!(99);
+            v
+        },
+    ] {
         let (code, value) = invoke(&fixture, &invalid, &right, &[]);
         assert_eq!(code, 2, "{value}");
         assert!(value["comparison"].is_null());

@@ -164,11 +164,18 @@ pub(super) fn alignment(
         (
             ReplayOrigin::Checkpoint { checkpoint: a },
             ReplayOrigin::Checkpoint { checkpoint: b },
-        ) => a == b,
+        ) => {
+            a.schema_version == b.schema_version
+                && a.runtime_version == b.runtime_version
+                && a.fingerprint == b.fingerprint
+                && crate::util::normalize_seed(a.seed) == crate::util::normalize_seed(b.seed)
+                && worldline_core::parse_unique_json(a.state.as_bytes()).ok()
+                    == worldline_core::parse_unique_json(b.state.as_bytes()).ok()
+        }
         _ => false,
     };
-    let verified = a.is_some_and(|cursor| !cursor.initial_pending)
-        && b.is_some_and(|cursor| !cursor.initial_pending);
+    let verified = a.is_some_and(|cursor| cursor.initial_verified)
+        && b.is_some_and(|cursor| cursor.initial_verified);
     let mut alignment = RouteAlignment {
         comparable: compatible && verified,
         reason: if !compatible {

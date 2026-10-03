@@ -1,5 +1,17 @@
 # 版本变更
 
+## 0.20.0
+
+### 真实路线与状态动作
+
+- 新增同一当前已应用快照的有界双路线比较，CLI `route-compare`、RPC `project.compare_routes` 与editor消费同一core/runtime结果
+- 两侧保留真实status、完整性、起点/种子、实际停止值及检查点继承/新增覆盖；可对齐前缀只来自已验证实际选择，不把相同结果当路线等价
+- 状态动作的真实顺序、前后标签、所属对象与core验证来源作为有界瞬态证据，不写入Save/ReplayTrace/语义观察
+- 只读工程快照不自动恢复事务或迁移；输入、执行、证据、报告及完整机器响应均有明确额度和错误含义
+- 默认语言与既有语言版本、choice ID、fingerprint不变；跨runtime trace/checkpoint守卫保留，普通Story Save继续独立兼容规则
+
+使用见[路线对照](docs/route-comparison.md)，正式契约见[core/runtime规范](spec/route-comparison.md)。工作分支记录不表示已发行；完整本轮门禁、性能样本及平台限制在最终版本报告单独列明。
+
 ## 0.19.0
 
 ### 当前稿的可信诊断来源

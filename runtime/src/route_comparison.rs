@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldline_core::evidence_source::EvidenceSource;
 
+mod checkpoint_limit;
 mod limits;
 mod projection;
 mod session;
