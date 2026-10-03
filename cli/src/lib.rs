@@ -323,6 +323,8 @@ mod parse_relation_edits;
 mod parse_relation_query;
 #[path = "lib/play.rs"]
 mod play;
+#[path = "lib/problems.rs"]
+mod problems;
 #[path = "lib/reader_export.rs"]
 mod reader_export;
 #[path = "lib/relation_edit.rs"]
@@ -351,6 +353,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     };
     let rest = &args[1..];
     match cmd.as_str() {
+        "problems" => problems::command(rest, out),
         "scene" => scene::command(rest, out),
         "world-context" => world_context::command(rest, out, "context"),
         "world-object" => world_context::command(rest, out, "object"),
@@ -402,7 +405,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }
