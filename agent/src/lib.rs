@@ -56,6 +56,8 @@ mod sessions;
 mod source_edit;
 #[path = "lib/source_lifecycle.rs"]
 mod source_lifecycle;
+#[path = "lib/world_context.rs"]
+mod world_context;
 
 /// 协议版本:方法表或错误语义发生不兼容变更时递增。
 pub const PROTOCOL: u64 = 1;
@@ -208,6 +210,8 @@ impl Server {
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,
+                    worldline_core::world_context::WORLD_CONTEXT_CAPABILITY,
+                    worldline_core::world_context::TEMPORAL_EXPLANATIONS_CAPABILITY,
                 ],
             })),
             "compile" => self.compile(params),
@@ -295,6 +299,9 @@ impl Server {
             "project.analyze" => self.project_analyze(params),
             "workspace.check" => self.workspace_check(params),
             "maps.list" => self.maps_list(params),
+            "world.context" => self.world_context(params, "context"),
+            "world.object" => self.world_context(params, "object"),
+            "temporal.compare" => self.world_context(params, "temporal"),
             "scene.svg.preview" => self.scene(params, "svg-preview"),
             "scene.preview" => self.scene(params, "preview"),
             "scene.apply" => self.scene(params, "apply"),
