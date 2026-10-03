@@ -1,0 +1,68 @@
+{
+  "required_features": [
+    "runtime.language_1_11.v1"
+  ],
+  "fingerprint": 13563902629068965109,
+  "vars": {
+    "file": {
+      "Str": "真正语义文件值"
+    },
+    "line": {
+      "Num": 7.0
+    }
+  },
+  "visits": {
+    "start": 1,
+    "finish": 1
+  },
+  "turns": 2,
+  "taken_once": [
+    "fragment:gate:2:0"
+  ],
+  "frames": [],
+  "glue_pending": false,
+  "paused": false,
+  "rng": 7,
+  "seed": 7,
+  "choice_coverage": {
+    "fragment:gate:2:0:fe85e630fc644164": {
+      "id": "fragment:gate:2:0:fe85e630fc644164",
+      "node": "fragment:gate",
+      "label": "交出钥匙：true",
+      "line": 16,
+      "count": 1
+    },
+    "fragment:gate:2:1:73306c61236c4b87": {
+      "id": "fragment:gate:2:1:73306c61236c4b87",
+      "node": "fragment:gate",
+      "label": "保留钥匙",
+      "line": 19,
+      "count": 1
+    }
+  },
+  "storyline": "main",
+  "met": [],
+  "anchors": [],
+  "states": {
+    "inventory": [
+      "log"
+    ]
+  },
+  "state_history": [
+    {
+      "kind": "RemoveTags",
+      "state": "inventory",
+      "before": [
+        "key",
+        "log"
+      ],
+      "after": [
+        "log"
+      ],
+      "event": "start",
+      "node": "fragment:gate",
+      "note": null,
+      "turn": 1
+    }
+  ]
+}

@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "runtime_version": "0.18.0",
+  "fingerprint": 13563902629068965109,
+  "origin": {
+    "kind": "checkpoint",
+    "checkpoint": {
+      "schema_version": 1,
+      "runtime_version": "0.18.0",
+      "fingerprint": 13563902629068965109,
+      "seed": 7,
+      "state": "{\"required_features\":[\"runtime.language_1_11.v1\"],\"fingerprint\":13563902629068965109,\"vars\":{\"line\":{\"Num\":7.0},\"file\":{\"Str\":\"真正语义文件值\"}},\"visits\":{\"start\":1},\"turns\":0,\"taken_once\":[],\"frames\":[{\"node\":\"start\",\"idx\":1,\"src\":null},{\"fragment\":\"gate\",\"locals\":{\"file\":{\"Str\":\"海图\"},\"line\":{\"Num\":9.0}},\"node\":null,\"idx\":2,\"src\":{\"FragmentCall\":{\"stmt\":0,\"fragment\":0}}}],\"glue_pending\":false,\"paused\":true,\"rng\":7,\"seed\":7,\"choice_coverage\":{},\"storyline\":\"main\",\"met\":[],\"anchors\":[],\"states\":{\"inventory\":[\"key\",\"log\"]},\"state_history\":[]}"
+    }
+  },
+  "initial_observation": {
+    "outputs": [],
+    "choices": [
+      {
+        "id": "fragment:gate:2:0:fe85e630fc644164",
+        "node": "fragment:gate",
+        "line": 16,
+        "offset": 0,
+        "label": "交出钥匙：true"
+      },
+      {
+        "id": "fragment:gate:2:1:73306c61236c4b87",
+        "node": "fragment:gate",
+        "line": 19,
+        "offset": 1,
+        "label": "保留钥匙"
+      }
+    ],
+    "state": {
+      "anchors": [],
+      "calls": [
+        {
+          "call_statement": 0,
+          "caller": "start",
+          "file": "/workspace/scratch/73676c9ef3ff/world-authoring-v019-implementation/fixtures/semantic-compat/consumer/world.wl",
+          "fragment": "gate",
+          "line": 16,
+          "locals": {
+            "file": {
+              "Str": "海图"
+            },
+            "line": {
+              "Num": 9.0
+            }
+          },
+          "statement": 2
+        }
+      ],
+      "coverage": {
+        "selected_choices": [],
+        "visited_nodes": {
+          "start": 1
+        }
+      },
+      "current_node": "fragment:gate",
+      "ended": false,
+      "met": [],
+      "paused": true,
+      "perms": [],
+      "state_history": [],
+      "states": {
+        "inventory": [
+          "key",
+          "log"
+        ]
+      },
+      "storyline": "main",
+      "turns": 0,
+      "vars": {
+        "file": {
+          "Str": "真正语义文件值"
+        },
+        "line": {
+          "Num": 7.0
+        }
+      },
+      "visits": {
+        "start": 1
+      }
+    }
+  },
+  "steps": [
+    {
+      "choice": {
+        "id": "fragment:gate:2:0:fe85e630fc644164",
+        "node": "fragment:gate",
+        "line": 16,
+        "offset": 0,
+        "label": "交出钥匙：true"
+      },
+      "observation": {
+        "outputs": [
+          {
+            "content": "中文\t👩‍👩‍👧‍👦é\"旧地图\" false 1 false",
+            "new_line": true,
+            "speaker": {
+              "id": "keeper",
+              "kind": "character"
+            },
+            "tags": [],
+            "type": "text"
+          }
+        ],
+        "choices": [
+          {
+            "id": "fragment:gate:2:1:73306c61236c4b87",
+            "node": "fragment:gate",
+            "line": 19,
+            "offset": 1,
+            "label": "保留钥匙"
+          }
+        ],
+        "state": {
+          "anchors": [],
+          "calls": [
+            {
+              "call_statement": 1,
+              "caller": "start",
+              "file": "/workspace/scratch/73676c9ef3ff/world-authoring-v019-implementation/fixtures/semantic-compat/consumer/world.wl",
+              "fragment": "gate",
+              "line": 16,
+              "locals": {
+                "file": {
+                  "Str": "旧地图"
+                },
+                "line": {
+                  "Num": 9.0
+                }
+              },
+              "statement": 2
+            }
+          ],
+          "coverage": {
+            "selected_choices": [
+              {
+                "count": 1,
+                "id": "fragment:gate:2:0:fe85e630fc644164",
+                "label": "交出钥匙：true",
+                "line": 16,
+                "node": "fragment:gate"
+              }
+            ],
+            "visited_nodes": {
+              "start": 1
+            }
+          },
+          "current_node": "fragment:gate",
+          "ended": false,
+          "met": [],
+          "paused": true,
+          "perms": [],
+          "state_history": [
+            {
+              "after": [
+                "log"
+              ],
+              "before": [
+                "key",
+                "log"
+              ],
+              "event": "start",
+              "kind": "RemoveTags",
+              "node": "fragment:gate",
+              "note": null,
+              "state": "inventory",
+              "turn": 1
+            }
+          ],
+          "states": {
+            "inventory": [
+              "log"
+            ]
+          },
+          "storyline": "main",
+          "turns": 1,
+          "vars": {
+            "file": {
+              "Str": "真正语义文件值"
+            },
+            "line": {
+              "Num": 7.0
+            }
+          },
+          "visits": {
+            "start": 1
+          }
+        }
+      }
+    },
+    {
+      "choice": {
+        "id": "fragment:gate:2:1:73306c61236c4b87",
+        "node": "fragment:gate",
+        "line": 19,
+        "offset": 1,
+        "label": "保留钥匙"
+      },
+      "observation": {
+        "outputs": [
+          {
+            "content": "真正语义文件值 / 7 / 1 ledger 原样",
+            "links": [
+              {
+                "end": 43,
+                "start": 30,
+                "target": {
+                  "id": "ledger",
+                  "kind": "entity"
+                }
+              }
+            ],
+            "new_line": true,
+            "tags": [],
+            "type": "text"
+          },
+          {
+            "type": "ended"
+          }
+        ],
+        "choices": [],
+        "state": {
+          "anchors": [],
+          "calls": [],
+          "coverage": {
+            "selected_choices": [
+              {
+                "count": 1,
+                "id": "fragment:gate:2:0:fe85e630fc644164",
+                "label": "交出钥匙：true",
+                "line": 16,
+                "node": "fragment:gate"
+              },
+              {
+                "count": 1,
+                "id": "fragment:gate:2:1:73306c61236c4b87",
+                "label": "保留钥匙",
+                "line": 19,
+                "node": "fragment:gate"
+              }
+            ],
+            "visited_nodes": {
+              "finish": 1,
+              "start": 1
+            }
+          },
+          "current_node": null,
+          "ended": true,
+          "met": [],
+          "paused": false,
+          "perms": [],
+          "state_history": [
+            {
+              "after": [
+                "log"
+              ],
+              "before": [
+                "key",
+                "log"
+              ],
+              "event": "start",
+              "kind": "RemoveTags",
+              "node": "fragment:gate",
+              "note": null,
+              "state": "inventory",
+              "turn": 1
+            }
+          ],
+          "states": {
+            "inventory": [
+              "log"
+            ]
+          },
+          "storyline": "main",
+          "turns": 2,
+          "vars": {
+            "file": {
+              "Str": "真正语义文件值"
+            },
+            "line": {
+              "Num": 7.0
+            }
+          },
+          "visits": {
+            "finish": 1,
+            "start": 1
+          }
+        }
+      }
+    }
+  ],
+  "complete": true
+}
