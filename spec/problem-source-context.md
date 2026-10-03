@@ -115,3 +115,8 @@ BUDGET_EXCEEDED 语义，不能静默丢角色字段。
 验收包括长中文行尾命中、超预算完整表达式、主/相关来源、文档/不可用/缺字段旧报告、
 字节/scalar/grapheme、CRLF、同字重复、上下文篡改、零编译 query/page/location；性能沿
 R3 冻结的 129 源码/3072 问题 fixture，热身后十次独立 debug CLI 每次不超过 1.6 秒。
+
+协调补充：未激活 `.wl` 不能投影有效命中范围，保留路径/角色并标 unavailable；已知
+source_conflict 或 external_observation_changed 的报告拒绝位置导航，仍可只读列出原因。
+不把任意 partial/truncated 一律禁用，不改变其他域的解释或已加载缓冲。这里不新增
+磁盘全文读取；编辑器保留既有 verify_source_navigation 与外部冲突检查。
