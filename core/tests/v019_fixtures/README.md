@@ -1,0 +1,5 @@
+# 结构编辑合成回归数据
+
+输入是runtime/tests/v019_fixtures/consumer.wl中的人工虚构故事。冻结0.18.0 core依次执行event_draft与write_event：第一次不修改任何字段，第二次只修改finish的summary。这里保留两个真实生成的完整源码，manifest记录来源commit、输入/输出SHA-256与原合同fingerprint。
+
+event.summary按既有合同参与运行指纹。无修改roundtrip应保指纹；主动改summary应得到旧合同相同的新指纹。测试还核对完整正文、时间证据与磁盘原字节，不因诊断来源改进放宽持久性合同。

@@ -16,13 +16,15 @@ pub(super) fn classify(
     chars: &[char],
     diags: &mut Vec<Diagnostic>,
     options: crate::compiler::CompileOptions,
+    source: &mut LineSource,
 ) -> LineKind {
     // 转义开头:`\choice ...` 视为文本
     if chars[0] == '\\' {
         let content: String = chars[1..].iter().collect();
+        source.text = 1 + content.chars().take_while(|c| c.is_whitespace()).count() as u32;
         return LineKind::Text {
             content: content.trim_start().to_string(),
-            loc: Loc::new(no, 2),
+            loc: Loc::new(no, source.text + 1),
         };
     }
     if chars[0] == '-' && chars.get(1) == Some(&'>') {
@@ -92,6 +94,7 @@ pub(super) fn classify(
     let content: String = chars.iter().collect();
     let (word, rest) = split_word(&content);
     let rest_trim = rest.trim();
+    source.remainder = content[..content.len() - rest_trim.len()].chars().count() as u32;
     let word_col = (content.len() - rest.len() - word.len()) as u32 + 1;
     if options.language_version.supports_language_112()
         && matches!(word, "schema" | "field" | "bind")
@@ -117,13 +120,13 @@ pub(super) fn classify(
     match word {
         "tag" | "asset" | "mark" | "attach" | "anchor_def" | "anchor_link" | "alias"
         | "property" | "description" | "relation" => {
-            catalog::classify_catalog(word, rest_trim, file, no, word_col, diags, options)
+            catalog::classify_catalog(word, rest_trim, file, no, word_col, diags, options, source)
         }
         "relation_type" | "relation_def" | "inverse" | "direction" | "from_kind" | "to_kind"
         | "from" | "to" | "source_note" | "scope" | "scope_ref"
             if options.language_version.supports_relations() =>
         {
-            catalog::classify_catalog(word, rest_trim, file, no, word_col, diags, options)
+            catalog::classify_catalog(word, rest_trim, file, no, word_col, diags, options, source)
         }
         "include" | "let" | "const" | "set" | "event" | "storyline" | "character" | "world"
         | "period" | "state" | "become" => declarations::classify_declaration(
@@ -137,6 +140,7 @@ pub(super) fn classify(
             word_col,
             diags,
             options,
+            source,
         ),
         "entity" if options.language_version.supports_entities() => {
             declarations::classify_declaration(
@@ -150,6 +154,7 @@ pub(super) fn classify(
                 word_col,
                 diags,
                 options,
+                source,
             )
         }
         "effect" | "grant" | "revoke" | "meet" | "part" | "to" | "anchor" | "scene" | "choice"
@@ -164,6 +169,7 @@ pub(super) fn classify(
             word_col,
             diags,
             options,
+            source,
         ),
         _ => LineKind::Text {
             content,

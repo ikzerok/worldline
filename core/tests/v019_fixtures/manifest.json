@@ -1,0 +1,13 @@
+{
+  "producer": "dual-core Project::event_draft / Project::write_event harness",
+  "baseline_version": "0.18.0",
+  "baseline_commit": "2fa8f200ad616f450591457e297faaf88fe8d845",
+  "input_sha256": "78d95f20f46920ff17faddd057f92d0ec9b4ac78c0a76f839fc5a4ef61555812",
+  "before_fingerprint": 13563902629068965109,
+  "unchanged_roundtrip_fingerprint": 13563902629068965109,
+  "summary_edited_fingerprint": 9011183548374066215,
+  "files": {
+    "roundtrip.wl": "38d6d91287373b14b5f69d59e4dc47feacd5b243511b67273bf79da93d3402ce",
+    "summary-edited.wl": "50c72510baa501d4d56eec7f220ee8770100bd72db2706bd622f4cb2449bd8c8"
+  }
+}

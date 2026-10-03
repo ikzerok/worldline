@@ -1,6 +1,6 @@
 # worldline 文档索引
 
-当前产品为 0.15.0 开发候选；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能和待完成的实际验收见 [CHANGELOG](../CHANGELOG.md)。
+当前产品版本为 0.19.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 作者入门
 
@@ -8,6 +8,12 @@
 - [从资料到可信重放](author-route.md)：结合[栖雪山站示例](../examples/snowline-seeds/README.md)完成双路线与安全改稿
 - [显式能力启用](explicit-capabilities.md)：预览已有语言/资料能力，核对变化后确认
 - [工作区契约](../spec/workspace.md)：递归源码、引用边界、原字节、保存冲突与完整备份
+
+## 当前稿里的工程问题
+
+- [问题使用说明](problems.md)：CLI/RPC、来源角色、有界摘录、旧报告与导航守卫
+- [诊断来源合同](../spec/diagnostic-sources.md)、[来源上下文合同](../spec/problem-source-context.md)：真实生产入口、schema 1 加法与完整传输预算
+- [0.19 配对版本说明](../../worldedit/docs/releases/v0.19.0.md)：能力、语义兼容和最终验收边界
 
 ## 0.15 地图与 SVG
 
@@ -33,4 +39,4 @@
 - [后台快照](../spec/workspace-snapshot.md)：精确当前稿、墓碑、只读与传输限制
 - [发布构建](release.md)：配对、源码和包；历史版本记录不代表当前候选已完成验收
 
-真实 `file://` 离线浏览尚待允许环境验证；最终原生、Windows 与性能验收仍在进行。规范中的性能数值是验收目标，不是已取得的测量结果。
+当前 0.19 的完整门禁、性能与真实平台覆盖以配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。

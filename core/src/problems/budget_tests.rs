@@ -138,3 +138,51 @@ fn request_dtos_reject_unknown_fields_and_invalid_budget_or_compile_baseline() {
         "STALE_REPORT"
     );
 }
+
+#[test]
+fn source_context_and_compatibility_excerpt_both_count_toward_report_budget() {
+    let (mut project, _) = stress_content(0);
+    let entry = project.entry.clone();
+    project
+        .set_text(
+            &entry,
+            format!("event e\n  {}missing\n  -> END\n", "长文本".repeat(400)),
+        )
+        .unwrap();
+    let mut content = project.compile_current();
+    content.diagnostics = (0..100)
+        .map(|index| {
+            Diagnostic::error(
+                "TEST001",
+                &entry.to_string_lossy(),
+                Span::new(2, 1203, 7),
+                format!("问题{index}"),
+            )
+            .with_source_role(ProblemSourceRole::Target)
+        })
+        .collect();
+    let bounded = |max_excerpt_bytes| {
+        project
+            .problems_report_with_content(
+                &content,
+                &project.content_baseline(),
+                &ProblemsOptions {
+                    max_report_bytes: 20 * 1024,
+                    max_excerpt_bytes,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+    };
+    let with_text = bounded(512);
+    let without_text = bounded(0);
+    assert!(with_text.entries.len() < without_text.entries.len());
+    assert!(with_text.truncated && with_text.reasons.contains(&"report_bytes".into()));
+    for report in [with_text, without_text] {
+        assert!(serde_json::to_vec(&report).unwrap().len() <= report.limits.max_report_bytes);
+        assert!(report.entries.iter().all(|entry| {
+            let context = entry.primary.context.as_ref().unwrap();
+            context.role == ProblemSourceRole::Target && context.text == entry.primary.excerpt
+        }));
+    }
+}

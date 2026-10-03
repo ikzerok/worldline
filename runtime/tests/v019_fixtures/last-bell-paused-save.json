@@ -1,0 +1,30 @@
+{
+  "fingerprint": 5694755523464511637,
+  "vars": {
+    "bell_rung": {
+      "Bool": false
+    }
+  },
+  "visits": {
+    "arrival": 1
+  },
+  "turns": 0,
+  "taken_once": [],
+  "frames": [
+    {
+      "node": "arrival",
+      "idx": 1,
+      "src": null
+    }
+  ],
+  "glue_pending": false,
+  "paused": true,
+  "rng": 7,
+  "seed": 7,
+  "choice_coverage": {},
+  "storyline": "main",
+  "met": [],
+  "anchors": [],
+  "states": {},
+  "state_history": []
+}

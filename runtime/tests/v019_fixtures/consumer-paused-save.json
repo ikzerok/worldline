@@ -1,0 +1,60 @@
+{
+  "required_features": [
+    "runtime.language_1_11.v1"
+  ],
+  "fingerprint": 13563902629068965109,
+  "vars": {
+    "line": {
+      "Num": 7.0
+    },
+    "file": {
+      "Str": "真正语义文件值"
+    }
+  },
+  "visits": {
+    "start": 1
+  },
+  "turns": 0,
+  "taken_once": [],
+  "frames": [
+    {
+      "node": "start",
+      "idx": 1,
+      "src": null
+    },
+    {
+      "fragment": "gate",
+      "locals": {
+        "file": {
+          "Str": "海图"
+        },
+        "line": {
+          "Num": 9.0
+        }
+      },
+      "node": null,
+      "idx": 2,
+      "src": {
+        "FragmentCall": {
+          "stmt": 0,
+          "fragment": 0
+        }
+      }
+    }
+  ],
+  "glue_pending": false,
+  "paused": true,
+  "rng": 7,
+  "seed": 7,
+  "choice_coverage": {},
+  "storyline": "main",
+  "met": [],
+  "anchors": [],
+  "states": {
+    "inventory": [
+      "key",
+      "log"
+    ]
+  },
+  "state_history": []
+}

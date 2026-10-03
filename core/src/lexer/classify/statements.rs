@@ -4,6 +4,7 @@ use super::ClassifyInput;
 #[path = "choice_tail.rs"]
 mod choice_tail;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn classify_statement(
     input: ClassifyInput<'_>,
     file: &str,
@@ -11,6 +12,7 @@ pub(super) fn classify_statement(
     word_col: u32,
     diags: &mut Vec<Diagnostic>,
     options: crate::compiler::CompileOptions,
+    source: &mut LineSource,
 ) -> LineKind {
     let ClassifyInput {
         word,
@@ -37,6 +39,7 @@ pub(super) fn classify_statement(
                     let i2 = skip_spaces(&rc, wi2);
                     let (w3, wi3) = scan_word(&rc, i2);
                     if w3 == "if" {
+                        source.condition = source.remainder + skip_spaces(&rc, wi3) as u32;
                         let rest: String = rc[wi3..].iter().collect();
                         let t = rest.trim().to_string();
                         if t.is_empty() {
@@ -158,7 +161,7 @@ pub(super) fn classify_statement(
             let rc = rest_trim.chars().collect::<Vec<char>>();
             match scan_qualified(&rc, 0) {
                 Some((name, end)) if !name.contains('.') && end == rc.len() && !name.is_empty() => {
-                    let col = word_col + 5;
+                    let col = source.remainder + 1;
                     let len = name.chars().count() as u32;
                     LineKind::Scene {
                         name,
@@ -215,6 +218,9 @@ pub(super) fn classify_statement(
             let label_start = i + 1;
             let label = match parse_quoted(&rc, i, file, no, diags) {
                 Ok((s, end)) => {
+                    source.label = off + label_start as u32;
+                    source.label_boundaries =
+                        super::super::source::decoded_boundaries(&rc[label_start..end - 1]);
                     i = skip_spaces(&rc, end);
                     s
                 }
@@ -247,7 +253,7 @@ pub(super) fn classify_statement(
                 diags,
             );
             let (cond_src, enable_src, disabled_reason, disabled_span) =
-                choice_tail::parse(&tail, file, no, off + i as u32 + 1, options, diags);
+                choice_tail::parse(&tail, file, no, off + i as u32 + 1, options, diags, source);
             LineKind::Choice {
                 once,
                 label_raw: label,
@@ -261,6 +267,7 @@ pub(super) fn classify_statement(
             }
         }
         "if" => {
+            source.condition = source.remainder;
             if rest_trim.is_empty() {
                 diags.push(Diagnostic::error(
                     "P004",
@@ -284,6 +291,9 @@ pub(super) fn classify_statement(
             // else if ...
             let s: String = rc.iter().collect();
             if let Some(cond) = s.strip_prefix("if") {
+                source.condition = source.remainder
+                    + 2
+                    + cond.chars().take_while(|c| c.is_whitespace()).count() as u32;
                 let cond = cond.trim().to_string();
                 if cond.is_empty() {
                     diags.push(Diagnostic::error(

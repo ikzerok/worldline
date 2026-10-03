@@ -165,3 +165,6 @@ options、related_id。结果同 CLI；project_id 沿用会话 refresh/conflicts
 重复 key、非法类型和不兼容 related/query 组合。形状错误 -32602，重复 key -32700；
 业务失败 `{ok:false,error:{code,message}}`，与“存在工程错误”区分。WASM 复用 core DTO
 及同一方法的纯协议路径，不从 UI 建立另一套解析器。
+
+
+工具0.19的来源角色、有界命中上下文及schema1加法兼容见[问题来源上下文](problem-source-context.md)。来源真实性以[诊断来源合同](diagnostic-sources.md)的producer证据为准，不再仅凭content域推断span精度。旧报告读取与跨版本导航是不同合同。

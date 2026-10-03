@@ -248,24 +248,23 @@ fn assemble(
             break;
         }
         let id = format!("0000000000000000:p{}", report.entries.len() + 1);
-        let exact = domain == ProblemDomain::Content;
-        let location = |file: &str, span| {
+        let location = |file: &str, span, role| {
             super::location::project_location(
                 project,
                 file,
                 span,
-                exact,
+                role,
                 report.limits.max_excerpt_bytes,
             )
         };
-        let primary = location(&diagnostic.file, diagnostic.span);
+        let primary = location(&diagnostic.file, diagnostic.span, diagnostic.source_role());
         let mut related = Vec::new();
         let available = report
             .limits
             .max_related_locations
             .saturating_sub(related_used);
-        for (file, span) in diagnostic.related.iter().take(available) {
-            related.push(location(file, *span));
+        for (index, (file, span)) in diagnostic.related.iter().take(available).enumerate() {
+            related.push(location(file, *span, diagnostic.related_source_role(index)));
         }
         let related_truncated = related.len() < diagnostic.related.len();
         let (message, mut text_truncated) =
@@ -322,19 +321,7 @@ fn assemble(
     }
     report.reasons.sort();
     report.reasons.dedup();
-    report.report_version = digest(
-        &serde_json::to_vec(&(
-            &report.content_baseline,
-            &report.source_observation,
-            &report.language_version,
-            &report.coverage,
-            &report.entries,
-            &report.related,
-            &report.limits,
-            &report.reasons,
-        ))
-        .expect("报告可序列化"),
-    );
+    report.report_version = super::version::of(&report);
     for entry in &mut report.entries {
         let old = entry.id.clone();
         entry.id.replace_range(..16, &report.report_version);

@@ -1,6 +1,7 @@
 use super::super::*;
 use super::ClassifyInput;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn classify_declaration(
     input: ClassifyInput<'_>,
     file: &str,
@@ -8,6 +9,7 @@ pub(super) fn classify_declaration(
     word_col: u32,
     diags: &mut Vec<Diagnostic>,
     options: crate::compiler::CompileOptions,
+    source: &mut LineSource,
 ) -> LineKind {
     let ClassifyInput {
         word,
@@ -21,25 +23,25 @@ pub(super) fn classify_declaration(
                 diags.push(Diagnostic::error(
                     "P007",
                     file,
-                    Span::new(no, word_col + 7, 1),
+                    Span::new(no, source.remainder + 1, 1),
                     "include 需要双引号路径,如 include \"chapter2.wl\"",
                 ));
                 return LineKind::Include {
                     path: String::new(),
-                    span: Span::new(no, word_col + 7, 1),
+                    span: Span::new(no, source.remainder + 1, 1),
                 };
             }
             match parse_quoted(&rc, 0, file, no, diags) {
-                Ok((path, _)) => {
-                    let len = path.chars().count().max(1) as u32 + 2;
+                Ok((path, _end)) => {
+                    let len = _end as u32;
                     LineKind::Include {
                         path,
-                        span: Span::new(no, word_col + 7, len),
+                        span: Span::new(no, source.remainder + 1, len),
                     }
                 }
                 Err(_) => LineKind::Include {
                     path: String::new(),
-                    span: Span::new(no, word_col + 7, 1),
+                    span: Span::new(no, source.remainder + 1, 1),
                 },
             }
         }
@@ -58,6 +60,7 @@ pub(super) fn classify_declaration(
                             format!("`{word}` 需要 `{name} = 表达式` 的形式"),
                         ));
                     }
+                    source.value = off + skip_spaces(&rc, (end + 1).min(rc.len())) as u32;
                     let expr_src: String = rc[(end + 1).min(rc.len())..].iter().collect();
                     let expr_src = expr_src.trim().to_string();
                     let loc = Loc::new(no, off + 1);
@@ -121,7 +124,7 @@ pub(super) fn classify_declaration(
             let rc = rest_trim.chars().collect::<Vec<char>>();
             match scan_qualified(&rc, 0) {
                 Some((name, end)) if !name.is_empty() => {
-                    let col = word_col + 5;
+                    let col = source.remainder + 1;
                     let len = name.chars().count() as u32;
                     let loc = Span::new(no, col, len);
                     // 头部子句:as "简述" → with 角色… → perm 权限 → after 表达式(固定顺序)
@@ -249,6 +252,7 @@ pub(super) fn classify_declaration(
                                 }
                             }
                             "after" => {
+                                source.condition = source.remainder + skip_spaces(&rc, wi) as u32;
                                 let rest: String = rc[wi..].iter().collect();
                                 let t = rest.trim().to_string();
                                 if t.is_empty() {

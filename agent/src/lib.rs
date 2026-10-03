@@ -182,6 +182,9 @@ impl Server {
                 json!("消息必须是 JSON 对象"),
             ));
         }
+        if msg.get("method").and_then(Value::as_str) == Some("project.problems") {
+            return problems::dispatch_rpc(self, &msg);
+        }
         if msg.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
             return Some(err(
                 msg.get("id").cloned().unwrap_or(Value::Null),
@@ -211,6 +214,7 @@ impl Server {
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
                     "authoring.problems.v1",
+                    worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,
@@ -301,7 +305,7 @@ impl Server {
             }
             "project.open" => self.project_open(params),
             "project.analyze" => self.project_analyze(params),
-            "project.problems" => self.project_problems(params),
+            "project.problems" => self.project_problems(params, problems::MAX_RESPONSE_BYTES),
             "workspace.check" => self.workspace_check(params),
             "maps.list" => self.maps_list(params),
             "world.context" => self.world_context(params, "context"),

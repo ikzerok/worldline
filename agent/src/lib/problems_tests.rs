@@ -1,6 +1,6 @@
 use super::*;
 #[path = "../../../cli/tests/support/problems_fixture.rs"]
-mod fixture;
+pub(super) mod fixture;
 use fixture::{Fixture, BAD, GOOD};
 
 fn call(server: &mut Server, method: &str, params: Value) -> Value {
@@ -240,6 +240,14 @@ fn response_budget_includes_metadata_and_continues_without_skipping() {
     entry.message = "m".repeat(16384);
     entry.note = Some("n".repeat(16384));
     entry.suggestion = Some("s".repeat(16384));
+    assert_eq!(entry.primary.context.as_ref().unwrap().version, 1);
+    let full_entry = serde_json::to_value(&entry).unwrap();
+    let mut old_entry = full_entry.clone();
+    old_entry["primary"]
+        .as_object_mut()
+        .unwrap()
+        .remove("context");
+    assert!(full_entry.to_string().len() > old_entry.to_string().len());
     let version = report.report_version.clone();
     report.entries = (1..=80)
         .map(|index| {
@@ -255,9 +263,14 @@ fn response_budget_includes_metadata_and_continues_without_skipping() {
     };
     let mut seen = Vec::new();
     loop {
-        let page = response(&report, &params, true, &[]);
+        let page = response(&report, &params, true, &[], MAX_RESPONSE_BYTES);
         assert_eq!(page["ok"], true, "{page}");
         assert!(page.to_string().len() <= 1024 * 1024);
+        assert!(page["page"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["primary"]["context"]["version"] == 1));
         seen.extend(
             page["page"]["entries"]
                 .as_array()
@@ -278,7 +291,7 @@ fn response_budget_includes_metadata_and_continues_without_skipping() {
     );
     report.reasons = vec!["x".repeat(1024 * 1024)];
     assert_eq!(
-        response(&report, &Params::default(), true, &[])["error"]["code"],
+        response(&report, &Params::default(), true, &[], MAX_RESPONSE_BYTES)["error"]["code"],
         "BUDGET_EXCEEDED"
     );
 }
@@ -397,4 +410,63 @@ fn unstable_observation_reports_rebuild_but_stable_partial_reports_reuse() {
     );
     assert_eq!(cached["report"]["compile_count"], 0);
     assert_eq!(cached["page"], partial["page"]);
+}
+
+#[test]
+fn context_capability_tail_hit_and_cached_pages_preserve_schema_one_requests() {
+    let source = format!(
+        "event start\n  {}{{missing}}\n  -> END\n",
+        "长中文😀".repeat(400)
+    );
+    let fixture = Fixture::new(&source);
+    let mut server = Server::default();
+    let initialized = call(&mut server, "initialize", json!({}));
+    assert!(initialized["result"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!(
+            worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY
+        )));
+    open(&mut server, &fixture);
+    for budget in [0, 1, 2, 3, 4, 511, 512] {
+        let params = json!({"project_id":"p1","options":{"max_excerpt_bytes":budget}});
+        let response = problems(&mut server, params.clone());
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["report"]["schema_version"], 1);
+        assert!(response.to_string().len() <= 1024 * 1024);
+        let primary = &response["page"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["code"] == "A102")
+            .unwrap()["primary"];
+        assert_eq!(primary["precision"], "span");
+        assert_eq!(primary["context"]["version"], 1);
+        assert_eq!(primary["context"]["role"], "target");
+        if budget == 0 {
+            assert_eq!(primary["context"]["visibility"], "no_text");
+        } else {
+            assert!(primary["context"]["text"].as_str().unwrap().len() <= budget);
+        }
+        if budget >= 7 {
+            assert_eq!(primary["context"]["visibility"], "full");
+            assert!(primary["context"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("missing"));
+        }
+        let cached = problems(&mut server, params);
+        assert_eq!(cached["report"]["compile_count"], 0);
+        assert_eq!(cached["page"], response["page"]);
+    }
+    assert_eq!(
+        call(
+            &mut server,
+            "project.problems",
+            json!({
+                "project_id":"p1", "context":true
+            })
+        )["error"]["code"],
+        -32602
+    );
 }

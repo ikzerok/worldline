@@ -2,6 +2,10 @@ use crate::{Severity, Span};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub use crate::diagnostic::DiagnosticSourceRole as ProblemSourceRole;
+
+pub const PROBLEM_SOURCE_CONTEXT_CAPABILITY: &str = "authoring.problem_source_context.v1";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemDomain {
@@ -61,6 +65,26 @@ pub struct ProblemRange {
     pub start: usize,
     pub end: usize,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemContextVisibility {
+    Full,
+    Partial,
+    NoText,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProblemSourceContext {
+    pub version: u32,
+    pub role: ProblemSourceRole,
+    pub text: Option<String>,
+    pub slice_byte_range: Option<ProblemRange>,
+    pub slice_char_range: Option<ProblemRange>,
+    pub hit_byte_range: Option<ProblemRange>,
+    pub hit_char_range: Option<ProblemRange>,
+    pub visibility: ProblemContextVisibility,
+    pub prefix_clipped: bool,
+    pub suffix_clipped: bool,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProblemLocation {
     pub path: Option<String>,
@@ -71,6 +95,8 @@ pub struct ProblemLocation {
     pub excerpt: Option<String>,
     pub excerpt_truncated: bool,
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ProblemSourceContext>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProblemEntry {

@@ -2,12 +2,14 @@
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, Span};
-use crate::expression::{parse_expr_src, parse_interpolations_with_options};
 use crate::lexer::{Line, LineKind};
+use crate::source_provenance::{ExpressionSlot, SourceProvenance};
+mod effects;
 mod language;
 mod metadata;
 mod program;
 mod schemas;
+mod source;
 mod statements;
 mod text;
 pub(crate) use text::split_text_decorations;
@@ -128,6 +130,9 @@ pub struct Parser<'a> {
     allow_object_refs: bool,
     allow_character_refs: bool,
     allow_localization_ids: bool,
+    sources: SourceProvenance,
+    source_owner: Option<crate::source_provenance::SourceOwner>,
+    remainder_bases: std::collections::BTreeMap<(String, u32), u32>,
 }
 
 impl<'a> Parser<'a> {
@@ -149,15 +154,32 @@ impl<'a> Parser<'a> {
             allow_object_refs: options.object_refs,
             allow_character_refs: options.character_refs,
             allow_localization_ids: options.localization_ids,
+            source_owner: None,
+            remainder_bases: lines
+                .iter()
+                .map(|line| {
+                    (
+                        (line.file.clone(), line.no),
+                        line.source.base + line.source.remainder,
+                    )
+                })
+                .collect(),
+            sources: SourceProvenance {
+                statements: lines
+                    .iter()
+                    .map(|line| ((line.file.clone(), line.no), line.statement_source()))
+                    .collect(),
+                ..SourceProvenance::default()
+            },
         }
     }
 
-    fn peek(&self) -> Option<&'a Line> {
-        self.lines.get(self.pos)
+    fn peek(&self) -> Option<Line> {
+        self.lines.get(self.pos).map(Line::physical)
     }
 
-    fn next(&mut self) -> Option<&'a Line> {
-        let l = self.lines.get(self.pos);
+    fn next(&mut self) -> Option<Line> {
+        let l = self.lines.get(self.pos).map(Line::physical);
         if l.is_some() {
             self.pos += 1;
         }

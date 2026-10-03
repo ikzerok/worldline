@@ -13,7 +13,7 @@ impl<'a> Parser<'a> {
             .map(|l| l.file.clone())
             .unwrap_or_default();
         while let Some(line) = self.peek() {
-            let file = self.file_of(line);
+            let file = self.file_of(&line);
             if line.indent != 0 {
                 self.diags.push(Diagnostic::error(
                     "P002",
@@ -81,15 +81,16 @@ impl<'a> Parser<'a> {
                     name,
                     expr_src,
                     loc,
-                    name_span,
+                    name_span: _,
                 } => {
                     self.next();
-                    let expr = parse_expr_src(
+                    let expr = self.sourced_expr(
                         expr_src,
                         &file,
                         line.no,
-                        name_span.column + name.chars().count() as u32 + 1,
-                        self.diags,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
                     );
                     program.lets.push(LetStmt {
                         name: name.clone(),
@@ -103,15 +104,16 @@ impl<'a> Parser<'a> {
                     name,
                     expr_src,
                     loc,
-                    name_span,
+                    name_span: _,
                 } => {
                     self.next();
-                    let expr = parse_expr_src(
+                    let expr = self.sourced_expr(
                         expr_src,
                         &file,
                         line.no,
-                        name_span.column + name.chars().count() as u32 + 1,
-                        self.diags,
+                        line.no,
+                        line.source.base + line.source.value,
+                        ExpressionSlot::Value,
                     );
                     program.lets.push(LetStmt {
                         name: name.clone(),
@@ -150,7 +152,7 @@ impl<'a> Parser<'a> {
                             "storyline 不能嵌套在另一个 storyline 块内",
                         ));
                     }
-                    while let Some(nl) = self.peek().cloned() {
+                    while let Some(nl) = self.peek() {
                         if nl.indent <= s_indent {
                             break;
                         }
@@ -364,6 +366,8 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        self.sources.resolve_diagnostics(self.diags);
+        program.source_provenance = std::mem::take(&mut self.sources);
         program
     }
 
@@ -376,14 +380,15 @@ impl<'a> Parser<'a> {
                 name,
                 expr_src,
                 loc,
-                name_span,
+                name_span: _,
             } => {
-                let expr = parse_expr_src(
+                let expr = self.sourced_expr(
                     expr_src,
                     &file,
                     line.no,
-                    name_span.column + name.chars().count() as u32 + 1,
-                    self.diags,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
                 );
                 program.lets.push(LetStmt {
                     name: name.clone(),
@@ -397,14 +402,15 @@ impl<'a> Parser<'a> {
                 name,
                 expr_src,
                 loc,
-                name_span,
+                name_span: _,
             } => {
-                let expr = parse_expr_src(
+                let expr = self.sourced_expr(
                     expr_src,
                     &file,
                     line.no,
-                    name_span.column + name.chars().count() as u32 + 1,
-                    self.diags,
+                    line.no,
+                    line.source.base + line.source.value,
+                    ExpressionSlot::Value,
                 );
                 program.lets.push(LetStmt {
                     name: name.clone(),
@@ -459,15 +465,20 @@ impl<'a> Parser<'a> {
             _ => return,
         };
         let after = after_src.map(|src| {
-            parse_expr_src(
+            self.sourced_expr(
                 &src,
                 &file,
                 line.no,
-                espan.column + name.chars().count() as u32 + 1,
-                self.diags,
+                line.no,
+                line.source.base + line.source.condition,
+                ExpressionSlot::After,
             )
         });
+        let previous_owner = self
+            .source_owner
+            .replace(crate::source_provenance::SourceOwner::new(&file, line.no));
         let body = self.parse_block(indent, &file, true);
+        self.source_owner = previous_owner;
         let (effects, body) = extract_effects(body, &file, self.diags);
         if program.entry.is_empty() && file == main_file {
             program.entry = name.clone();

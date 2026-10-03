@@ -143,37 +143,14 @@ impl KeywordIndex {
         }
         for (file, source) in &result.sources {
             let cleaned = crate::lexer::strip_comments(source);
-            let choice_columns: BTreeMap<_, _> =
-                crate::lexer::lex_source(&file.to_string_lossy(), source, &mut Vec::new())
-                    .into_iter()
-                    .filter_map(|line| match line.kind {
-                        crate::lexer::LineKind::Choice { label_span, .. } => {
-                            Some((line.no, line.indent + label_span.column))
-                        }
-                        _ => None,
-                    })
-                    .collect();
             for (number, (raw, line)) in source.lines().zip(cleaned.lines()).enumerate() {
                 let line_number = number as u32 + 1;
                 let mut explicit = Vec::new();
                 if let Some(line_links) = links.get(&(file.to_string_lossy().as_ref(), line_number))
                 {
                     for link in line_links {
-                        let column = if let Some(&base) = choice_columns.get(&line_number) {
-                            // 选择文案先解码外层字符串，需把位置映回带转义的原始源码。
-                            let mut chars = line.chars().skip(base.saturating_sub(1) as usize);
-                            let mut column = base;
-                            for _ in base..link.column {
-                                let escaped = chars.next() == Some('\\');
-                                column += 1;
-                                if escaped && chars.next().is_some() {
-                                    column += 1;
-                                }
-                            }
-                            column
-                        } else {
-                            link.column
-                        };
+                        // 目录链接已经是带转义原稿的物理 scalar 列，choice 不再二次解码。
+                        let column = link.column;
                         let start = line
                             .char_indices()
                             .nth(column.saturating_sub(1) as usize)

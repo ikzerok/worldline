@@ -459,6 +459,8 @@ pub struct Event {
 /// 编译产物:程序结构(include 已在源文本级合并)。
 #[derive(Debug, Clone, Default)]
 pub struct Program {
+    /// 非语义解析来源；不参与指纹或运行身份。
+    pub source_provenance: crate::source_provenance::SourceProvenance,
     pub language_version: crate::compiler::LanguageVersion,
     pub schemas: Vec<crate::schemas::SchemaDecl>,
     pub schema_bindings: Vec<crate::schemas::SchemaBinding>,

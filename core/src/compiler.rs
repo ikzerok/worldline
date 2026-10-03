@@ -314,9 +314,9 @@ pub(crate) fn compile_sources_with_access(
         diags: Vec::new(),
         options,
     };
-    compiler.load(&entry, &entry.to_string_lossy(), Span::new(1, 1, 1));
+    compiler.load(&entry, &entry.to_string_lossy(), Span::new(1, 1, 1), false);
     for path in compiler.overrides.keys().cloned().collect::<Vec<_>>() {
-        compiler.load(&path, &entry.to_string_lossy(), Span::new(1, 1, 1));
+        compiler.load(&path, &entry.to_string_lossy(), Span::new(1, 1, 1), false);
     }
     finish(
         &entry.to_string_lossy(),
@@ -381,42 +381,54 @@ struct Compiler {
 }
 
 impl Compiler {
-    fn load(&mut self, path: &Path, from: &str, span: Span) {
+    fn load(&mut self, path: &Path, from: &str, span: Span, from_include: bool) {
+        let role = if from_include {
+            crate::diagnostic::DiagnosticSourceRole::Target
+        } else {
+            crate::diagnostic::DiagnosticSourceRole::Document
+        };
         let path = source_path(path);
         if self.inactive.contains(&path) {
-            self.diags.push(Diagnostic::error(
-                "A105",
-                from,
-                span,
-                format!("include 指向非活动源码:{}", path.display()),
-            ));
+            self.diags.push(
+                Diagnostic::error(
+                    "A105",
+                    from,
+                    span,
+                    format!("include 指向非活动源码:{}", path.display()),
+                )
+                .with_source_role(role),
+            );
             return;
         }
         if self.deleted.contains(&path) {
-            self.diags.push(Diagnostic::error(
-                "A105",
-                from,
-                span,
-                format!("引用文件已标记删除:{}", path.display()),
-            ));
+            self.diags.push(
+                Diagnostic::error(
+                    "A105",
+                    from,
+                    span,
+                    format!("引用文件已标记删除:{}", path.display()),
+                )
+                .with_source_role(role),
+            );
             return;
         }
         if !path.starts_with(&self.root) {
-            self.diags.push(Diagnostic::error(
-                "A109",
-                from,
-                span,
-                "引用文件必须位于工作区目录内",
-            ));
+            self.diags.push(
+                Diagnostic::error("A109", from, span, "引用文件必须位于工作区目录内")
+                    .with_source_role(role),
+            );
             return;
         }
         if self.active.contains(&path) || self.active.len() >= 128 {
-            self.diags.push(Diagnostic::error(
-                "A105",
-                from,
-                span,
-                format!("include 构成环路或嵌套过深:{}", path.display()),
-            ));
+            self.diags.push(
+                Diagnostic::error(
+                    "A105",
+                    from,
+                    span,
+                    format!("include 构成环路或嵌套过深:{}", path.display()),
+                )
+                .with_source_role(role),
+            );
             return;
         }
         if self.loaded.contains(&path) {
@@ -439,12 +451,15 @@ impl Compiler {
             }) {
             Ok(text) => text,
             Err(e) => {
-                self.diags.push(Diagnostic::error(
-                    "A105",
-                    from,
-                    span,
-                    format!("文件无法读取:{} ({e})", path.display()),
-                ));
+                self.diags.push(
+                    Diagnostic::error(
+                        "A105",
+                        from,
+                        span,
+                        format!("文件无法读取:{} ({e})", path.display()),
+                    )
+                    .with_source_role(role),
+                );
                 return;
             }
         };
@@ -460,24 +475,31 @@ impl Compiler {
             } = &line.kind
             {
                 if line.indent != 0 {
-                    self.diags.push(Diagnostic::error(
-                        "P002",
-                        &display,
-                        *span,
-                        "include 只能出现在文件顶层",
-                    ));
+                    self.diags.push(
+                        Diagnostic::error(
+                            "P002",
+                            &display,
+                            line.statement_source().span,
+                            "include 只能出现在文件顶层",
+                        )
+                        .with_source_role(crate::diagnostic::DiagnosticSourceRole::Declaration),
+                    );
                 } else if Path::new(include).is_absolute() {
-                    self.diags.push(Diagnostic::error(
-                        "A109",
-                        &display,
-                        *span,
-                        "include 必须使用工作区内相对路径",
-                    ));
+                    self.diags.push(
+                        Diagnostic::error(
+                            "A109",
+                            &display,
+                            *span,
+                            "include 必须使用工作区内相对路径",
+                        )
+                        .with_source_role(crate::diagnostic::DiagnosticSourceRole::Target),
+                    );
                 } else {
                     self.load(
                         &path.parent().unwrap_or(Path::new(".")).join(include),
                         &display,
                         *span,
+                        true,
                     );
                 }
             } else {

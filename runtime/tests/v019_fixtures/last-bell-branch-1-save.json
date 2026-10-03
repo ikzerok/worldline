@@ -1,0 +1,33 @@
+{
+  "fingerprint": 5694755523464511637,
+  "vars": {
+    "bell_rung": {
+      "Bool": false
+    }
+  },
+  "visits": {
+    "arrival": 1,
+    "silence": 1
+  },
+  "turns": 1,
+  "taken_once": [],
+  "frames": [],
+  "glue_pending": false,
+  "paused": false,
+  "rng": 7,
+  "seed": 7,
+  "choice_coverage": {
+    "arrival:fcd190b31ec94773:0": {
+      "id": "arrival:fcd190b31ec94773:0",
+      "node": "arrival",
+      "label": "交出钟槌",
+      "line": 21,
+      "count": 1
+    }
+  },
+  "storyline": "main",
+  "met": [],
+  "anchors": [],
+  "states": {},
+  "state_history": []
+}

@@ -49,6 +49,18 @@ impl Span {
     }
 }
 
+/// 由正式生产者确认的来源角色；旧 Diagnostic JSON 不序列化此元数据。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSourceRole {
+    Target,
+    Expression,
+    Statement,
+    Declaration,
+    Document,
+    Unavailable,
+}
+
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub severity: Severity,
@@ -59,6 +71,9 @@ pub struct Diagnostic {
     pub note: Option<String>,
     pub suggestion: Option<String>,
     pub related: Vec<(String, Span)>,
+    pub source_role: Option<DiagnosticSourceRole>,
+    pub(crate) source_bound: bool,
+    pub related_source_roles: Vec<Option<DiagnosticSourceRole>>,
 }
 
 impl Diagnostic {
@@ -72,6 +87,9 @@ impl Diagnostic {
             note: None,
             suggestion: None,
             related: Vec::new(),
+            source_role: None,
+            source_bound: false,
+            related_source_roles: Vec::new(),
         }
     }
 
@@ -85,6 +103,9 @@ impl Diagnostic {
             note: None,
             suggestion: None,
             related: Vec::new(),
+            source_role: None,
+            source_bound: false,
+            related_source_roles: Vec::new(),
         }
     }
 
@@ -98,7 +119,34 @@ impl Diagnostic {
             note: None,
             suggestion: None,
             related: Vec::new(),
+            source_role: None,
+            source_bound: false,
+            related_source_roles: Vec::new(),
         }
+    }
+
+    pub fn source_role(&self) -> Option<DiagnosticSourceRole> {
+        self.source_role
+    }
+
+    pub fn related_source_role(&self, index: usize) -> Option<DiagnosticSourceRole> {
+        self.related_source_roles.get(index).copied().flatten()
+    }
+
+    pub fn with_source_role(mut self, role: DiagnosticSourceRole) -> Self {
+        self.source_role = Some(role);
+        self
+    }
+
+    pub fn with_related_source_role(
+        self,
+        file: &str,
+        span: Span,
+        role: DiagnosticSourceRole,
+    ) -> Self {
+        let mut diagnostic = self.with_related(file, span);
+        *diagnostic.related_source_roles.last_mut().unwrap() = Some(role);
+        diagnostic
     }
 
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
@@ -107,7 +155,9 @@ impl Diagnostic {
     }
 
     pub fn with_related(mut self, file: &str, span: Span) -> Self {
+        self.related_source_roles.resize(self.related.len(), None);
         self.related.push((file.to_string(), span));
+        self.related_source_roles.push(None);
         self
     }
 }
