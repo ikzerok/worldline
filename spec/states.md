@@ -65,3 +65,7 @@ event arrival with lin after has(mood, calm)
 state 声明的 `target.kind` 与 `target.id` 参与运行指纹。entity 稳定 ID 的全引用重命名若改变这些字段，core 仍拒绝提交；错误给出受影响 state 与声明位置、旧/候选指纹及旧 Story 存档/检查点不匹配原因。入口 replay trace 仍按既有协议允许在新指纹上受控重放，必须重新验证，不能保证沿用。可保留 entity 稳定 ID，只改 `as "显示名"`；显示名不进入实体运行身份。本轮不迁移旧 save/replay，也不移除或放宽任何指纹检查。
 
 当前状态分析不接受 relation 作为有效所属对象，仍报告 A216；本轮不扩展支持范围。运行身份拒绝的实体用例与语法/引用无效的候选保持区分。
+
+## 工具 0.20 实际动作回源
+
+[route-comparison.md](route-comparison.md) 的瞬态证据按真实执行顺序记录Become/AddTags/RemoveTags及正式动作owner；不同于catalog静态候选，也不向旧state_history回填来源。所属世界对象仍只复用state.target。

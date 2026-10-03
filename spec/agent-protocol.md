@@ -680,3 +680,52 @@ context（version=1），旧 report 仅只读，导航必须刷新。DTO、窗�
 方法不执行，返回 -32600 / id:null / data:"request_id_exceeds_response_budget"；
 不截断 id。其余可回显 id、协议错误 code、通知行为与其他方法均不变，详情超预算
 采用有界摘要。精确策略见 [problem-source-context.md](problem-source-context.md)。
+
+## 0.20 真实路线对照机器接口
+
+`initialize.capabilities` 新增 `authoring.route_comparison.v1`；比较 DTO 使用
+`schema_version:1`。完整语义与 runtime 唯一实现见 [route-comparison.md](route-comparison.md)。
+
+- CLI：`wl route-compare PROJECT --left-trace-json '<ReplayTrace>' --right-trace-json '<ReplayTrace>' [--max-steps N] [--time-budget-ms N] [--json]`
+- RPC：`project.compare_routes {project_id, left_trace, right_trace, max_steps?, time_budget_ms?}`
+
+CLI 只接受一个工程目录或入口；RPC 的非空 `project_id` 必须是当前进程已经打开的
+工程，不接受 `story_id`、`session_id` 或 `path`。缺失、重复 CLI 参数、未知参数、
+错误类型、负数以及超过硬限额的预算均为调用错误；RPC 对新方法严格拒绝未知字段。
+Trace 的既有未知可选字段仍沿原兼容规则读取。CLI 在解析每个 trace JSON 前检查其
+UTF-8 原始字节；RPC 在反序列化 trace 前检查所提供 JSON 值的序列化字节（含未知
+字段）。每侧上限为 4194304 bytes；runtime 再验证已解析 DTO 的字节与 4096 步上限。
+
+`max_steps` 默认及最大值为 100000，`time_budget_ms` 默认及最大值为 30000；它们是
+两侧合计预算。0 为零额度，不等于无限制。其它证据、运行输出和结果额度使用
+runtime 默认硬上限。CLI/RPC 都是同步有界调用；后续 RPC 不能中断正在处理的比较，
+不会把 `session.cancel` 宣称为路线比较取消接口。
+
+CLI 使用 core `Project::open_read_only`，两端使用 `Project::compile_read_only`，
+在同一当前已应用编译快照上调用一次共享 `compare_routes`。RPC 不刷新、保存、应用
+或恢复工程；CLI 不通过普通 `open/refresh` 自动恢复事务或迁移权限。存在未解决
+事务时拒绝比较并保留文件原字节。接口不重算状态差异、覆盖、对齐或动作来源。
+
+正常结果为 `{ok, comparison}`；`comparison` 是未改写的 runtime DTO，
+`ok` 仅在两侧 `status:"replayed"` 时为 true。部分区段验证通过仍保留各自
+`complete:false` 与 `ended:false`，不代表完整结局。单侧分歧、故事运行失败、
+取消或资源停止保留两侧独立实际结果，不能替换为原 trace 观察。
+CLI 两侧 replayed 时退出 0，其它结构化侧结果退出 1。
+
+参数/结构/兼容性错误（`invalid_options`、`input_limit`、`invalid_trace`）为 CLI
+退出 2 / RPC `-32602`。有效请求的编译失败、不可用当前快照、结果不能装入输出额度
+等返回 `{ok:false,comparison:null,error:{code,message},...}`，CLI 退出 1；编译错误
+附 `diagnostics`，工作区诊断独立放在 `workspace_diagnostics`。CLI 工程读取失败
+为 `IO_ERROR`、退出 2。错误 message 中文；不把业务失败转换成 JSON-RPC error。
+
+runtime 比较 DTO 最多 1048576 bytes；CLI 完整响应及 RPC 完整响应行（包括外壳、
+原 id 的实际 JSON 编码和末尾 LF）最多 1052672 bytes，即 1 MiB + 4096 bytes。
+若正常结果或错误详情超出该额度，返回有界 `output_limit` 业务错误，不截断成空差异。
+RPC 在执行方法前预检 id：连最小业务或协议错误都无法在额度内完整回显时，返回
+`-32600`、`id:null`、`data:"request_id_exceeds_response_budget"`，不执行方法、不截断
+id。可回显 id 的超长协议错误保留原协议 code，以有界消息替代细节。通知遵循既有
+无响应规则。此例外只扩展到本方法，不改变其它方法的旧响应限额。
+
+比较不增加 source-resolve RPC：只返回 core 在同一快照中验证的来源，不能以 trace
+里的旧文件/行或同名状态猜测位置。0.20 继续拒绝 0.19 trace/checkpoint；普通 Story
+Save 保留原有兼容规则，不新增同样的 runtime_version 拒绝条件。

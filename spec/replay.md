@@ -120,3 +120,7 @@ DSL、replay schema 或解释器语义。节点来源文本计入已有证据预
 ## 语言1.12锁定选择观察
 
 采用enable的作品在ReplayObservation中添加可选choice_presentation数组，保存实际可见项及启用状态和作者说明。重放比较此投影（忽略源码行号），没有新能力的旧trace不增字段。选择身份加入enable条件、不加入禁用说明；说明与条件均参与运行指纹。choose_id/choose_presentation拒选禁用项时不记录步骤、不消费随机数或once；详见 [choices.md](choices.md)。
+
+## 工具 0.20 双路线作者对照
+
+[route-comparison.md](route-comparison.md) 定义同一当前快照的独立双重放、真实可比前缀、状态/变量结果差异与瞬态动作证据。它不更改本页trace、Save或观察的持久格式；0.19 trace/checkpoint仍不得跨runtime版本载入0.20。
