@@ -343,6 +343,8 @@ mod story;
 mod support;
 #[path = "lib/workspace.rs"]
 mod workspace;
+#[path = "lib/route_comparison.rs"]
+mod route_comparison;
 #[path = "lib/world_context.rs"]
 mod world_context;
 
@@ -404,8 +406,9 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
             play::cmd_play(&f, out, input)
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
+        "route-compare" => route_comparison::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

@@ -21,6 +21,7 @@ fn main() -> ExitCode {
             eprintln!("用法: wl check <文件.wl> [--json]");
             eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json] [--choice-presentation] [--json]");
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");
+            eprintln!("      wl route-compare <目录或入口> --left-trace-json DTO --right-trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl graph <文件.wl> [--json]");
             eprintln!("      wl timeline <文件.wl> [--json]");
             eprintln!(
