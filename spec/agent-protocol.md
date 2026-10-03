@@ -674,3 +674,9 @@ comparison.relation=unknown，业务 ok:false；invalid 同样 ok:false。协议
 context（version=1），旧 report 仅只读，导航必须刷新。DTO、窗口与精度、字节/字符
 坐标和兼容边界见 [problem-source-context.md](problem-source-context.md)。该工具能力
 不进入作品 required_features 或 Story save。
+
+`project.problems` 的响应限制包含 JSON-RPC 外壳、原 id 的实际 JSON 编码与行末 LF。
+§3.1 的 id 回显仅有此方法的巨大标识例外：若连紧凑错误外壳都不能在 1MiB 内回显，
+方法不执行，返回 -32600 / id:null / data:"request_id_exceeds_response_budget"；
+不截断 id。其余可回显 id、协议错误 code、通知行为与其他方法均不变，详情超预算
+采用有界摘要。精确策略见 [problem-source-context.md](problem-source-context.md)。

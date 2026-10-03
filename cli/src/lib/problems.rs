@@ -54,7 +54,7 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
             Err(error) => return failure(parsed.json, &error.code, &error.message, out),
         };
         let payload = json!({"ok":true,"report":summary(&report),"page":page});
-        if payload.to_string().len() <= 1024 * 1024 {
+        if payload.to_string().len() < 1024 * 1024 {
             break (page, payload);
         }
         let count = page
@@ -126,11 +126,11 @@ fn summary(report: &ProblemsReport) -> Value {
 
 fn failure(json: bool, code: &str, message: &str, out: &mut impl Write) -> Result<i32, String> {
     if json {
-        writeln!(
-            out,
-            "{}",
-            json!({"ok":false,"error":{"code":code,"message":message}})
-        )
+        let mut payload = json!({"ok":false,"error":{"code":code,"message":message}});
+        if payload.to_string().len() >= 1024 * 1024 {
+            payload["error"]["message"] = json!("工程问题错误详情超过字节预算");
+        }
+        writeln!(out, "{payload}")
     } else {
         writeln!(out, "工程问题查询失败 [{code}]: {message}\n{HELP}")
     }

@@ -2,6 +2,13 @@ use super::*;
 use serde::Deserialize;
 use worldline_core::problems::{ProblemCursor, ProblemQuery, ProblemsOptions, ProblemsReport};
 
+#[path = "problems_rpc.rs"]
+mod rpc;
+pub(super) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+pub(super) fn dispatch_rpc(server: &mut Server, message: &Value) -> Option<Value> {
+    rpc::dispatch(server, message)
+}
+
 pub(super) struct CachedReport {
     report: ProblemsReport,
     conflicts: Vec<PathBuf>,
@@ -21,7 +28,11 @@ struct Params {
 }
 
 impl Server {
-    pub(super) fn project_problems(&mut self, value: &Value) -> Result<Value, ProtoError> {
+    pub(super) fn project_problems(
+        &mut self,
+        value: &Value,
+        response_budget: usize,
+    ) -> Result<Value, ProtoError> {
         let params: Params = serde_json::from_value(value.clone())
             .map_err(|error| ProtoError::new(-32602, format!("工程问题参数无效：{error}")))?;
         if value.get("path").is_some() == value.get("project_id").is_some() {
@@ -85,6 +96,7 @@ impl Server {
                         return Ok(with_conflicts(
                             failure(&error.code, error.message),
                             &conflicts,
+                            response_budget,
                         ))
                     }
                 };
@@ -94,7 +106,13 @@ impl Server {
                 .problems_report
                 .as_ref()
                 .expect("report built or reused");
-            return Ok(response(&cache.report, &params, reusable, &cache.conflicts));
+            return Ok(response(
+                &cache.report,
+                &params,
+                reusable,
+                &cache.conflicts,
+                response_budget,
+            ));
         }
         let project =
             match Project::open(Path::new(params.path.as_deref().expect("validated path"))) {
@@ -102,7 +120,7 @@ impl Server {
                 Err(error) => return Ok(failure("IO_ERROR", error)),
             };
         Ok(match project.problems_report(&params.options) {
-            Ok(report) => response(&report, &params, false, &[]),
+            Ok(report) => response(&report, &params, false, &[], response_budget),
             Err(error) => failure(&error.code, error.message),
         })
     }
@@ -113,6 +131,7 @@ fn response(
     params: &Params,
     reused: bool,
     conflicts: &[PathBuf],
+    response_budget: usize,
 ) -> Value {
     let mut limit = params.limit;
     loop {
@@ -126,7 +145,13 @@ fn response(
         };
         let page = match page {
             Ok(page) => page,
-            Err(error) => return with_conflicts(failure(&error.code, error.message), conflicts),
+            Err(error) => {
+                return with_conflicts(
+                    failure(&error.code, error.message),
+                    conflicts,
+                    response_budget,
+                )
+            }
         };
         let count = page
             .get("entries")
@@ -144,7 +169,7 @@ fn response(
         if !conflicts.is_empty() {
             response["conflicts"] = json!(conflicts);
         }
-        if response.to_string().len() <= 1024 * 1024 {
+        if response.to_string().len() <= response_budget {
             return response;
         }
         if count <= 1 {
@@ -161,11 +186,11 @@ fn failure(code: &str, message: String) -> Value {
     json!({"ok":false,"error":{"code":code,"message":message}})
 }
 
-fn with_conflicts(mut response: Value, conflicts: &[PathBuf]) -> Value {
+fn with_conflicts(mut response: Value, conflicts: &[PathBuf], response_budget: usize) -> Value {
     if !conflicts.is_empty() {
         response["conflicts"] = json!(conflicts);
     }
-    if response.to_string().len() > 1024 * 1024 {
+    if response.to_string().len() > response_budget {
         return failure("BUDGET_EXCEEDED", "冲突列表超过响应字节预算".into());
     }
     response
@@ -174,3 +199,7 @@ fn with_conflicts(mut response: Value, conflicts: &[PathBuf]) -> Value {
 #[cfg(test)]
 #[path = "problems_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "problems_rpc_tests.rs"]
+mod rpc_tests;

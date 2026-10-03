@@ -16,7 +16,10 @@ fn location(text: &str, span: Span, limit: usize) -> ProblemLocation {
     )
 }
 fn scalars(text: &str, range: &ProblemRange) -> String {
-    text.chars().skip(range.start).take(range.end - range.start).collect()
+    text.chars()
+        .skip(range.start)
+        .take(range.end - range.start)
+        .collect()
 }
 fn assert_consistent(source: &str, location: &ProblemLocation, limit: usize) {
     let context = location.context.as_ref().unwrap();
@@ -63,7 +66,10 @@ fn tail_hit_is_visible_without_changing_authoritative_ranges() {
         assert_eq!(bounded.char_range, full.char_range);
         assert_eq!(bounded.span, full.span);
         assert_eq!(bounded.precision, ProblemPrecision::Span);
-        assert_eq!(bounded.context.as_ref().unwrap().role, ProblemSourceRole::Target);
+        assert_eq!(
+            bounded.context.as_ref().unwrap().role,
+            ProblemSourceRole::Target
+        );
         assert_consistent(&source, &bounded, limit);
     }
 }
@@ -74,7 +80,10 @@ fn partial_hit_is_a_visible_intersection_never_a_shortened_full_range() {
     let bounded = location(&source, span, 512);
     let context = bounded.context.as_ref().unwrap();
     assert_eq!(context.visibility, ProblemContextVisibility::Partial);
-    assert_eq!(bounded.char_range, Some(ProblemRange { start: 1, end: 601 }));
+    assert_eq!(
+        bounded.char_range,
+        Some(ProblemRange { start: 1, end: 601 })
+    );
     assert!(context.prefix_clipped && context.suffix_clipped);
     assert_consistent(&source, &bounded, 512);
     for limit in [0, 1, 2, 3, 4, 511, 512] {
@@ -86,7 +95,8 @@ fn partial_hit_is_a_visible_intersection_never_a_shortened_full_range() {
 }
 #[test]
 fn tiny_budgets_do_not_split_scalar_or_extended_grapheme() {
-    for hit in ["中", "😀", "e\u{301}", "👩🏽‍💻", "👨‍👩‍👧‍👦", "🇨🇳"] {
+    for hit in ["中", "😀", "e\u{301}", "👩🏽‍💻", "👨‍👩‍👧‍👦", "🇨🇳"]
+    {
         let source = format!("前{hit}后");
         let span = Span::new(1, 2, hit.chars().count() as u32);
         for limit in [0, 1, 2, 3, 4, 511, 512] {
@@ -99,8 +109,11 @@ fn tiny_budgets_do_not_split_scalar_or_extended_grapheme() {
             } else {
                 assert_eq!(context.visibility, ProblemContextVisibility::Full);
                 let range = context.slice_byte_range.as_ref().unwrap();
-                let boundaries: Vec<_> = source.grapheme_indices(true).map(|(i, _)| i)
-                    .chain(std::iter::once(source.len())).collect();
+                let boundaries: Vec<_> = source
+                    .grapheme_indices(true)
+                    .map(|(i, _)| i)
+                    .chain(std::iter::once(source.len()))
+                    .collect();
                 assert!(boundaries.contains(&range.start) && boundaries.contains(&range.end));
             }
         }
@@ -113,8 +126,14 @@ fn scalar_hit_inside_grapheme_does_not_change_full_source_or_local_hit() {
     assert_consistent(source, &actual, 3);
     let context = actual.context.unwrap();
     assert_eq!(context.text.as_deref(), Some("e\u{301}"));
-    assert_eq!(context.hit_byte_range, Some(ProblemRange { start: 1, end: 3 }));
-    assert_eq!(context.hit_char_range, Some(ProblemRange { start: 1, end: 2 }));
+    assert_eq!(
+        context.hit_byte_range,
+        Some(ProblemRange { start: 1, end: 3 })
+    );
+    assert_eq!(
+        context.hit_char_range,
+        Some(ProblemRange { start: 1, end: 2 })
+    );
 }
 #[test]
 fn repeated_word_and_crlf_empty_eof_use_physical_original_coordinates() {
@@ -125,8 +144,17 @@ fn repeated_word_and_crlf_empty_eof_use_physical_original_coordinates() {
     assert_eq!(actual.char_range, Some(ProblemRange { start: 21, end: 28 }));
     let eof = location(source, Span::new(3, 1, 0), 4);
     assert_consistent(source, &eof, 4);
-    assert_eq!(eof.byte_range, Some(ProblemRange { start: source.len(), end: source.len() }));
-    assert_eq!(eof.context.unwrap().visibility, ProblemContextVisibility::Full);
+    assert_eq!(
+        eof.byte_range,
+        Some(ProblemRange {
+            start: source.len(),
+            end: source.len()
+        })
+    );
+    assert_eq!(
+        eof.context.unwrap().visibility,
+        ProblemContextVisibility::Full
+    );
     let invalid = location(source, Span::new(2, 11, 8), 512);
     assert_eq!(invalid.precision, ProblemPrecision::Unavailable);
     assert_eq!(invalid.context.unwrap().role, ProblemSourceRole::Target);
@@ -140,7 +168,11 @@ fn unproven_and_unavailable_sources_never_borrow_a_precise_span() {
     project.set_text(&entry, "正文😀\n".into()).unwrap();
     for limit in [0, 1, 2, 3, 4, 511, 512] {
         let document = super::location::project_location(
-            &project, &entry.to_string_lossy(), Span::new(1, 1, 1), None, limit,
+            &project,
+            &entry.to_string_lossy(),
+            Span::new(1, 1, 1),
+            None,
+            limit,
         );
         assert_eq!(document.precision, ProblemPrecision::Document);
         assert!(document.span.is_none() && document.byte_range.is_none());
@@ -149,10 +181,66 @@ fn unproven_and_unavailable_sources_never_borrow_a_precise_span() {
         assert!(context.hit_byte_range.is_none() && context.hit_char_range.is_none());
         assert_consistent("正文😀\n", &document, limit);
         let unavailable = super::location::project_location(
-            &project, &entry.to_string_lossy(), Span::new(1, 1, 1),
-            Some(ProblemSourceRole::Unavailable), limit,
+            &project,
+            &entry.to_string_lossy(),
+            Span::new(1, 1, 1),
+            Some(ProblemSourceRole::Unavailable),
+            limit,
         );
         assert_eq!(unavailable.precision, ProblemPrecision::Unavailable);
-        assert_eq!(unavailable.context.unwrap().visibility, ProblemContextVisibility::NoText);
+        assert_eq!(
+            unavailable.context.unwrap().visibility,
+            ProblemContextVisibility::NoText
+        );
     }
+}
+
+#[test]
+fn empty_line_and_eof_distinguish_visible_empty_context_from_zero_budget() {
+    for (source, span) in [
+        ("", Span::new(1, 1, 0)),
+        ("a\r\n\r\n", Span::new(2, 1, 0)),
+        ("a\n", Span::new(2, 1, 0)),
+    ] {
+        let visible = location(source, span, 1);
+        let hidden = location(source, span, 0);
+        assert_eq!(visible.precision, ProblemPrecision::Span);
+        assert_eq!(visible.byte_range, hidden.byte_range);
+        assert_eq!(visible.char_range, hidden.char_range);
+        assert_eq!(
+            visible.context.as_ref().unwrap().visibility,
+            ProblemContextVisibility::Full
+        );
+        assert_eq!(visible.context.as_ref().unwrap().text.as_deref(), Some(""));
+        assert_eq!(
+            hidden.context.as_ref().unwrap().visibility,
+            ProblemContextVisibility::NoText
+        );
+        assert_consistent(source, &visible, 1);
+        assert_consistent(source, &hidden, 0);
+    }
+}
+#[test]
+fn inactive_loaded_source_keeps_identity_and_role_without_navigation_range() {
+    let root =
+        std::env::temp_dir().join(format!("problem-context-inactive-{}", std::process::id()));
+    std::fs::create_dir_all(root.join(".world")).unwrap();
+    std::fs::write(root.join("world.wl"), "event start\n  -> END\n").unwrap();
+    std::fs::write(root.join("archive.wl"), "event old\n  -> END\n").unwrap();
+    std::fs::write(root.join(".world/project.json"), r#"{"schema_version":1,"language_version":"1.10","required_features":["workspace.source_sets.v1"],"source_config":{"mode":"explicit","active":["world.wl"],"archived":["archive.wl"]}}"#).unwrap();
+    let project = Project::open(&root).unwrap();
+    assert!(project.documents.contains_key(&root.join("archive.wl")));
+    let location = super::location::project_location(
+        &project,
+        &root.join("archive.wl").to_string_lossy(),
+        Span::new(1, 7, 3),
+        Some(ProblemSourceRole::Target),
+        512,
+    );
+    assert_eq!(location.path.as_deref(), Some("archive.wl"));
+    assert_eq!(location.precision, ProblemPrecision::Unavailable);
+    assert_eq!(location.reason.as_deref(), Some("inactive_source"));
+    assert!(location.span.is_none() && location.byte_range.is_none());
+    assert_eq!(location.context.unwrap().role, ProblemSourceRole::Target);
+    std::fs::remove_dir_all(root).unwrap();
 }

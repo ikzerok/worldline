@@ -120,3 +120,19 @@ R3 冻结的 129 源码/3072 问题 fixture，热身后十次独立 debug CLI �
 source_conflict 或 external_observation_changed 的报告拒绝位置导航，仍可只读列出原因。
 不把任意 partial/truncated 一律禁用，不改变其他域的解释或已加载缓冲。这里不新增
 磁盘全文读取；编辑器保留既有 verify_source_navigation 与外部冲突检查。
+
+RPC 外壳补充：`project.problems` 的 1MiB 响应预算包含实际 JSON-RPC `jsonrpc`、原始
+`id` 的 JSON 编码、result/error 外壳及逐行传输的一个 LF。分页先扣除这部分开销；
+最终 dispatch/handle/run 再核验完整响应。不能仅计算 result Value 或裸 page。
+
+仅此方法：执行前按原 id 与规定的紧凑业务错误/协议错误外壳计算能否安全回显。
+若原 id 连该最小错误响应都容不下，零方法执行返回 `-32600`、`id:null`、
+`data:"request_id_exceeds_response_budget"`，明确请求标识超过响应预算；这是巨大 id
+不能被回显的局部例外，不截断或另造 id。能回显的 id 始终原样返回；过长业务详情
+变为紧凑 `BUDGET_EXCEEDED`，过长协议错误详情保留原协议 code（如 -32602），使用
+固定简短 message 与 null data。通知仍不产生响应。其他 RPC 方法及旧请求字段校验
+完全不变，不将同一查询重复执行以重试缩页。
+
+CLI 外壳补充：`wl problems --json` 的成功和失败输出均以完整 UTF-8 JSON 加一个 LF
+计入 1MiB。成功结果缩页时预留 LF；错误详情超限保留原 error.code 与退出码 2，
+仅把 message 换为“工程问题错误详情超过字节预算”。不改变其他 CLI 或人类文本输出。

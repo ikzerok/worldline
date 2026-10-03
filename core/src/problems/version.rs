@@ -18,7 +18,10 @@ impl Write for Digest {
     }
 }
 fn id(id: &str, version: &str) -> String {
-    match id.strip_prefix(version).filter(|suffix| suffix.starts_with(":p")) {
+    match id
+        .strip_prefix(version)
+        .filter(|suffix| suffix.starts_with(":p"))
+    {
         Some(suffix) => format!("0000000000000000{suffix}"),
         None => id.to_owned(),
     }
@@ -76,6 +79,7 @@ pub(crate) fn of(report: &ProblemsReport) -> String {
             &report.limits,
             &report.reasons,
         ),
-    ).expect("报告可序列化");
+    )
+    .expect("报告可序列化");
     format!("{:016x}", digest.0)
 }

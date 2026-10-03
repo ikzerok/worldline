@@ -34,11 +34,7 @@ pub(crate) fn project(
     if limit == 0 {
         return context;
     }
-    let boundaries: Vec<_> = source
-        .grapheme_indices(true)
-        .map(|(index, _)| index)
-        .chain(std::iter::once(source.len()))
-        .collect();
+    let boundaries = boundaries(source, hit.as_ref(), limit);
     let Some((start, end)) = window(&boundaries, hit.as_ref(), limit) else {
         return context;
     };
@@ -79,6 +75,39 @@ pub(crate) fn project(
     context
 }
 
+// Scan the prefix for correct grapheme state, but retain only the bounded window
+// plus its adjacent boundaries. Long documents never allocate a whole boundary index.
+fn boundaries(source: &str, hit: Option<&ProblemRange>, limit: usize) -> Vec<usize> {
+    let anchor = hit.map_or(0, |range| range.start);
+    let minimum = anchor.saturating_sub(limit);
+    let maximum = hit.map_or(limit, |range| {
+        range
+            .end
+            .min(anchor.saturating_add(limit))
+            .saturating_add(limit)
+    });
+    let mut previous = 0;
+    let mut result = Vec::new();
+    for boundary in source
+        .grapheme_indices(true)
+        .map(|(index, _)| index)
+        .chain(std::iter::once(source.len()))
+    {
+        if boundary < minimum {
+            previous = boundary;
+            continue;
+        }
+        if result.is_empty() && previous < boundary {
+            result.push(previous);
+        }
+        result.push(boundary);
+        if boundary > maximum {
+            break;
+        }
+    }
+    result
+}
+
 fn floor(boundaries: &[usize], point: usize) -> usize {
     boundaries[boundaries.partition_point(|boundary| *boundary <= point) - 1]
 }
@@ -96,6 +125,10 @@ fn window(
         return (end > 0 || length == 0).then_some((0, end));
     };
     let first = floor(boundaries, hit.start);
+    if hit.end - first > limit {
+        let end = floor(boundaries, first.saturating_add(limit).min(length));
+        return (end > hit.start).then_some((first, end));
+    }
     let last = ceil(boundaries, hit.end);
     if last - first > limit {
         let end = floor(boundaries, first.saturating_add(limit).min(length));

@@ -209,7 +209,10 @@ fn related_first_request_rejects_old_identity_after_same_ordinal_changes() {
 
 #[test]
 fn source_context_is_additive_bounded_and_keeps_tail_hit_in_cli_json() {
-    let source = format!("event start\n  {}{{missing}}\n  -> END\n", "长中文😀".repeat(400));
+    let source = format!(
+        "event start\n  {}{{missing}}\n  -> END\n",
+        "长中文😀".repeat(400)
+    );
     let fixture = Fixture::new(&source);
     for budget in [0, 1, 2, 3, 4, 511, 512] {
         let options = format!("{{\"max_excerpt_bytes\":{budget}}}");
@@ -218,8 +221,12 @@ fn source_context_is_additive_bounded_and_keeps_tail_hit_in_cli_json() {
         assert_eq!(response["ok"], true);
         assert_eq!(response["report"]["schema_version"], 1);
         assert!(response.to_string().len() <= 1024 * 1024);
-        let primary = &response["page"]["entries"].as_array().unwrap().iter()
-            .find(|entry| entry["code"] == "A102").unwrap()["primary"];
+        let primary = &response["page"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["code"] == "A102")
+            .unwrap()["primary"];
         assert_eq!(primary["precision"], "span");
         assert_eq!(primary["context"]["version"], 1);
         assert_eq!(primary["context"]["role"], "target");
@@ -231,8 +238,111 @@ fn source_context_is_additive_bounded_and_keeps_tail_hit_in_cli_json() {
         }
         if budget >= 7 {
             assert_eq!(primary["context"]["visibility"], "full");
-            assert!(primary["context"]["text"].as_str().unwrap().contains("missing"));
+            assert!(primary["context"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("missing"));
         }
     }
-    assert_eq!(std::fs::read_to_string(fixture.root.join("world.wl")).unwrap(), source);
+    assert_eq!(
+        std::fs::read_to_string(fixture.root.join("world.wl")).unwrap(),
+        source
+    );
+}
+
+#[test]
+fn cli_response_budget_counts_summary_and_context_without_skipping() {
+    let suffix = "x".repeat(8192);
+    let mut source = String::from("event start\n");
+    for index in 0..150 {
+        source.push_str(&format!("  {{missing_{index}_{suffix}}}\n"));
+    }
+    source.push_str("  -> END\n");
+    let fixture = Fixture::new(&source);
+    // Loaded empty sources add real coverage metadata without extra diagnostics.
+    for index in 0..256 {
+        std::fs::write(fixture.root.join(format!("context_{index:03}.wl")), "\n").unwrap();
+    }
+    let report = fixture.report();
+    let raw_page = report.query(&Default::default(), None, 200).unwrap();
+    assert!(serde_json::to_vec(&raw_page).unwrap().len() <= 1024 * 1024);
+    let (exit, mut response) = invoke(&fixture, &["--limit", "200"]);
+    assert_eq!(exit, 1);
+    assert_eq!(response["ok"], true);
+    let unbounded = json!({"ok":true,"report":response["report"],"page":&raw_page});
+    let metadata_bytes = serde_json::to_vec(&response["report"]).unwrap().len();
+    let page_bytes = serde_json::to_vec(&raw_page).unwrap().len();
+    eprintln!("CLI bounded context: metadata_bytes={metadata_bytes} raw_page_bytes={page_bytes} unbounded_response_bytes={}", unbounded.to_string().len());
+    assert!(unbounded.to_string().len() > 1024 * 1024);
+    assert!(response["page"]["entries"].as_array().unwrap().len() < raw_page.entries.len());
+    let mut ids = Vec::new();
+    loop {
+        assert!(response.to_string().len() < 1024 * 1024); // includes room for CLI newline
+        let entries = response["page"]["entries"].as_array().unwrap();
+        assert!(!entries.is_empty());
+        ids.extend(
+            entries
+                .iter()
+                .map(|entry| entry["id"].as_str().unwrap().to_owned()),
+        );
+        assert!(entries
+            .iter()
+            .all(|entry| entry["primary"]["context"]["version"] == 1));
+        if response["page"]["next_cursor"].is_null() {
+            break;
+        }
+        let cursor = response["page"]["next_cursor"].to_string();
+        response = invoke(&fixture, &["--limit", "200", "--cursor-json", &cursor]).1;
+        assert_eq!(response["ok"], true);
+    }
+    assert_eq!(
+        ids,
+        report
+            .entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn actual_cli_json_lines_bound_error_details_and_include_final_lf() {
+    let fixture = Fixture::new(GOOD);
+    let invoke_bytes = |extra: Vec<String>| {
+        let mut args = vec![
+            "problems".into(),
+            fixture.root.display().to_string(),
+            "--json".into(),
+        ];
+        args.extend(extra);
+        let mut output = Vec::new();
+        assert_eq!(
+            wl::run(&args, &mut output, &mut Cursor::new("")).unwrap(),
+            2
+        );
+        assert_eq!(output.last(), Some(&b'\n'));
+        assert!(output.len() <= 1024 * 1024);
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["error"]["code"], "INVALID_PARAMS");
+        (output, value)
+    };
+    let empty = json!({"ok":false,"error":{"code":"INVALID_PARAMS","message":"未知参数 --"}});
+    let exact_padding = 1024 * 1024 - (empty.to_string().len() + 1);
+    let (exact, value) = invoke_bytes(vec![format!("--{}", "x".repeat(exact_padding))]);
+    assert_eq!(exact.len(), 1024 * 1024);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("未知参数 --"));
+    let (bounded, value) = invoke_bytes(vec![format!("--{}", "x".repeat(exact_padding + 1))]);
+    assert!(bounded.len() < 1024);
+    assert_eq!(value["error"]["message"], "工程问题错误详情超过字节预算");
+    let mut query = json!({});
+    query
+        .as_object_mut()
+        .unwrap()
+        .insert("\\\"".repeat(512 * 1024), json!(true));
+    let (bounded, value) = invoke_bytes(vec!["--query-json".into(), query.to_string()]);
+    assert!(bounded.len() < 1024);
+    assert_eq!(value["error"]["message"], "工程问题错误详情超过字节预算");
 }

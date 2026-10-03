@@ -52,7 +52,9 @@ pub(crate) fn project_location(
         return location;
     }
     if project.documents.contains_key(path)
-        && project.source_selection().is_some_and(|selection| !selection.is_active(path))
+        && project
+            .source_selection()
+            .is_some_and(|selection| !selection.is_active(path))
     {
         location.reason = Some("inactive_source".into());
         return location;
@@ -72,8 +74,10 @@ pub(crate) fn project_location(
     };
     let exact = matches!(
         role,
-        ProblemSourceRole::Target | ProblemSourceRole::Expression
-            | ProblemSourceRole::Statement | ProblemSourceRole::Declaration
+        ProblemSourceRole::Target
+            | ProblemSourceRole::Expression
+            | ProblemSourceRole::Statement
+            | ProblemSourceRole::Declaration
     );
     let context = if exact {
         let Some(line) = ranges(text, span) else {
@@ -91,7 +95,12 @@ pub(crate) fn project_location(
             end: line.char_base + span.column as usize - 1 + span.length as usize,
         });
         super::context::project(
-            line.text, line.byte_base, line.char_base, Some(line.hit), role, excerpt_limit,
+            line.text,
+            line.byte_base,
+            line.char_base,
+            Some(line.hit),
+            role,
+            excerpt_limit,
         )
     } else {
         location.precision = ProblemPrecision::Document;
@@ -99,7 +108,8 @@ pub(crate) fn project_location(
         super::context::project(text, 0, 0, None, role, excerpt_limit)
     };
     location.excerpt = context.text.clone();
-    location.excerpt_truncated = context.prefix_clipped || context.suffix_clipped
+    location.excerpt_truncated = context.prefix_clipped
+        || context.suffix_clipped
         || context.visibility == ProblemContextVisibility::Partial;
     location.context = Some(context);
     location
@@ -130,19 +140,30 @@ fn ranges(text: &str, span: Span) -> Option<SourceLine<'_>> {
     } else {
         raw
     };
-    let boundaries: Vec<usize> = line
-        .char_indices()
-        .map(|(i, _)| i)
-        .chain(std::iter::once(line.len()))
-        .collect();
     let end_column = column.checked_add(length)?;
+    let mut start = None;
+    let mut end = None;
+    for (index, byte) in line
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(line.len()))
+        .enumerate()
+    {
+        if index == column {
+            start = Some(byte);
+        }
+        if index == end_column {
+            end = Some(byte);
+            break;
+        }
+    }
     Some(SourceLine {
         text: line,
         byte_base,
         char_base,
         hit: ProblemRange {
-            start: *boundaries.get(column)?,
-            end: *boundaries.get(end_column)?,
+            start: start?,
+            end: end?,
         },
     })
 }
@@ -177,18 +198,28 @@ impl Project {
                 .ok_or_else(|| ProblemsError::new("UNKNOWN_PROBLEM", "关联来源不存在或已截断"))?,
             None => &entry.primary,
         };
-        if location.path.as_deref().is_some_and(|path| !super::query::valid_path(path)) {
+        if location
+            .path
+            .as_deref()
+            .is_some_and(|path| !super::query::valid_path(path))
+        {
             return Err(ProblemsError::new(
                 "INVALID_QUERY",
                 "问题来源路径不在工作区内",
             ));
         }
         if report.schema_version != 1
-            || location.context.as_ref().is_none_or(|context| context.version != 1)
+            || location
+                .context
+                .as_ref()
+                .is_none_or(|context| context.version != 1)
             || report.report_version != super::version::of(report)
-            || report.reasons.iter().any(|reason| matches!(
-                reason.as_str(), "source_conflict" | "external_observation_changed"
-            ))
+            || report.reasons.iter().any(|reason| {
+                matches!(
+                    reason.as_str(),
+                    "source_conflict" | "external_observation_changed"
+                )
+            })
         {
             return Err(ProblemsError::new(
                 "STALE_REPORT",
