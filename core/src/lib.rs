@@ -55,6 +55,7 @@ pub mod timeline;
 mod topic_projection;
 pub mod vector_scene;
 pub mod wiki;
+pub mod world_context;
 mod workspace_documents;
 pub use workspace_documents::parse_unique_json;
 pub mod workspace_snapshot;
@@ -86,6 +87,11 @@ pub use relations::{
     RelationDraft, RelationPromotionPreview, RelationQueryContinuation, RelationQueryDirection,
     RelationQueryEdge, RelationQueryNode, RelationQueryOptions, RelationQueryResult,
     RelationTypeDraft, RelationTypeInfo, SemanticRelationInfo,
+};
+pub use world_context::{
+    WorldContextError, WorldContextIdentity, WorldContextKind, WorldContextLimit, WorldContextNode,
+    WorldContextOptions, WorldContextPrecision, WorldContextProvenance, WorldContextRecord,
+    WorldContextResult, WorldContextSource,
 };
 pub use topic_projection::{
     TopicProjectionContinuation, TopicProjectionEdge, TopicProjectionError, TopicProjectionHistory,
