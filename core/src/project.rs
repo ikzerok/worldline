@@ -92,6 +92,11 @@ pub struct TrackedFileState {
 }
 
 impl Project {
+    /// 查找身份沿用外部刷新代次；保存本身不使审阅过期。
+    pub(crate) fn search_refresh_generation(&self) -> u64 {
+        self.refresh_generation
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn validate_destination(&self, destination: &Path) -> Result<(), String> {
         if source_path(destination).starts_with(&self.root) {

@@ -1,0 +1,7 @@
+character scribe as "抄录员闻笙"
+  property role = "失踪的抄录员"
+  property last_seen = "逆潮前夜，旧灯塔"
+character patrol as "巡潮员沈砚"
+  property claim = "灯塔属于渔人会（转述父亲；未证实）"
+  relation scribe as "曾为她递信"
+alias character patrol as "小沈"
