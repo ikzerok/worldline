@@ -24,6 +24,8 @@ use worldline_core::{
 use worldline_runtime::{ReplayBudget, ReplayCancellation, ReplayTrace, Story};
 #[path = "lib/authoring_intents.rs"]
 mod authoring_intents;
+#[path = "lib/catalog_import.rs"]
+mod catalog_import;
 #[path = "lib/catalog.rs"]
 mod catalog;
 #[path = "lib/entities.rs"]
@@ -219,6 +221,7 @@ impl Server {
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
                     "authoring.problems.v1",
+                    "catalog_import_v1",
                     worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
@@ -309,6 +312,9 @@ impl Server {
                 }
                 Ok(json!({ "closed": true }))
             }
+            "catalog.import.preview" => self.catalog_import(params, false),
+            "catalog.import.apply" => self.catalog_import(params, true),
+            "project.save" => self.project_save(params),
             "project.open" => self.project_open(params),
             "project.analyze" => self.project_analyze(params),
             "project.problems" => self.project_problems(params, problems::MAX_RESPONSE_BYTES),

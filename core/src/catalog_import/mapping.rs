@@ -1,6 +1,18 @@
 use super::*;
 use std::collections::BTreeSet;
 
+pub(super) struct Context {
+    options: crate::CompileOptions,
+    entities: bool,
+}
+impl Context {
+    pub fn new(project: &crate::project::Project) -> Self {
+        let entities = project.authoring_document(&crate::workspace_documents::manifest_path(&project.root)).ok().is_some_and(|doc| {
+            crate::workspace_documents::parse_registry(&project.root, doc.bytes()).required_features.contains("content.entities.v1")
+        });
+        Self { options: project.compile_options(), entities }
+    }
+}
 pub(super) struct MappedRow {
     pub target: TargetRef,
     pub values: Vec<(String, String, PropertyValue)>,
@@ -45,12 +57,20 @@ pub(super) fn validate(columns: &[CatalogColumnMapping], count: usize) -> Result
     }
     Ok(())
 }
+/// 即使其它列有错误，已验证的身份仍可用于完整逐行预览与重复键检查。
+pub(super) fn identity(record: &CatalogCsvRow, columns: &[CatalogColumnMapping]) -> Option<TargetRef> {
+    let cell = |field| columns.iter().find(|map| map.field == field).and_then(|map| record.cells.get(map.column));
+    let kind = cell(CatalogImportField::Kind)?;
+    let id = cell(CatalogImportField::Id)?;
+    if !matches!(kind.as_str(), "character" | "entity") || crate::authoring::identifier(id).is_err() { return None; }
+    Some(TargetRef::new(kind,id))
+}
 pub(super) fn row(
     record: &CatalogCsvRow,
     row: usize,
     columns: &[CatalogColumnMapping],
-    project: &crate::project::Project,
-) -> Result<MappedRow, CatalogImportDiagnostic> {
+    context: &Context,
+) -> Result<MappedRow, Vec<CatalogImportDiagnostic>> {
     let get = |field: CatalogImportField| {
         let map = columns.iter().find(|map| map.field == field).expect("validated identity mapping");
         (&record.cells[map.column], map.column)
@@ -59,26 +79,24 @@ pub(super) fn row(
     let (id, id_col) = get(CatalogImportField::Id);
     let error = |code: &str, col: usize, message: String| CatalogImportDiagnostic::new(code, message).at(row, col+1, record.line);
     if !matches!(kind.as_str(), "character" | "entity") {
-        return Err(error("IMPORT_KIND", kind_col, "kind只能是character或entity".into()));
+        return Err(vec![error("IMPORT_KIND", kind_col, "kind只能是character或entity".into())]);
     }
-    crate::authoring::identifier(id).map_err(|message| error("IMPORT_ID", id_col, message))?;
+    crate::authoring::identifier(id).map_err(|message| vec![error("IMPORT_ID", id_col, message)])?;
     let target = TargetRef::new(kind, id);
     if kind == "entity" {
-        let manifest = project.authoring_document(&crate::workspace_documents::manifest_path(&project.root));
-        let enabled = manifest.ok().is_some_and(|doc| {
-            crate::workspace_documents::parse_registry(&project.root, doc.bytes()).required_features.contains("content.entities.v1")
-        });
-        if !project.language_version_kind().supports_entities() || !enabled {
-            return Err(error("IMPORT_CAPABILITY", kind_col, "entity需要显式语言1.10+与content.entities.v1；请先启用能力".into()));
+        if !context.options.language_version.supports_entities() || !context.entities {
+            return Err(vec![error("IMPORT_CAPABILITY", kind_col, "entity需要显式语言1.10+与content.entities.v1；请先启用能力".into())]);
         }
     }
     let mut values = Vec::new();
+    let mut errors = Vec::new();
     for map in columns {
         if matches!(map.field, CatalogImportField::Kind | CatalogImportField::Id | CatalogImportField::Ignore) { continue; }
+        let parsed = (|| -> Result<Option<(String, String, PropertyValue)>, CatalogImportDiagnostic> {
         let cell = &record.cells[map.column];
         if cell.is_empty() {
             match map.blank {
-                CatalogBlankPolicy::Keep => continue,
+                CatalogBlankPolicy::Keep => return Ok(None),
                 CatalogBlankPolicy::Error => return Err(error("IMPORT_BLANK", map.column, "空单元格需要明确选择保留或空文本策略".into())),
                 CatalogBlankPolicy::EmptyText => {}
             }
@@ -102,10 +120,10 @@ pub(super) fn row(
         };
         let value = parse_value(cell, &value_type).map_err(|message| error("IMPORT_VALUE", map.column, message))?;
         if let CatalogImportType::Ref { target_kind } = &value_type {
-            let options = project.compile_options();
-            if !options.object_refs || !project.language_version_kind().supports_entities()
+            let options = context.options;
+            if !options.object_refs || !context.options.language_version.supports_entities()
                 || ((kind == "character" || target_kind == "character")
-                    && (!options.character_refs || !project.language_version_kind().supports_language_113())) {
+                    && (!options.character_refs || !context.options.language_version.supports_language_113())) {
                 return Err(error("IMPORT_CAPABILITY", map.column, "ref缺少对应语言或content.object_refs.v1/content.character_refs.v1能力；不会自动升级".into()));
             }
         }
@@ -115,9 +133,11 @@ pub(super) fn row(
             CatalogImportType::Bool => "bool".into(),
             CatalogImportType::Ref { target_kind } => format!("ref:{target_kind}"),
         };
-        values.push((field, label, value));
+        Ok(Some((field, label, value)))
+        })();
+        match parsed { Ok(Some(value)) => values.push(value), Ok(None) => {}, Err(error) => errors.push(error) }
     }
-    Ok(MappedRow { target, values })
+    if errors.is_empty() { Ok(MappedRow { target, values }) } else { Err(errors) }
 }
 fn parse_value(cell: &str, kind: &CatalogImportType) -> Result<PropertyValue, String> {
     Ok(match kind {

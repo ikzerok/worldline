@@ -4,9 +4,9 @@
 
 ## 输入与预算
 
-UTF-8 逗号 CSV，允许起始 BOM、LF/CRLF、双引号包围、双写引号及引号内逗号和换行。不猜编码、分隔符或类型。不允许空/重复表头、非矩形记录、未闭合引号、引号外多余字符或孤立 CR。逻辑行号包含表头（表头=1），column 为 1 起CSV字段列序号（不是物理字符列）；line 为实际物理行号。引号内 CRLF 明确规范化为 LF，并在预览列出 normalization_count；原工程未触及字节和原有文件换行不变。空白长度必须为零才是空单元格，空格不 trim。
+UTF-8 逗号 CSV，允许起始 BOM、LF/CRLF、双引号包围、双写引号及引号内逗号和换行。不猜编码、分隔符或类型。不允许空/重复表头、非矩形记录、未闭合引号、引号外多余字符或孤立 CR。逻辑行号包含表头（表头=1），column 为 1 起CSV字段列序号（不是物理字符列）；数据记录/类型诊断的 line 为该CSV记录起始物理行号（多行单元格之后仍指记录起点）；CSV语法诊断的 line 为发现错误的物理行号。引号内 CRLF 明确规范化为 LF，并在预览列出 normalization_count；原工程未触及字节和原有文件换行不变。空白长度必须为零才是空单元格，空格不 trim。
 
-固定上限：原 CSV 2 MiB、500 数据行、64 列、每格解码 UTF-8 64 KiB；错误最多返回100项但 error_count 统计全部，任何错误均阻断。完整逐行字段预览最多4 MiB，超限拒绝，绝不截断后允许应用。工程沿源码组织既有4096文件/64 MiB源码及已登记文档预算。
+固定上限：原 CSV 2 MiB、500 数据行、64 列、每格解码 UTF-8 64 KiB；错误最多返回100项但 error_count 统计全部，任何错误均阻断。完整逐行字段预览最多4 MiB，超限拒绝，绝不截断后允许应用。工程沿源码组织既有4096文件/64 MiB源码及已登记文档预算。CLI为保证加载阶段不恢复磁盘，采用既有只读快照加载器：完整工作区额外限制4096文件/合计64 MiB。
 
 每列必须恰好显式映射或 Ignore；恰好一个 Kind 和 Id，重复目标字段拒绝。未知结构字段、类型、DTO版本/JSON字段拒绝。所有 JSON 入口拒绝重复键。字段支持 Display、EntityType、Description、Property{key,value_type}；后两内置字段仅 entity，character 非空输入报错，空且 Keep 可跳过。Property 类型为 Text、Number、Bool、Ref{target_kind}。number 使用 JSON 十进制数字语法、有限 f64，整数不得超过可精确整数区间±9007199254740991；bool 只认 true/false。ref 单元格仅稳定目标 ID，目标 kind 由列映射明确指定。
 
@@ -46,6 +46,10 @@ apply 从相同快照请求重新生成整个计划，比对摘要，最后重�
 
 ## CLI 与 RPC
 
-CLI：wl catalog-import preview|apply <project> --request-json <DTO> [--csv <file>] [--plan-digest <digest>] [--save] [--json]。--csv 在 CLI 有界读取并验证 UTF-8后替换 DTO 的 csv；core不访问外部CSV路径。apply默认只报告内存候选，短命CLI应显式--save完成持久化；--save仅apply可用，保存使用既有事务。建议 CLI 使用preview后相同CSV快照与摘要进行apply --save。
+CLI：wl catalog-import preview|apply <project> --request-json <DTO> [--csv <file>] [--plan-digest <digest>] [--save] [--json]。--csv 在 CLI 有界读取并验证 UTF-8后替换 DTO 的 csv；core不访问外部CSV路径。apply默认只报告内存候选，结果明确 saved:false 和进程退出将丢弃候选的 notice；短命CLI应显式--save完成持久化；--save仅apply可用，保存使用既有事务。建议 CLI 使用preview后相同CSV快照与摘要进行apply --save。
+
+CLI加载阶段拒绝未完成journal，不运行自动恢复；apply只有显式--save才写盘。
+
+RPC另提供 project.save {project_id,expected_baseline} 显式保存当前缓冲，失败保留内存并复用保存事务恢复。
 
 RPC：catalog.import.preview / catalog.import.apply，参数 {project_id, request}，apply另含plan_digest；均只修改已打开Project内存，后续project.save显式保存。机器能力为 catalog_import_v1。结果成功 {ok:true,plan,...}；数据、候选、陈旧、冲突或能力失败为 {ok:false,error:{code,message}}，协议结构错误/未知project_id才用JSON-RPC error。所有端共用上述core DTO及结果，协议版本仍1。

@@ -63,17 +63,20 @@ pub enum CatalogBlankPolicy {
     EmptyText,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogCsvTable {
     pub headers: Vec<String>,
     pub rows: Vec<CatalogCsvRow>,
     pub normalization_count: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogCsvRow {
     pub cells: Vec<String>,
     pub line: u32,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogImportDiagnostic {
     pub code: String,
     pub row: Option<usize>,
@@ -82,6 +85,7 @@ pub struct CatalogImportDiagnostic {
     pub message: String,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogImportFieldChange {
     pub field: String,
     pub value_type: String,
@@ -89,6 +93,7 @@ pub struct CatalogImportFieldChange {
     pub after: Option<PropertyValue>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogImportRow {
     pub row: usize,
     pub line: u32,
@@ -98,6 +103,7 @@ pub struct CatalogImportRow {
     pub fields: Vec<CatalogImportFieldChange>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogImportPlan {
     pub schema_version: u32,
     pub baseline: String,
@@ -115,6 +121,7 @@ pub struct CatalogImportPlan {
     pub runtime_fingerprint_after: Option<u64>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogImportResult {
     pub plan: CatalogImportPlan,
     pub changed_files: Vec<PathBuf>,

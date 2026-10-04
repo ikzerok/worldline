@@ -305,6 +305,8 @@ impl CompileSnapshot {
 
 #[path = "lib/authoring_intent.rs"]
 mod authoring_intent;
+#[path = "lib/catalog_import.rs"]
+mod catalog_import;
 #[path = "lib/catalog.rs"]
 mod catalog;
 #[path = "lib/catalog_query.rs"]
@@ -389,6 +391,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "catalog" => catalog::cmd_catalog(&catalog::parse_catalog_args(rest)?, out),
         "catalog-query" => catalog_query::cmd_catalog_query(&catalog_query::parse_catalog_query_args(rest)?, out),
+        "catalog-import" => catalog_import::command(rest, out),
         "source-edit" => source_edit::command(rest, out),
         "source-lifecycle" => source_lifecycle::command(rest, out),
         "schema-index" => source_edit::schema_index(rest, out),
@@ -408,7 +411,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         "route-compare" => route_comparison::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / graph / timeline / catalog / catalog-query / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }
