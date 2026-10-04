@@ -35,7 +35,7 @@ fn nested_alternatives_preserve_real_headers_boundaries_and_utf8() {
         .find(|node| node.kind == ReviewKind::If)
         .unwrap();
     assert_eq!(condition.children.len(), 3);
-    assert_eq!(condition.children[1].label, "else if");
+    assert_eq!(condition.children[1].label, "否则如果（else if）");
     assert_eq!(condition.children[1].condition.as_deref(), Some("not gate"));
     assert_eq!(condition.children[1].source.as_ref().unwrap().line, 11);
     assert_eq!(condition.children[2].source.as_ref().unwrap().line, 13);
@@ -138,7 +138,8 @@ fn full_snapshot_revalidation_rejects_comments_bad_drafts_and_forged_locations()
     let changed = compiled(&format!("// 新行\n{source}"));
     assert_eq!(
         validate_review_source(&changed, &projection, location)
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "stale_review"
     );
@@ -183,7 +184,8 @@ fn output_budgets_cover_metadata_escaping_and_node_count_without_truncation() {
     ));
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );
@@ -191,17 +193,25 @@ fn output_budgets_cover_metadata_escaping_and_node_count_without_truncation() {
     let result = compiled(&source);
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );
-    let escaped = compiled(&format!(
+    let below = compiled(&format!(
         "event start\n  {}\n  -> END\n",
         "\\t".repeat(200_000)
     ));
+    let actual_bytes = serde_json::to_vec(&review(&below)).unwrap().len();
+    assert!(actual_bytes > 1_000_000 && actual_bytes <= MAX_REVIEW_JSON_BYTES);
+    let escaped = compiled(&format!(
+        "event start\n  {}\n  -> END\n",
+        "\\t".repeat(250_000)
+    ));
     assert_eq!(
         review_projection(&escaped, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );
@@ -327,7 +337,8 @@ fn empty_invalid_branch_and_missing_provenance_never_claim_complete() {
     result.program.source_provenance.statement_origins.clear();
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "source_unavailable"
     );
@@ -343,7 +354,8 @@ fn depth_source_input_and_long_file_names_are_bounded() {
     let result = compiled(&source);
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );
@@ -353,7 +365,8 @@ fn depth_source_input_and_long_file_names_are_bounded() {
     assert!(!result.has_errors());
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );
@@ -363,7 +376,8 @@ fn depth_source_input_and_long_file_names_are_bounded() {
         .insert(PathBuf::from("large.wl"), " ".repeat(MAX_SOURCE_BYTES + 1));
     assert_eq!(
         review_projection(&result, &TargetRef::new("event", "start"))
-            .unwrap_err()
+            .map(|_| ())
+            .expect_err("应整体拒绝该审稿或来源")
             .code,
         "review_limit"
     );

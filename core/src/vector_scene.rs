@@ -109,7 +109,7 @@ pub struct SceneNode {
     pub visible: bool,
     #[serde(default)]
     pub locked: bool,
-    /// 根 SVG viewport 的局部 [x,y,width,height] 矩形裁剪；只允许导入根组。
+    /// 根 SVG viewport 的局部 `[x,y,width,height]` 矩形裁剪；只允许导入根组。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip_rect: Option<[f64; 4]>,
     #[serde(default)]
@@ -331,7 +331,7 @@ pub struct ScenePrimitive {
     pub text: Vec<TextRun>,
     pub text_origin: [f64; 2],
     pub transform: Affine,
-    /// 场景坐标包围盒 [min_x,min_y,max_x,max_y]。
+    /// 场景坐标包围盒 `[min_x,min_y,max_x,max_y]`。
     pub bounds: [f64; 4],
     /// 祖先 viewport 裁剪及其累计矩阵，供命中检测消费同一核心投影。
     pub clips: Vec<SceneClip>,

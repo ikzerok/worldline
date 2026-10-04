@@ -97,4 +97,5 @@ fn fits(value: &impl serde::Serialize, budget: usize) -> bool {
 }
 
 #[cfg(test)]
+#[path = "manuscript_review/tests.rs"]
 mod tests;

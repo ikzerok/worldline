@@ -11,11 +11,15 @@ pub(super) struct Builder<'a> {
     bytes: usize,
 }
 impl<'a> Builder<'a> {
-    pub fn new(result: &'a CompileResult, target: &'a TargetRef) -> Self {
+    pub fn new(
+        result: &'a CompileResult,
+        target: &'a TargetRef,
+        snapshot: &'a ReviewSnapshot,
+    ) -> Self {
         Self {
             result,
             target,
-            sources: source::Sources::new(result),
+            sources: source::Sources::new(result, &snapshot.offsets),
             count: 0,
             bytes: 0,
             locations: Vec::new(),
@@ -273,7 +277,7 @@ impl<'a> Builder<'a> {
             }
             Stmt::If(branches) => {
                 node.kind = ReviewKind::If;
-                node.label = "条件分组 · 互斥分支".into();
+                node.label = "条件分组 · 按次序择一".into();
                 node.end_label = Some("条件组结束 · 仅控制流继续时汇合至下文".into());
                 self.finish(&node, depth)?;
                 for (index, (condition, body)) in branches.branches.iter().enumerate() {
@@ -286,11 +290,11 @@ impl<'a> Builder<'a> {
                         .ok_or_else(ReviewError::source)?;
                     let source = self.sources.location(self.target, physical, *span)?;
                     let label = if index == 0 {
-                        "if"
+                        "如果（if）"
                     } else if condition.is_some() {
-                        "else if"
+                        "否则如果（else if）"
                     } else {
-                        "else"
+                        "否则（else · 此前条件均不成立）"
                     };
                     let mut branch = ReviewNode::new(ReviewKind::Branch, label, Some(source));
                     if condition.is_some() {

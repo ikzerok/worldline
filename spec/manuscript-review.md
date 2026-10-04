@@ -31,3 +31,9 @@ ReviewSource：target（本次审稿根目标）、file、line（1-based）、co
 RPC `manuscript.review`：params 为 `{project_id,target}`，对已打开 Project 使用 `compile_read_only`，返回同一 `{ok,review,error}`。合法请求的编译/目标/预算失败为 ok:false；协议参数错误仍用 JSON-RPC error。响应业务 DTO 最大 1 MiB，外壳另留 4 KiB，JSON编码后的请求标识限制为 3072 字节；超限使用 null id 的协议错误。目标JSON限制4096字节。最终再检查整条JSON响应上限（含换行），超限不得突破响应预算。
 
 ReviewError 为 `{code,message}`，中文 message。失败没有可导航投影；成功完整性只涵盖所选目标的静态原文，不包含被调用片段展开、全局资料或实际运行结果。
+
+## 导航时的工作区观察守卫
+
+`Project::verify_review_navigation(&self) -> Result<(), String>` 必须在点击审稿来源时先调用一次，再编译全部当前 WritingBuffer 并调用 `validate_review_source`。前者使用一次有界源码库存枚举，拒绝尚未载入的新增 `.wl`、新增/修改/删除的工作区清单、已跟踪源码/登记文档保存基线变化、链接边界问题或未决保存事务；每个已跟踪文件只读取一次基线，不逐源码重复枚举目录。限制沿用源码生命周期库存：4096文件、源码/登记文档分别64MiB，单基线64MiB/总基线256MiB。
+
+校验磁盘与已保存基线，而不是与当前缓冲比较，因此本地已应用但未保存的稿件、未应用 WritingBuffer 和根目录尚不存在的新工程均不需要先保存。守卫不刷新、恢复、编译、应用或保存；失败保留当前输入，要求作者显式刷新并解决冲突。WASM 只观察用户已导入的 file_access 快照，不能发现未重新导入的宿主磁盘变化，也不声称实时磁盘检查。此专用守卫不更改旧 `verify_source_navigation` 的全局语义。

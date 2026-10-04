@@ -3,19 +3,10 @@ use crate::Span;
 
 pub(super) struct Sources<'a> {
     result: &'a CompileResult,
-    offsets: BTreeMap<String, Vec<usize>>,
+    offsets: &'a BTreeMap<String, Vec<usize>>,
 }
 impl<'a> Sources<'a> {
-    pub fn new(result: &'a CompileResult) -> Self {
-        let offsets = result
-            .sources
-            .iter()
-            .map(|(path, text)| {
-                let mut offsets = vec![0];
-                offsets.extend(text.match_indices('\n').map(|(index, _)| index + 1));
-                (path.to_string_lossy().into_owned(), offsets)
-            })
-            .collect();
+    pub fn new(result: &'a CompileResult, offsets: &'a BTreeMap<String, Vec<usize>>) -> Self {
         Self { result, offsets }
     }
     pub fn location(
@@ -97,4 +88,17 @@ pub(super) fn snapshot(result: &CompileResult) -> String {
         mix(text.as_bytes());
     }
     format!("review-{hash:016x}")
+}
+
+/// 整书共享物理行索引，不为每章节重扫全部源码。
+pub(super) fn offsets(result: &CompileResult) -> BTreeMap<String, Vec<usize>> {
+    result
+        .sources
+        .iter()
+        .map(|(path, text)| {
+            let mut offsets = vec![0];
+            offsets.extend(text.match_indices('\n').map(|(index, _)| index + 1));
+            (path.to_string_lossy().into_owned(), offsets)
+        })
+        .collect()
 }

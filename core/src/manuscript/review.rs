@@ -134,6 +134,7 @@ pub struct ReviewProjection {
 /// 一次编译的完整原文共享绑定；整书各章只拷贝 Arc。
 #[derive(Debug, Clone)]
 pub struct ReviewSnapshot {
+    offsets: std::sync::Arc<BTreeMap<String, Vec<usize>>>,
     sources: std::sync::Arc<BTreeMap<PathBuf, String>>,
     options: CompileOptions,
     marker: String,
@@ -154,6 +155,7 @@ impl ReviewSnapshot {
             return Err(ReviewError::limit());
         }
         Ok(Self {
+            offsets: std::sync::Arc::new(source::offsets(result)),
             sources: std::sync::Arc::new(result.sources.clone()),
             options: result.options,
             marker: source::snapshot(result),
@@ -181,7 +183,7 @@ pub fn review_projection_with_snapshot(
     {
         return Err(ReviewError::new("stale_review", "审稿源快照已过期"));
     }
-    let mut builder = build::Builder::new(result, target);
+    let mut builder = build::Builder::new(result, target, snapshot);
     let nodes = builder.target()?;
     let projection = ReviewProjection {
         schema_version: 1,
