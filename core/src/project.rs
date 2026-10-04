@@ -10,6 +10,7 @@ mod conflicts;
 mod document_buffers;
 mod export;
 mod lifecycle;
+mod read_only;
 mod save;
 mod snapshot;
 mod source_lifecycle;

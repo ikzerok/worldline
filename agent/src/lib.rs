@@ -50,6 +50,8 @@ mod relation_promotions;
 mod relation_queries;
 #[path = "lib/relation_types.rs"]
 mod relation_types;
+#[path = "lib/route_comparison.rs"]
+mod route_comparison;
 #[path = "lib/scene.rs"]
 mod scene;
 #[path = "lib/sessions.rs"]
@@ -182,6 +184,9 @@ impl Server {
                 json!("消息必须是 JSON 对象"),
             ));
         }
+        if msg.get("method").and_then(Value::as_str) == Some("project.compare_routes") {
+            return route_comparison::dispatch(self, &msg);
+        }
         if msg.get("method").and_then(Value::as_str) == Some("project.problems") {
             return problems::dispatch_rpc(self, &msg);
         }
@@ -217,6 +222,7 @@ impl Server {
                     worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
+                    worldline_runtime::ROUTE_COMPARISON_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,
                     worldline_core::world_context::WORLD_CONTEXT_CAPABILITY,
                     worldline_core::world_context::TEMPORAL_EXPLANATIONS_CAPABILITY,

@@ -123,14 +123,18 @@ impl<'p> Story<'p> {
                 {
                     return Err(RunError::new("动态状态操作包含未知身份"));
                 }
-                self.apply_change(&Change {
-                    id,
-                    tags,
-                    kind: c.kind,
-                    note: None,
-                    to_storyline: None,
-                    loc: c.loc,
-                })?;
+                let source = self.action_source(c.kind, c.loc.line);
+                self.apply_change(
+                    &Change {
+                        id,
+                        tags,
+                        kind: c.kind,
+                        note: None,
+                        to_storyline: None,
+                        loc: c.loc,
+                    },
+                    source,
+                )?;
                 self.frames[fi].idx += 1;
             }
             _ => unreachable!(),

@@ -9,6 +9,7 @@ use worldline_core::Analysis;
 
 mod bounded;
 mod choices;
+mod comparison_boundary;
 mod effects;
 mod evidence;
 mod execution;
@@ -21,6 +22,8 @@ mod persistence;
 mod random;
 mod replay;
 mod replay_runner;
+mod route_comparison;
+mod state_actions;
 mod util;
 mod variable_validation;
 
@@ -40,6 +43,8 @@ pub use replay::{
     ReplayResult, ReplayStatus, ReplayStep, ReplayTrace, REPLAY_SCHEMA_VERSION,
 };
 pub use replay_runner::ReplaySession;
+pub use route_comparison::*;
+pub use state_actions::{StateActionEvidence, StateActionRecord};
 use util::{expression_source, initial_states, normalize_seed, seed_now};
 
 // ---------------------------------------------------------------------------
@@ -74,6 +79,8 @@ struct Pause {
 pub struct Story<'p> {
     program: &'p Program,
     symbols: &'p worldline_core::Symbols,
+    catalog: &'p worldline_core::Catalog,
+    state_actions: state_actions::StateActionCapture,
     vars: HashMap<String, Value>,
     visits: HashMap<String, u32>,
     turns: u32,
@@ -130,6 +137,8 @@ impl<'p> Story<'p> {
         let mut story = Story {
             program,
             symbols: &analysis.symbols,
+            catalog: &analysis.catalog,
+            state_actions: Default::default(),
             vars: HashMap::new(),
             visits: HashMap::new(),
             turns: 0,
