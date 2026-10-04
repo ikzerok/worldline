@@ -7,6 +7,12 @@ mod commands;
 mod index;
 mod organization;
 mod reading;
+mod review;
+pub use review::{
+    review_projection, review_projection_with_snapshot, validate_review_source, ReviewError,
+    ReviewKind, ReviewNode, ReviewPart, ReviewProjection, ReviewSnapshot, ReviewSource,
+    ReviewSpeaker, MAX_REVIEW_JSON_BYTES,
+};
 #[cfg(test)]
 mod reading_tests;
 mod source;

@@ -32,6 +32,8 @@ mod catalog_import;
 mod entities;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/manuscript_review.rs"]
+mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
 #[path = "lib/problems.rs"]
@@ -185,6 +187,9 @@ impl Server {
                 "无效请求",
                 json!("消息必须是 JSON 对象"),
             ));
+        }
+        if msg.get("method").and_then(Value::as_str) == Some("manuscript.review") {
+            return manuscript_review::dispatch(self, &msg);
         }
         if msg.get("method").and_then(Value::as_str) == Some("project.compare_routes") {
             return route_comparison::dispatch(self, &msg);

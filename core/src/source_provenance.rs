@@ -97,6 +97,8 @@ pub(crate) struct StatementSource {
 pub struct SourceProvenance {
     pub(crate) statement_origins: BTreeMap<origin::StatementOriginKey, Option<String>>,
     pub(crate) statements: BTreeMap<(String, u32), StatementSource>,
+    /// 正式 parser 消费的 if/else if/else 头，键为首 if 文件/行及分支序号。
+    pub(crate) branch_headers: BTreeMap<(String, u32, usize), (String, Span)>,
     pub(crate) expressions: BTreeMap<(String, u32, ExpressionSlot), ExpressionSource>,
 }
 

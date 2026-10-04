@@ -315,6 +315,8 @@ mod catalog_query;
 mod entity;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/manuscript_review.rs"]
+mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
 #[path = "lib/parse_files.rs"]
@@ -358,6 +360,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     let rest = &args[1..];
     match cmd.as_str() {
         "problems" => problems::command(rest, out),
+        "manuscript-review" => manuscript_review::command(rest, out),
         "scene" => scene::command(rest, out),
         "world-context" => world_context::command(rest, out, "context"),
         "world-object" => world_context::command(rest, out, "object"),
@@ -411,7 +414,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         "route-compare" => route_comparison::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }
