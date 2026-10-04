@@ -122,14 +122,14 @@ pub(super) fn row(
     crate::authoring::identifier(id)
         .map_err(|message| vec![error("IMPORT_ID", id_col, message)])?;
     let target = TargetRef::new(kind, id);
-    if kind == "entity" {
-        if !context.options.language_version.supports_entities() || !context.entities {
-            return Err(vec![error(
-                "IMPORT_CAPABILITY",
-                kind_col,
-                "entity需要显式语言1.10+与content.entities.v1；请先启用能力".into(),
-            )]);
-        }
+    if kind == "entity"
+        && (!context.options.language_version.supports_entities() || !context.entities)
+    {
+        return Err(vec![error(
+            "IMPORT_CAPABILITY",
+            kind_col,
+            "entity需要显式语言1.10+与content.entities.v1；请先启用能力".into(),
+        )]);
     }
     let mut values = Vec::new();
     let mut errors = Vec::new();

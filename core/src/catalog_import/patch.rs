@@ -186,7 +186,7 @@ pub(super) fn prepare<'a>(
         let replacement = crate::authoring::property_source(value);
         match field.field.as_str() {
             "display" | "entity_type" => {
-                let tokens = tokens(header, &clean_lines);
+                let tokens = tokens(header, clean_lines);
                 let token = if field.field == "entity_type" {
                     tokens.get(3)
                 } else {
@@ -197,10 +197,10 @@ pub(super) fn prepare<'a>(
                     })
                 };
                 let range = if let Some(token) = token {
-                    range(header, token.range.clone(), &raw_lines)?
+                    range(header, token.range.clone(), raw_lines)?
                 } else {
                     let last = tokens.last().ok_or("声明token缺失")?;
-                    let at = range(header, last.range.clone(), &raw_lines)?.end;
+                    let at = range(header, last.range.clone(), raw_lines)?.end;
                     at..at
                 };
                 let replacement = if field.field == "entity_type" {
@@ -232,13 +232,13 @@ pub(super) fn prepare<'a>(
                         (line.source.base + line.source.value) as usize
                             ..clean_line.trim_end().chars().count()
                     } else {
-                        tokens(line, &clean_lines)
+                        tokens(line, clean_lines)
                             .get(1)
                             .ok_or("description值token缺失")?
                             .range
                             .clone()
                     };
-                    let byte_range = range(line, char_range.clone(), &raw_lines)?;
+                    let byte_range = range(line, char_range.clone(), raw_lines)?;
                     let raw_value = &source[byte_range.clone()];
                     let clean_value: String = clean_line
                         .chars()
