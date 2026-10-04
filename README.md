@@ -1,12 +1,15 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 工具链。0.20.0 新增同一当前稿的真实路线对照与状态动作来源：core/runtime 生成有界结果，CLI/RPC 共用真实选择、实际停止值和验证来源。默认语言仍为1.9，最高既有显式版本1.13；旧作品不自动升级。
+面向世界设定与分支叙事创作的 Rust 工具链。0.21.0 新增世界资料批量导入与修订：CSV 列显式映射，由 core 按完整类型与稳定 ID 生成字段级差异、整批校验和一次内存事务。CLI/RPC 使用同一契约，语言源码仍是唯一真源。默认语言仍为1.9，最高既有显式版本1.13；旧作品不自动升级。
 
-使用见 [路线对照](docs/route-comparison.md)，精确语义与限额见 [正式契约](spec/route-comparison.md)；完整变更见 [CHANGELOG](CHANGELOG.md)。是否已公开发行以正式 Release 记录为准，工作分支保存不代表已发布。
+使用见[资料表导入](docs/catalog-import.md)与[可运行示例](examples/catalog-import/README.md)，精确预算、空值、拒绝和保存规则见[正式契约](spec/catalog-import.md)。实际公开发行以正式 Release 记录为准，工作分支保存不代表已发布。
 
-升级边界：0.19 trace/checkpoint 继续被0.20的 runtime_version 守卫拒绝，应重新录制，不修改版本字段绕过。普通 Story Save 沿既有格式、能力与指纹规则，不能由 trace 的拒绝推定普通 Save 也不兼容；本轮具体样本与平台结果由验收记录说明。请保留完整工程与原记录。
+升级边界：0.20 trace/checkpoint 继续被0.21的 runtime_version 守卫拒绝，应重新录制，不修改版本字段绕过。普通 Story Save 仍按既有格式、能力与运行指纹校验。资料导入预览明确显示真实指纹影响；人物显示名或标量属性改变可能使旧存档不兼容。请保留完整工程与原记录。
 
 ## 使用入口
+
+- [世界资料批量导入与修订](docs/catalog-import.md)：UTF-8 CSV → 显式映射 → 逐行差异 → 整批应用/撤销 → 保存与幂等重导入
+
 
 - [真实路线对照](docs/route-comparison.md)：两个当前稿实际结果、分层覆盖、状态动作和来源
 

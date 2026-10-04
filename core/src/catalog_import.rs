@@ -5,15 +5,18 @@ mod patch;
 mod planning;
 #[cfg(test)]
 mod tests;
+mod wire;
 
-pub use csv::parse_catalog_csv;
 use crate::{ast::PropertyValue, catalog::TargetRef};
+pub use csv::parse_catalog_csv;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const MAX_CSV_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_ROWS: usize = 500;
 pub const MAX_COLUMNS: usize = 64;
+pub const MAX_PROPERTY_KEY_BYTES: usize = 256;
+pub const MAX_DESTINATION_BYTES: usize = 1024;
 pub const MAX_CELL_BYTES: usize = 64 * 1024;
 pub const MAX_DIAGNOSTICS: usize = 100;
 pub const MAX_PREVIEW_BYTES: usize = 4 * 1024 * 1024;
@@ -35,19 +38,22 @@ pub struct CatalogColumnMapping {
     #[serde(default)]
     pub blank: CatalogBlankPolicy,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatalogImportField {
     Kind,
     Id,
     Display,
     EntityType,
     Description,
-    Property { key: String, value_type: CatalogImportType },
+    Property {
+        key: String,
+        value_type: CatalogImportType,
+    },
     Ignore,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatalogImportType {
     Text,
     Number,
@@ -130,7 +136,13 @@ pub struct CatalogImportResult {
 
 impl CatalogImportDiagnostic {
     fn new(code: &str, message: impl Into<String>) -> Self {
-        Self { code: code.into(), row: None, column: None, line: None, message: message.into() }
+        Self {
+            code: code.into(),
+            row: None,
+            column: None,
+            line: None,
+            message: message.into(),
+        }
     }
     fn at(mut self, row: usize, column: usize, line: u32) -> Self {
         self.row = Some(row);

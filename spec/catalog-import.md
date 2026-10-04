@@ -4,11 +4,13 @@
 
 ## 输入与预算
 
-UTF-8 逗号 CSV，允许起始 BOM、LF/CRLF、双引号包围、双写引号及引号内逗号和换行。不猜编码、分隔符或类型。不允许空/重复表头、非矩形记录、未闭合引号、引号外多余字符或孤立 CR。逻辑行号包含表头（表头=1），column 为 1 起CSV字段列序号（不是物理字符列）；数据记录/类型诊断的 line 为该CSV记录起始物理行号（多行单元格之后仍指记录起点）；CSV语法诊断的 line 为发现错误的物理行号。引号内 CRLF 明确规范化为 LF，并在预览列出 normalization_count；原工程未触及字节和原有文件换行不变。空白长度必须为零才是空单元格，空格不 trim。
+UTF-8 逗号 CSV，允许起始 BOM、LF/CRLF、双引号包围、双写引号及引号内逗号和换行。不猜编码、分隔符或类型。不允许空/重复表头、非矩形记录、未闭合引号、引号外多余字符或孤立 CR。逻辑行号包含表头（表头=1），column 为 1 起CSV字段列序号（不是物理字符列）；数据记录/类型诊断的 line 为该CSV记录起始物理行号（多行单元格之后仍指记录起点）；CSV语法诊断的 line 为发现错误的物理行号，空/重复表头使用该字段起始行，非矩形记录使用记录末行。引号内 CRLF 明确规范化为 LF，并在预览列出 normalization_count；原工程未触及字节和原有文件换行不变。空白长度必须为零才是空单元格，空格不 trim。
 
-固定上限：原 CSV 2 MiB、500 数据行、64 列、每格解码 UTF-8 64 KiB；错误最多返回100项但 error_count 统计全部，任何错误均阻断。完整逐行字段预览最多4 MiB，超限拒绝，绝不截断后允许应用。工程沿源码组织既有4096文件/64 MiB源码及已登记文档预算。CLI为保证加载阶段不恢复磁盘，采用既有只读快照加载器：完整工作区额外限制4096文件/合计64 MiB。
+固定上限：原 CSV 2 MiB、500 数据行、64 列、每格解码 UTF-8 64 KiB；CSV结构错误只报告首个阻断，不宣称已可靠解释后续记录；结构有效后独立字段/候选错误最多返回100项，但 error_count 统计全部，任何错误均阻断。完整逐行字段预览最多4 MiB，超限拒绝，绝不截断后允许应用。core工程检查复用源码组织既有4096文件/目录扫描、4096受跟踪文档、源码总量64 MiB、已登记展示文档总量64 MiB及保存基线预算。CLI为保证加载阶段不恢复磁盘，采用既有只读快照加载器：完整工作区的普通作者文件（包括附件和未登记文件）额外限制4096文件/合计64 MiB，排除内部事务和检查点；此为宿主读取限额，不改变语言或DTO语义。
 
-每列必须恰好显式映射或 Ignore；恰好一个 Kind 和 Id，重复目标字段拒绝。未知结构字段、类型、DTO版本/JSON字段拒绝。所有 JSON 入口拒绝重复键。字段支持 Display、EntityType、Description、Property{key,value_type}；后两内置字段仅 entity，character 非空输入报错，空且 Keep 可跳过。Property 类型为 Text、Number、Bool、Ref{target_kind}。number 使用 JSON 十进制数字语法、有限 f64，整数不得超过可精确整数区间±9007199254740991；bool 只认 true/false。ref 单元格仅稳定目标 ID，目标 kind 由列映射明确指定。
+映射DTO最多64项，property key最多256 UTF-8字节，destination最多1024 UTF-8字节；core在工程扫描、编译和逐行展开前拒绝超限请求，避免小CSV被长映射键放大。
+
+每列必须恰好显式映射或 Ignore；恰好一个 Kind 和 Id，重复目标字段拒绝。未知结构字段、类型、DTO版本/JSON字段拒绝。所有 JSON 入口拒绝重复键。字段支持 Display、EntityType、Description、Property{key,value_type}；后两内置字段仅 entity，character 非空输入报错，空且 Keep 可跳过。Property 类型为 Text、Number、Bool、Ref{target_kind}。number 使用 JSON 十进制数字语法、有限 f64，整数不得超过可精确整数区间±9007199254740991，非零十进制下溢为0时拒绝（不静默丢精度为0）；bool 只认 true/false。ref 单元格仅稳定目标 ID，目标 kind 由列映射明确指定。
 
 BlankPolicy 为 Error（默认）、Keep、EmptyText。Keep 空单元格跳过该字段，保留旧值；新对象跳过的可选字段不创建。EmptyText 只准 Display、Description 或 text property，空单元格设置空字符串；identity/entity_type 不可清空。0、false、字符串 null/~ 都不是空。未映射资料严格保持原文字节，不做隐式删除。新对象必须有明确映射的非空 display；新 entity 必须有 entity_type。
 

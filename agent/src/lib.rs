@@ -24,10 +24,10 @@ use worldline_core::{
 use worldline_runtime::{ReplayBudget, ReplayCancellation, ReplayTrace, Story};
 #[path = "lib/authoring_intents.rs"]
 mod authoring_intents;
-#[path = "lib/catalog_import.rs"]
-mod catalog_import;
 #[path = "lib/catalog.rs"]
 mod catalog;
+#[path = "lib/catalog_import.rs"]
+mod catalog_import;
 #[path = "lib/entities.rs"]
 mod entities;
 #[path = "lib/localization.rs"]

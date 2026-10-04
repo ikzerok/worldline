@@ -305,10 +305,10 @@ impl CompileSnapshot {
 
 #[path = "lib/authoring_intent.rs"]
 mod authoring_intent;
-#[path = "lib/catalog_import.rs"]
-mod catalog_import;
 #[path = "lib/catalog.rs"]
 mod catalog;
+#[path = "lib/catalog_import.rs"]
+mod catalog_import;
 #[path = "lib/catalog_query.rs"]
 mod catalog_query;
 #[path = "lib/entity.rs"]

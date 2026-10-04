@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project_id": "catalog_import_example",
+  "language_version": "1.13",
+  "entry": "world.wl",
+  "required_features": [
+    "content.entities.v1",
+    "content.object_refs.v1",
+    "content.character_refs.v1"
+  ]
+}
