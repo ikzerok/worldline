@@ -1,6 +1,6 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.15.0 开发候选不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.22.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
@@ -23,6 +23,7 @@
 | [workspace-snapshot.md](workspace-snapshot.md) | 后台当前稿快照、只读/墓碑保真、有界传输与过期结果保护 |
 | [language-versions.md](language-versions.md) | 支持版本、显式能力预览/启用及兼容边界 |
 | [manuscript.md](manuscript.md) | 书稿章节、来源引用与正文边界 |
+| [manuscript-review.md](manuscript-review.md) | 可信全分支作者审稿、真实来源与预算 |
 | [templates.md](templates.md) | 内容模板与注册文档 |
 | [markdown-import.md](markdown-import.md) | 外部 Markdown 的预览、损失核对和应用 |
 | [localization.md](localization.md) | 显式本地化交换与原稿保护 |

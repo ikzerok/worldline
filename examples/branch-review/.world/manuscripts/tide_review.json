@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "tide_review",
+  "title": "第十三次退潮 · 审稿",
+  "entries": [
+    {
+      "id": "dawn",
+      "kind": "chapter",
+      "title": "天明以前（四种结局）",
+      "target_ref": {
+        "kind": "event",
+        "id": "dawn"
+      }
+    },
+    {
+      "id": "arrival",
+      "kind": "chapter",
+      "title": "退潮钟声",
+      "target_ref": {
+        "kind": "event",
+        "id": "arrival"
+      }
+    },
+    {
+      "id": "wharf",
+      "kind": "chapter",
+      "title": "最后一罐燃料",
+      "target_ref": {
+        "kind": "event",
+        "id": "wharf"
+      }
+    }
+  ]
+}

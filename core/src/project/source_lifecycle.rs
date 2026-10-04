@@ -31,6 +31,14 @@ impl Project {
 
     pub(crate) fn source_lifecycle_disk_baselines_match_classified(&self) -> Result<(), Failure> {
         let files = crate::source_lifecycle::safety::baseline_inventory(self)?;
+        self.source_disk_baselines_match_inventory(&files)
+    }
+
+    /// 复用已经验证的有界库存，不重复扫描目录；调用方负责生成完整库存。
+    pub(crate) fn source_disk_baselines_match_inventory(
+        &self,
+        files: &[PathBuf],
+    ) -> Result<(), Failure> {
         if !self.recovery_conflicts.is_empty() {
             return Err(Failure::changed(
                 "工程存在未解决的保存事务冲突，不能组织源码",

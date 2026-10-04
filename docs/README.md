@@ -1,6 +1,6 @@
 # worldline 文档索引
 
-当前产品版本为 0.20.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+当前产品版本为 0.22.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 作者入门
 
@@ -8,6 +8,11 @@
 - [从资料到可信重放](author-route.md)：结合[栖雪山站示例](../examples/snowline-seeds/README.md)完成双路线与安全改稿
 - [显式能力启用](explicit-capabilities.md)：预览已有语言/资料能力，核对变化后确认
 - [工作区契约](../spec/workspace.md)：递归源码、引用边界、原字节、保存冲突与完整备份
+
+## 全分支作者审稿
+
+- [审稿操作](manuscript-review.md)：保留静态条件、选择和去向，查看同快照人物身份与逐段来源
+- [正式契约](../spec/manuscript-review.md)：不执行、完整性、来源绑定和资源上限
 
 ## 真实路线对照
 

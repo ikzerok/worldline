@@ -172,6 +172,10 @@ impl<'a> Parser<'a> {
                 );
                 let body = self.parse_block(indent, &file, true);
                 let mut branches = vec![(Some(cond), body)];
+                self.sources.branch_headers.insert(
+                    (file.clone(), line.no, 0),
+                    (file.clone(), line.statement_source().span),
+                );
                 // 链式 else if / else:必须与 if 同缩进
                 while let Some(next_line) = self.peek() {
                     if next_line.indent != indent {
@@ -180,6 +184,10 @@ impl<'a> Parser<'a> {
                     match &next_line.kind {
                         LineKind::ElseIf { cond_src, .. } => {
                             let cond_src = cond_src.clone();
+                            self.sources.branch_headers.insert(
+                                (file.clone(), line.no, branches.len()),
+                                (next_line.file.clone(), next_line.statement_source().span),
+                            );
                             self.next();
                             let c = self.sourced_expr_from(
                                 &cond_src,
@@ -192,6 +200,10 @@ impl<'a> Parser<'a> {
                             branches.push((Some(c), b));
                         }
                         LineKind::Else { .. } => {
+                            self.sources.branch_headers.insert(
+                                (file.clone(), line.no, branches.len()),
+                                (next_line.file.clone(), next_line.statement_source().span),
+                            );
                             self.next();
                             let b = self.parse_block(indent, &file, true);
                             branches.push((None, b));

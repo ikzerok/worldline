@@ -11,6 +11,7 @@ mod document_buffers;
 mod export;
 mod lifecycle;
 mod read_only;
+mod review_navigation;
 mod save;
 mod snapshot;
 mod source_lifecycle;

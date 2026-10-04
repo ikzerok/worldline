@@ -23,6 +23,8 @@ DTO；`timeline --json` 编译失败仍返回 `type:"compile_failed"`、`ok:fals
 
 ---
 
+0.22 新增只读 `wl manuscript-review` / RPC `manuscript.review`，共享 core 全分支审稿 DTO、完整源快照校验及预算，详见 [manuscript-review.md](manuscript-review.md)。不改变旧阅读与发布权限。
+
 ## 0. 原则
 
 1. **分层**:人类交互走 `wl` 人类模式与 worldedit;机器驱动走本文档定义的
