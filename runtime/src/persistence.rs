@@ -187,6 +187,8 @@ impl<'p> Story<'p> {
         let mut story = Story {
             program,
             symbols: &analysis.symbols,
+            catalog: &analysis.catalog,
+            state_actions: Default::default(),
             vars: state.vars,
             visits: state.visits,
             turns: state.turns,

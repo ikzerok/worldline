@@ -13,6 +13,7 @@
 | [agent-protocol.md](agent-protocol.md) | 机器接口契约:CLI JSON 模式、`wl-agent` JSON-RPC 协议 |
 | [states.md](states.md) | 状态替换/增加/移除、世界叙事身份迁移、变更出处与旧档兼容 |
 | [replay.md](replay.md) | 确定性叙事重放、检查点、条件解释与访问覆盖 |
+| [route-comparison.md](route-comparison.md) | 同稿双路线真实对照、继承覆盖与有界状态动作回源 |
 | [catalog.md](catalog.md) | 通用标签、独立锚点与反查、文件引用及工程打包 |
 | [presentation.md](presentation.md) | 地图、网络视图、展示文档、关系 DTO、命令边界与跨仓契约 |
 | [vector-scene.md](vector-scene.md) | 原生矢量模型、编辑事务、受限 SVG、viewport 裁剪、迁移与公开白名单 |
