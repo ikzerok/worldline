@@ -1,0 +1,10 @@
+[
+  {"column":0,"field":{"kind":"kind"},"blank":"error"},
+  {"column":1,"field":{"kind":"id"},"blank":"error"},
+  {"column":2,"field":{"kind":"display"},"blank":"error"},
+  {"column":3,"field":{"kind":"entity_type"},"blank":"keep"},
+  {"column":4,"field":{"kind":"description"},"blank":"keep"},
+  {"column":5,"field":{"kind":"property","key":"score","value_type":{"kind":"number"}},"blank":"error"},
+  {"column":6,"field":{"kind":"property","key":"enabled","value_type":{"kind":"bool"}},"blank":"error"},
+  {"column":7,"field":{"kind":"property","key":"place","value_type":{"kind":"ref","target_kind":"entity"}},"blank":"keep"}
+]

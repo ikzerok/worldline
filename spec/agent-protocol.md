@@ -729,3 +729,15 @@ id。可回显 id 的超长协议错误保留原协议 code，以有界消息替
 比较不增加 source-resolve RPC：只返回 core 在同一快照中验证的来源，不能以 trace
 里的旧文件/行或同名状态猜测位置。0.20 继续拒绝 0.19 trace/checkpoint；普通 Story
 Save 保留原有兼容规则，不新增同样的 runtime_version 拒绝条件。
+
+## 0.21 世界资料批量导入
+
+`initialize.capabilities` 新增 `catalog_import_v1`。协议版本仍为1；默认语言1.9、最高1.13不变。唯一版本化请求、CSV预算、映射/空值、字段预览、真实指纹及事务边界见 [catalog-import.md](catalog-import.md)。不创建额外作品能力或导入sidecar。
+
+- `catalog.import.preview {project_id,request}`：只读生成完整core计划
+- `catalog.import.apply {project_id,request,plan_digest}`：重新验证并一次应用当前Project内存；`saved:false`
+- `project.save {project_id,expected_baseline}`：显式保存当前缓冲，成功才` saved:true`；失败保留缓冲、既有保存基线与恢复事务
+
+三方法均拒绝未知顶层参数；导入request及嵌套映射拒绝未知字段、未知enum；既有JSON入口拒绝重复键。非空project_id须已通过project.open建立，不支持path临时工程，不暗中刷新、恢复或保存。preview正常返回`{ok:plan.can_apply,operation:"preview",plan,saved:false}`，apply成功返回`{ok:true,operation:"apply",plan,changed_files,new_baseline,saved:false}`。CSV/映射/类型/schema数据错误留在plan.diagnostics并令ok:false，同时保留error:{code:"CATALOG_IMPORT_BLOCKED",message}；读取/过期/冲突/能力等失败返回`{ok:false,error:{code:"CATALOG_IMPORT_REJECTED",message},saved:false}`。参数类型/结构/未知ID才走JSON-RPC error。保存陈旧返回STALE_BASELINE，保存故障SAVE_FAILED。
+
+`wl catalog-import preview|apply PROJECT --request-json '<DTO>' [--csv UTF8_FILE] [--plan-digest DIGEST] [--save] [--json]`使用同一core。CLI先按Project::open_read_only加载并拒绝待恢复事务，完整工作区限4096文件/64MiB；--csv先有界读取为快照，core不接受外部CSV路径；不指定时使用request.csv。apply需要摘要，preview禁止摘要/--save。apply默认只改短命内存，响应明确saved:false和退出丢弃提示；显式--save后调用既有保存事务。命令成功退出0，业务阻断及CSV输入失败1，参数格式错误2，--json失败仍返回结构化ok:false。CSV输入失败返回stage:"input"/CSV_INPUT_REJECTED；保存失败返回applied:true、stage:"save"、plan、saved:false、SAVE_FAILED和可能存在待恢复磁盘事务提示，不假称零磁盘写入。源CSV改变导致重建摘要不匹配，不能复用旧授权。

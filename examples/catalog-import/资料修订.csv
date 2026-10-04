@@ -1,0 +1,6 @@
+kind,id,显示名,实体分类,描述,评分,启用,地点
+character,lin,林舟·修订,,,0,false,new_harbor
+entity,old_harbor,老码头,place,保留为历史港口。,0,false,
+character,mei,"梅 ""小梅""",,,0,true,new_harbor
+entity,new_harbor,新港,place,"靠近外海的新港。
+人物与地图可以共同引用这一稳定身份。",0,true,
