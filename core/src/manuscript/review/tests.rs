@@ -278,6 +278,8 @@ fn event_entry_after_and_legacy_permission_keep_actual_declaration() {
 fn cross_file_full_snapshot_and_current_memory_overrides_are_bound() {
     let root = std::env::temp_dir().join("review-cross-file-sources");
     let entry = root.join("world.wl");
+    // Windows 的临时目录可能含 8.3 短名；来源断言及快照筛选遵循编译器的规范身份。
+    let canonical_entry = crate::compiler::source_path(&entry);
     let people = root.join("people.wl");
     let mut sources = BTreeMap::from([
         (
@@ -307,14 +309,21 @@ fn cross_file_full_snapshot_and_current_memory_overrides_are_bound() {
         .unwrap();
     assert_eq!(say.speaker.as_ref().unwrap().display, "未应用名字");
     assert_eq!(say.parts[0].text, "未应用正文");
-    assert_eq!(say.source.as_ref().unwrap().file, entry.to_string_lossy());
+    assert_eq!(
+        say.source.as_ref().unwrap().file,
+        canonical_entry.to_string_lossy()
+    );
     assert!(
         validate_review_source(&current, &before, before.nodes[1].source.as_ref().unwrap())
             .is_err()
     );
     // 只改另一文件的注释，也必须让旧来源失效。
     let mut changed = current.sources.clone();
-    let last = changed.keys().find(|path| **path != entry).unwrap().clone();
+    let last = changed
+        .keys()
+        .find(|path| **path != canonical_entry)
+        .unwrap()
+        .clone();
     changed
         .get_mut(&last)
         .unwrap()
