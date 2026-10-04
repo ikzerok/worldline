@@ -285,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "wl"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "serde_json",
  "worldline-core",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-agent"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-core"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "libc",
  "quick-xml",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "worldline-runtime"
-version = "0.22.0"
+version = "0.23.0"
 dependencies = [
  "serde",
  "serde_json",

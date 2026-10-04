@@ -1,5 +1,7 @@
 # worldline 文档索引
 
+- [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
+
 当前产品版本为 0.22.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
 
 ## 作者入门
