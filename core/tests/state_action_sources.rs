@@ -78,6 +78,10 @@ fn assert_source(
     let source = state_action_source(&compiled.program, line_of(compiled, header), &owner).unwrap();
     assert_eq!(source.owner, owner);
     let target = resolve_evidence_source(compiled, &source).unwrap();
+    assert_eq!(
+        worldline_core::evidence_source::resolve_evidence_sources(compiled, &[&source]).unwrap(),
+        vec![Ok(target.clone())]
+    );
     assert_eq!(target.precision, EvidenceSourcePrecision::StatementHeader);
     assert_eq!(&compiled.sources[&target.path][target.range], header);
     source

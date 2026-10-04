@@ -1,10 +1,14 @@
 //! 非语义证据来源投影；声明头范围由 core 的 AST 与正式词法共同确认。
 use crate::ast::{ChangeKind, Stmt};
-use crate::lexer::LineKind;
 use crate::CompileResult;
 use serde::{Deserialize, Serialize};
 use std::{ops::Range, path::PathBuf};
+mod batch;
 mod state_actions;
+pub use batch::{
+    resolve_evidence_source, resolve_evidence_sources, MAX_EVIDENCE_SOURCE_BATCH,
+    MAX_EVIDENCE_SOURCE_BATCH_BYTES,
+};
 pub use state_actions::state_action_source;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -46,85 +50,6 @@ pub struct EvidenceSourceTarget {
     pub line: u32,
     pub column: u32,
     pub precision: EvidenceSourcePrecision,
-}
-
-/// 只读定位。必须传入实际证据对应的编译快照；调用方另行校验工作区与草稿基线。
-pub fn resolve_evidence_source(
-    snapshot: &CompileResult,
-    source: &EvidenceSource,
-) -> Result<EvidenceSourceTarget, String> {
-    if source.line == 0 || source.file.is_empty() {
-        return Err("证据没有有效的声明来源".into());
-    }
-    let path = PathBuf::from(&source.file);
-    let text = snapshot
-        .sources
-        .get(&path)
-        .ok_or("证据来源不属于此编译快照")?;
-    let state_action = state_actions::find(&snapshot.program, source.line, &source.owner);
-    let valid = match &source.owner {
-        EvidenceSourceOwner::Choice { node } => choice_body(snapshot, &source.file, node)
-            .is_some_and(|body| count_choices(body, source.line) == 1),
-        EvidenceSourceOwner::Rule { name } => {
-            snapshot
-                .program
-                .rules
-                .iter()
-                .filter(|rule| {
-                    rule.name == *name && rule.file == source.file && rule.loc.line == source.line
-                })
-                .count()
-                == 1
-        }
-        EvidenceSourceOwner::StateAction { .. } => state_action
-            .as_ref()
-            .is_some_and(|action| action.file == source.file),
-    };
-    if !valid {
-        return Err("证据所属声明已变化或无法唯一确认".into());
-    }
-    let line = crate::lexer::lex_source_with_options(
-        &source.file,
-        text,
-        &mut Vec::new(),
-        snapshot.options,
-    )
-    .into_iter()
-    .find(|line| line.no == source.line)
-    .ok_or("证据声明头已不存在")?;
-    let classified = match (&source.owner, line.physical().kind) {
-        (EvidenceSourceOwner::Choice { .. }, LineKind::Choice { .. }) => true,
-        (EvidenceSourceOwner::Rule { .. }, LineKind::Language111 { keyword, .. }) => {
-            keyword == "rule"
-        }
-        (EvidenceSourceOwner::StateAction { action, .. }, kind) => {
-            state_action.is_some_and(|source| source.matches_header(*action, &kind))
-        }
-        _ => false,
-    };
-    if !classified {
-        return Err("证据来源不再是对应的声明头".into());
-    }
-    let mut offset = 0;
-    let raw = text
-        .split_inclusive('\n')
-        .nth(source.line as usize - 1)
-        .ok_or("证据声明头范围已不存在")?;
-    for previous in text.split_inclusive('\n').take(source.line as usize - 1) {
-        offset += previous.len();
-    }
-    let header = raw.trim_end_matches(['\r', '\n']);
-    let start = header.len() - header.trim_start().len();
-    if start == header.len() {
-        return Err("证据声明头为空".into());
-    }
-    Ok(EvidenceSourceTarget {
-        path,
-        range: offset + start..offset + header.len(),
-        line: source.line,
-        column: header[..start].chars().count() as u32 + 1,
-        precision: EvidenceSourcePrecision::StatementHeader,
-    })
 }
 
 fn choice_body<'a>(snapshot: &'a CompileResult, file: &str, node: &str) -> Option<&'a [Stmt]> {

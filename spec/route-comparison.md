@@ -76,6 +76,14 @@ sequence 从本次执行1开始，按真实发生顺序递增。仅记录实际�
 
 证据只在瞬态 runtime/比较对象中，不写入 SaveState、ReplayTrace、ReplayObservation、Project或发布。来源附属的文件/行/owner不改变稳定choice ID或runtime fingerprint。旧状态历史没有来源时不可回填。
 
+### 一次调用内的批量来源确认
+
+比较最终投影将首差异最多2个选择来源与两侧最多512个动作来源，一并交给core `resolve_evidence_sources(snapshot, sources: &[&EvidenceSource])`。返回顺序与输入完全一致，每项分别为既有 `EvidenceSourceTarget` 或既有中文定位错误；重复来源不合并、截断或冒充成功。外层请求最多514项，`file`及owner的全部字符串合计最多1 MiB UTF-8 bytes；先检查数量与累计字节，再分配分组/结果，超额整体拒绝，runtime沿用`output_limit`报告。单项定位入口的既有形状和错误语义不变。
+
+一次调用内按来源文件分组，每个需要确认的文件只运行一次既有正式lexer，并一次扫描被请求物理行的UTF-8范围。仅保留请求行的词法头/范围，当前文件处理完即释放；不建立全工程长期token缓存，不跨快照、编辑版本或调用复用。每项仍走同一AST owner、parser provenance、物理位置、静态/动态动作类型及效果双索引验证，单项与批量结果逐项等价。不得凭文件/行号、相同标签或fingerprint跳过权威校验；无效来源仍为空，不从候选位置回填。
+
+这是现有来源验证的有界等价优化，不改变比较DTO、保存、trace/观察、choice ID、指纹或解释器。单个文件的词法工作仍不可抢占，不宣称硬实时；以同一50/200/压力fixture记录实际WASM每次advance、终次耗时及RSS，不能只以native测量推断浏览器体验。
+
 ## 源导航与兼容底线
 
 编辑器沿既有来源安全桥核对同一已应用编译快照、完整源字节/内容基线、作者buffer/输入法、工作区边界及外部冲突。仅fingerprint相同不得复用旧行；注释移行或合法移动源码后必须显式重新比较，再导航当前真实位置。打开来源不应用、不保存，不替换固定参考，返回保留对照选择/滚动/焦点。

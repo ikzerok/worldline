@@ -2,7 +2,7 @@ use super::*;
 use crate::{AccessCoverage, ReplayOrigin, ReplayStatus, ReplayTrace, Story};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use worldline_core::{evidence_source::resolve_evidence_source, CompileResult};
+use worldline_core::{evidence_source::resolve_evidence_sources, CompileResult};
 
 pub(super) fn digest(bytes: &[u8]) -> String {
     let hash = bytes.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
@@ -148,11 +148,7 @@ pub(super) fn differences<T: Serialize + PartialEq>(
         })
         .collect()
 }
-pub(super) fn alignment(
-    snapshot: &CompileResult,
-    left: &side::Side,
-    right: &side::Side,
-) -> RouteAlignment {
+pub(super) fn alignment(left: &side::Side, right: &side::Side) -> RouteAlignment {
     let a = left.cursor.as_ref();
     let b = right.cursor.as_ref();
     let count_a = a.map_or(0, |cursor| cursor.verified_choices.len());
@@ -201,17 +197,8 @@ pub(super) fn alignment(
         .enumerate()
     {
         if a.choice.id != b.choice.id {
-            let mut a = a.clone();
-            let mut b = b.clone();
-            for input in [&mut a, &mut b] {
-                if input
-                    .source
-                    .as_ref()
-                    .is_some_and(|source| resolve_evidence_source(snapshot, source).is_err())
-                {
-                    input.source = None;
-                }
-            }
+            let a = a.clone();
+            let b = b.clone();
             alignment.first_difference = Some(RouteChoiceDifference {
                 index,
                 left: a,
@@ -226,27 +213,32 @@ pub(super) fn alignment(
 
 pub(super) fn verify_sources(
     snapshot: &CompileResult,
+    alignment: &mut RouteAlignment,
     left: &mut RouteSideResult,
     right: &mut RouteSideResult,
-) {
-    let mut checked: Vec<(EvidenceSource, bool)> = Vec::new();
+) -> Result<(), RouteComparisonError> {
+    let mut slots = Vec::new();
+    if let Some(difference) = &mut alignment.first_difference {
+        slots.push(&mut difference.left.source);
+        slots.push(&mut difference.right.source);
+    }
     for side in [left, right] {
         for record in &mut side.state_actions.records {
-            let Some(source) = record.source.as_ref() else {
-                continue;
-            };
-            let valid = checked
-                .iter()
-                .find(|(known, _)| known == source)
-                .map(|(_, valid)| *valid)
-                .unwrap_or_else(|| {
-                    let valid = resolve_evidence_source(snapshot, source).is_ok();
-                    checked.push((source.clone(), valid));
-                    valid
-                });
-            if !valid {
-                record.source = None;
-            }
+            slots.push(&mut record.source);
         }
     }
+    let sources = slots
+        .iter()
+        .filter_map(|source| source.as_ref())
+        .collect::<Vec<_>>();
+    let results = resolve_evidence_sources(snapshot, &sources)
+        .map_err(|message| RouteComparisonError::new("output_limit", message))?;
+    drop(sources);
+    let mut results = results.into_iter();
+    for source in slots {
+        if source.is_some() && results.next().expect("批量结果与来源数一致").is_err() {
+            *source = None;
+        }
+    }
+    Ok(())
 }

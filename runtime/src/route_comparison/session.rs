@@ -140,11 +140,11 @@ impl RouteComparisonSession {
             self.steps = budget.steps;
         }
         self.finished = true;
-        let alignment = projection::alignment(snapshot, &self.left, &self.right);
+        let mut alignment = projection::alignment(&self.left, &self.right);
         let mut left = self.left.result.take().expect("左侧已完成");
         let mut right = self.right.result.take().expect("右侧已完成");
         limits::check_report(&left, &right, alignment.first_difference.is_some())?;
-        projection::verify_sources(snapshot, &mut left, &mut right);
+        projection::verify_sources(snapshot, &mut alignment, &mut left, &mut right)?;
         let differences_complete = left.states.is_some()
             && right.states.is_some()
             && left.vars.is_some()
