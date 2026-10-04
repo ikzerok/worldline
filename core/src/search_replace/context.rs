@@ -55,9 +55,14 @@ impl<'a> ContextIndex<'a> {
     /// 相邻 CR/LF 时才允许窗口边缘拆开该对；不会因此丢弃本来可完整显示的命中。
     pub(super) fn context(&self, range: Range<usize>) -> SearchContext {
         let source = self.source;
-        let matched = source.get(range.clone()).expect("命中范围必须对应有效原文字节");
+        let matched = source
+            .get(range.clone())
+            .expect("命中范围必须对应有效原文字节");
         let next_break = self.line_breaks.partition_point(|at| *at < range.start);
-        let multiline = self.line_breaks.get(next_break).is_some_and(|at| *at < range.end)
+        let multiline = self
+            .line_breaks
+            .get(next_break)
+            .is_some_and(|at| *at < range.end)
             || splits_crlf(source, range.start);
         let span = if multiline {
             0..source.len()
@@ -65,7 +70,11 @@ impl<'a> ContextIndex<'a> {
             let start = next_break
                 .checked_sub(1)
                 .map_or(0, |index| self.line_breaks[index] + 1);
-            let end = self.line_breaks.get(next_break).copied().unwrap_or(source.len());
+            let end = self
+                .line_breaks
+                .get(next_break)
+                .copied()
+                .unwrap_or(source.len());
             start..end
         };
         // 只统计到上限后一位，不为长命中或长原文建立字符数组。
@@ -297,7 +306,12 @@ mod tests {
 
     #[test]
     fn optional_context_edges_do_not_split_crlf() {
-        let source = format!("{}\r\n{}\n{}", "a".repeat(10), "b".repeat(47), "c".repeat(200));
+        let source = format!(
+            "{}\r\n{}\n{}",
+            "a".repeat(10),
+            "b".repeat(47),
+            "c".repeat(200)
+        );
         let start = 59;
         let context = check(&source, start..start + 1);
         assert_eq!(context.source_range.start, 12);
@@ -422,17 +436,16 @@ mod tests {
         for start in &boundaries {
             for end in boundaries.iter().filter(|end| *end >= start) {
                 let context = index.context(*start..*end);
-                let span = if source[*start..*end].contains(['\r', '\n'])
-                    || splits_crlf(source, *start)
-                {
-                    0..source.len()
-                } else {
-                    let first = source[..*start].rfind(['\r', '\n']).map_or(0, |at| at + 1);
-                    let last = source[*end..]
-                        .find(['\r', '\n'])
-                        .map_or(source.len(), |at| end + at);
-                    first..last
-                };
+                let span =
+                    if source[*start..*end].contains(['\r', '\n']) || splits_crlf(source, *start) {
+                        0..source.len()
+                    } else {
+                        let first = source[..*start].rfind(['\r', '\n']).map_or(0, |at| at + 1);
+                        let last = source[*end..]
+                            .find(['\r', '\n'])
+                            .map_or(source.len(), |at| end + at);
+                        first..last
+                    };
                 assert_eq!(context.source_range, span);
                 assert!(!context.omitted_before && !context.omitted_after);
                 assert!(!context.match_omitted_before && !context.match_omitted_after);

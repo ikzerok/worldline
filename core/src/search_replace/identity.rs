@@ -59,12 +59,23 @@ impl SearchSnapshot {
             root: project.root.clone(),
             entry: project.entry.clone(),
             generation: project.search_refresh_generation(),
-            documents: project.documents.iter().map(|(path, d)| {
-                (path.clone(), d.text.clone(), d.is_deleted())
-            }).collect(),
-            authoring: project.authoring_documents.iter().map(|(path, d)| {
-                (path.clone(), d.bytes().to_vec(), d.is_deleted(), d.is_read_only())
-            }).collect(),
+            documents: project
+                .documents
+                .iter()
+                .map(|(path, d)| (path.clone(), d.text.clone(), d.is_deleted()))
+                .collect(),
+            authoring: project
+                .authoring_documents
+                .iter()
+                .map(|(path, d)| {
+                    (
+                        path.clone(),
+                        d.bytes().to_vec(),
+                        d.is_deleted(),
+                        d.is_read_only(),
+                    )
+                })
+                .collect(),
             drafts,
         }
     }
@@ -90,8 +101,12 @@ impl From<&WritingBuffer> for DraftIdentity {
 
 /// 元数据显示也须核对；旧范围、改造的保护标记或伪造强调不能授权写入。
 pub(super) fn same_hit(a: &SearchMatch, b: &SearchMatch) -> bool {
-    a.path == b.path && a.range == b.range && a.line == b.line
-        && a.column == b.column && a.preview == b.preview
-        && a.replaceable == b.replaceable && a.draft == b.draft
+    a.path == b.path
+        && a.range == b.range
+        && a.line == b.line
+        && a.column == b.column
+        && a.preview == b.preview
+        && a.replaceable == b.replaceable
+        && a.draft == b.draft
         && a.context == b.context
 }

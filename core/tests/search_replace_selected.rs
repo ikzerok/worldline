@@ -21,7 +21,10 @@ impl Workspace {
         let root = std::env::temp_dir().join(format!(
             "wl-selected-replace-{}-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join(".world")).unwrap();
@@ -52,7 +55,10 @@ fn request() -> SearchRequest {
         scope: SearchScope::Prose,
         files: ["world.wl", "second.wl"]
             .into_iter()
-            .map(|path| SearchFile { path: path.into(), range: None })
+            .map(|path| SearchFile {
+                path: path.into(),
+                range: None,
+            })
             .collect(),
     }
 }
@@ -64,11 +70,18 @@ fn one_file() -> SearchRequest {
 fn texts(project: &Project) -> Vec<String> {
     ["world.wl", "second.wl"]
         .into_iter()
-        .map(|path| project.document(&project.root.join(path)).unwrap().to_owned())
+        .map(|path| {
+            project
+                .document(&project.root.join(path))
+                .unwrap()
+                .to_owned()
+        })
         .collect()
 }
 fn buffer(project: &Project) -> WritingBuffer {
-    project.open_source_writing_buffer(Path::new("world.wl")).unwrap()
+    project
+        .open_source_writing_buffer(Path::new("world.wl"))
+        .unwrap()
 }
 fn preview(
     project: &Project,
@@ -102,13 +115,30 @@ fn selects_only_second_same_line_hit_and_changes_only_returned_draft() {
     assert_eq!(plan.changes[0].count, 1);
     assert_eq!(plan.occurrences.len(), 1);
     let occurrence = &plan.occurrences[0];
-    assert_context(WORLD, occurrence.before_range.clone(), &occurrence.before_context);
-    assert_eq!(&occurrence.before_context.text[occurrence.before_context.highlight.clone()], "Hello");
-    assert_context(&plan.changes[0].after, occurrence.after_range.clone(), &occurrence.after_context);
-    let next = project.replace_search_draft(&plan, &drafts, &original).unwrap();
+    assert_context(
+        WORLD,
+        occurrence.before_range.clone(),
+        &occurrence.before_context,
+    );
+    assert_eq!(
+        &occurrence.before_context.text[occurrence.before_context.highlight.clone()],
+        "Hello"
+    );
+    assert_context(
+        &plan.changes[0].after,
+        occurrence.after_range.clone(),
+        &occurrence.after_context,
+    );
+    let next = project
+        .replace_search_draft(&plan, &drafts, &original)
+        .unwrap();
     assert!(next.source().contains("Hello 世界 Goodbye {count}"));
-    assert!(next.source().contains("[[character:hero|Hello]] #line:hello"));
-    assert!(next.source().contains("say hero \"Hello {count}\" direction \"Hello private\""));
+    assert!(next
+        .source()
+        .contains("[[character:hero|Hello]] #line:hello"));
+    assert!(next
+        .source()
+        .contains("say hero \"Hello {count}\" direction \"Hello private\""));
     assert_eq!(next.generation(), original.generation() + 1);
     assert_eq!(original.source(), WORLD);
     assert_eq!(drafts[0].source(), WORLD);
@@ -130,9 +160,19 @@ fn selected_original_ranges_are_sorted_and_never_recursively_replaced() {
     assert_eq!(plan.changes[0].count, 2);
     for (index, occurrence) in plan.occurrences.iter().enumerate() {
         assert_eq!(occurrence.before_range, hits[index].range);
-        assert_eq!(occurrence.after_range.start, hits[index].range.start + index * 6);
-        assert_eq!(&plan.changes[0].after[occurrence.after_range.clone()], "Hello Hello");
-        assert_context(&plan.changes[0].after, occurrence.after_range.clone(), &occurrence.after_context);
+        assert_eq!(
+            occurrence.after_range.start,
+            hits[index].range.start + index * 6
+        );
+        assert_eq!(
+            &plan.changes[0].after[occurrence.after_range.clone()],
+            "Hello Hello"
+        );
+        assert_context(
+            &plan.changes[0].after,
+            occurrence.after_range.clone(),
+            &occurrence.after_context,
+        );
     }
     let expected = WORLD.replacen("Hello 世界 Hello", "Hello Hello 世界 Hello Hello", 1);
     project.apply_search_replace(&plan, &[]).unwrap();
@@ -147,7 +187,9 @@ fn cross_file_selected_drafts_commit_together_undo_and_save_reopen() {
     let before = project.clone();
     let mut first = buffer(&project);
     first.replace_source(WORLD.replace("世界", "当前稿"));
-    let mut second = project.open_source_writing_buffer(Path::new("second.wl")).unwrap();
+    let mut second = project
+        .open_source_writing_buffer(Path::new("second.wl"))
+        .unwrap();
     second.replace_source(SECOND.replace("again", "draft"));
     let drafts = [first, second];
     let mut req = request();
@@ -242,7 +284,11 @@ fn source_scope_can_select_safe_prose_but_protected_or_legacy_all_is_rejected() 
     req.scope = SearchScope::Source;
     let hits = project.search_drafts(&req, &[]).unwrap();
     let safe: Vec<_> = hits.iter().filter(|hit| hit.replaceable).cloned().collect();
-    let protected: Vec<_> = hits.iter().filter(|hit| !hit.replaceable).cloned().collect();
+    let protected: Vec<_> = hits
+        .iter()
+        .filter(|hit| !hit.replaceable)
+        .cloned()
+        .collect();
     assert_eq!(safe.len(), 3);
     assert_eq!(protected.len(), 2);
     assert!(project.preview_search_replace(&req, &[]).is_err());
@@ -277,7 +323,10 @@ fn duplicate_missing_identity_and_forged_selection_fields_are_rejected() {
             8 => hit.replaceable = false,
             _ => hit.column += 1,
         }
-        assert!(preview(&project, &req, &[], &[hit]).is_err(), "alteration {alteration}");
+        assert!(
+            preview(&project, &req, &[], &[hit]).is_err(),
+            "alteration {alteration}"
+        );
     }
     assert_eq!(texts(&project), [WORLD, SECOND]);
 }
@@ -293,7 +342,9 @@ fn public_plan_changes_hits_and_occurrences_cannot_change_authorized_selection()
     for alteration in 0..9 {
         let mut changed = plan.clone();
         match alteration {
-            0 => { changed.hits.remove(0); }
+            0 => {
+                changed.hits.remove(0);
+            }
             1 => changed.hits[0].identity = None,
             2 => changed.changes[0].after.push_str("  injected\n"),
             3 => changed.changes[0].count = 1,
@@ -305,12 +356,19 @@ fn public_plan_changes_hits_and_occurrences_cannot_change_authorized_selection()
                 changed.changes = subset.changes.clone();
                 changed.occurrences = subset.occurrences.clone();
             }
-            _ => { changed.changes.clear(); }
+            _ => {
+                changed.changes.clear();
+            }
         }
-        assert!(project.apply_search_replace(&changed, &[]).is_err(), "alteration {alteration}");
+        assert!(
+            project.apply_search_replace(&changed, &[]).is_err(),
+            "alteration {alteration}"
+        );
         assert_eq!(texts(&project), [WORLD, SECOND]);
         let original = buffer(&project);
-        assert!(project.replace_search_draft(&changed, &[], &original).is_err());
+        assert!(project
+            .replace_search_draft(&changed, &[], &original)
+            .is_err());
     }
     project.apply_search_replace(&plan, &[]).unwrap();
 }
@@ -332,7 +390,10 @@ fn query_options_scope_file_order_and_captured_range_bind_selection_identity() {
             5 => changed.files.reverse(),
             _ => changed.files.truncate(1),
         }
-        assert!(preview(&project, &changed, &[], &hits[..1]).is_err(), "alteration {alteration}");
+        assert!(
+            preview(&project, &changed, &[], &hits[..1]).is_err(),
+            "alteration {alteration}"
+        );
     }
     assert_eq!(texts(&project), [WORLD, SECOND]);
 }
@@ -369,7 +430,9 @@ fn newly_opened_clean_navigation_buffer_keeps_existing_hits_and_plan_valid() {
     let drafts = [opened.clone()];
     let after_navigation = preview(&project, &req, &drafts, &hits[..1]).unwrap();
     assert_eq!(after_navigation, plan);
-    let next = project.replace_search_draft(&plan, &drafts, &opened).unwrap();
+    let next = project
+        .replace_search_draft(&plan, &drafts, &opened)
+        .unwrap();
     assert!(next.source().contains("Goodbye 世界 Hello"));
     assert_eq!(opened.source(), WORLD);
     project.apply_search_replace(&plan, &drafts).unwrap();
@@ -385,20 +448,33 @@ fn edited_and_returned_to_original_draft_invalidates_old_hits_and_plan() {
             original.replace_source(WORLD.replace("世界", "草稿"));
         }
         let req = one_file();
-        let hits = project.search_drafts(&req, std::slice::from_ref(&original)).unwrap();
+        let hits = project
+            .search_drafts(&req, std::slice::from_ref(&original))
+            .unwrap();
         let plan = preview(&project, &req, std::slice::from_ref(&original), &hits[..1]).unwrap();
         let mut edited = original.clone();
-        edited.replace_source(edited.source().replace("世界", "changed").replace("草稿", "changed"));
+        edited.replace_source(
+            edited
+                .source()
+                .replace("世界", "changed")
+                .replace("草稿", "changed"),
+        );
         assert!(preview(&project, &req, std::slice::from_ref(&edited), &hits[..1]).is_err());
         edited.replace_source(original.source().to_owned());
         assert_eq!(edited.source(), original.source());
         assert_eq!(edited.generation(), original.generation() + 2);
         assert!(preview(&project, &req, std::slice::from_ref(&edited), &hits[..1]).is_err());
-        assert!(project.replace_search_draft(&plan, std::slice::from_ref(&edited), &edited).is_err());
+        assert!(project
+            .replace_search_draft(&plan, std::slice::from_ref(&edited), &edited)
+            .is_err());
         // 传旧草稿列表也不能将旧事务套到内容相同但代次不同的缓冲。
-        assert!(project.replace_search_draft(&plan, std::slice::from_ref(&original), &edited).is_err());
+        assert!(project
+            .replace_search_draft(&plan, std::slice::from_ref(&original), &edited)
+            .is_err());
         assert_eq!(texts(&project), [WORLD, SECOND]);
-        let fresh = project.search_drafts(&req, std::slice::from_ref(&edited)).unwrap();
+        let fresh = project
+            .search_drafts(&req, std::slice::from_ref(&edited))
+            .unwrap();
         assert!(preview(&project, &req, &[edited], &fresh[..1]).is_ok());
     }
 }
@@ -411,10 +487,14 @@ fn unselected_project_change_and_refresh_round_trip_invalidate_old_identity() {
     let hits = project.search_drafts(&req, &[]).unwrap();
     let plan = preview(&project, &req, &[], &hits[..1]).unwrap();
     let changed = SECOND.replace("again", "outside");
-    project.set_text(&ws.0.join("second.wl"), changed.clone()).unwrap();
+    project
+        .set_text(&ws.0.join("second.wl"), changed.clone())
+        .unwrap();
     assert!(preview(&project, &req, &[], &hits[..1]).is_err());
     assert!(project.apply_search_replace(&plan, &[]).is_err());
-    project.set_text(&ws.0.join("second.wl"), SECOND.into()).unwrap();
+    project
+        .set_text(&ws.0.join("second.wl"), SECOND.into())
+        .unwrap();
     fs::write(ws.0.join("second.wl"), changed).unwrap();
     assert!(project.refresh().unwrap().is_empty());
     fs::write(ws.0.join("second.wl"), SECOND).unwrap();
@@ -434,7 +514,9 @@ fn cancelling_preview_and_invalid_drafts_preserve_all_original_state() {
     let source = draft.source().to_owned();
     let generation = draft.generation();
     let baseline = project.content_baseline();
-    let hits = project.search_drafts(&req, std::slice::from_ref(&draft)).unwrap();
+    let hits = project
+        .search_drafts(&req, std::slice::from_ref(&draft))
+        .unwrap();
     let plan = preview(&project, &req, std::slice::from_ref(&draft), &hits[..1]).unwrap();
     drop(plan);
     assert_eq!(draft.source(), source);
@@ -443,7 +525,9 @@ fn cancelling_preview_and_invalid_drafts_preserve_all_original_state() {
     draft.replace_source("event start\n  Hello {unfinished\n".into());
     let mut req = req;
     req.scope = SearchScope::Source;
-    let hits = project.search_drafts(&req, std::slice::from_ref(&draft)).unwrap();
+    let hits = project
+        .search_drafts(&req, std::slice::from_ref(&draft))
+        .unwrap();
     assert_eq!(hits.len(), 1);
     assert!(!hits[0].replaceable);
     let invalid_source = draft.source().to_owned();

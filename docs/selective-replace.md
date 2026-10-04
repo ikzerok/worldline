@@ -30,6 +30,8 @@ let plan = project.preview_search_replace_selected(&request, &drafts, &selected)
 project.apply_search_replace(&plan, &drafts)?;
 ```
 
+`reconcile_search_selection(current_hits, selected)` 可在重新查找后批量确认旧集合仍有效，并返回本次搜索顺序的命中；每份共享快照只完整核对一次。任一项失效时整批返回错误，不静默丢选。它不授予写入权限。
+
 应用前 core 重建同一集合的计划。`ReplacePlan.hits` 只含实际选中项；`changes` 是文件完整候选；`occurrences` 与 `hits` 同序，每项提供：
 
 - `path`
