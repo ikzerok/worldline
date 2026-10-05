@@ -6,6 +6,7 @@ pub(super) use std::time::Instant as MonotonicInstant;
 pub(super) use web_time::Instant as MonotonicInstant;
 
 use worldline_core::ast::{DivertTarget, EffectWhen, Stmt};
+use worldline_core::evidence_source::VariableWriteOperation;
 
 use super::util::{choice_signature, stable_hash, stmt_line};
 use super::{
@@ -135,7 +136,12 @@ impl<'p> Story<'p> {
                 Stmt::Let(l) => {
                     if !l.is_const || !self.vars.contains_key(&l.name) {
                         let v = self.eval(&l.expr)?;
-                        self.vars.insert(l.name.clone(), v);
+                        let operation = if l.is_const {
+                            VariableWriteOperation::Const
+                        } else {
+                            VariableWriteOperation::Let
+                        };
+                        self.write_variable(&l.name, v, operation, l.loc.line);
                     }
                     self.frames[fi].idx += 1;
                 }
@@ -148,7 +154,7 @@ impl<'p> Story<'p> {
                         });
                     }
                     let v = self.eval(&s.expr)?;
-                    self.vars.insert(s.name.clone(), v);
+                    self.write_variable(&s.name, v, VariableWriteOperation::Set, s.loc.line);
                     self.frames[fi].idx += 1;
                 }
                 Stmt::If(i) => {
@@ -357,7 +363,7 @@ impl<'p> Story<'p> {
         self.anchors.clear();
         self.states.clone_from(&self.initial_states);
         self.state_history.clear();
-        self.state_actions = Default::default();
+        self.action_capture = Default::default();
         self.choice_coverage.clear();
         self.rng.set(self.seed);
         self.init_vars()?;

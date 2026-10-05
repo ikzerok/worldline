@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use worldline_core::ast::{EffectWhen, Program, Stmt, TextPart};
 use worldline_core::Analysis;
 
+mod action_capture;
 mod bounded;
 mod choices;
 mod comparison_boundary;
@@ -26,6 +27,7 @@ mod route_comparison;
 mod state_actions;
 mod util;
 mod variable_validation;
+mod variable_writes;
 
 pub use bounded::{
     BoundedContinuation, ContinuationOutcome, BOUNDED_CONTINUE_CAPABILITY,
@@ -46,6 +48,7 @@ pub use replay_runner::ReplaySession;
 pub use route_comparison::*;
 pub use state_actions::{StateActionEvidence, StateActionRecord};
 use util::{expression_source, initial_states, normalize_seed, seed_now};
+pub use variable_writes::{VariableWriteEvidence, VariableWriteRecord};
 
 // ---------------------------------------------------------------------------
 // 帧栈
@@ -80,7 +83,7 @@ pub struct Story<'p> {
     program: &'p Program,
     symbols: &'p worldline_core::Symbols,
     catalog: &'p worldline_core::Catalog,
-    state_actions: state_actions::StateActionCapture,
+    action_capture: action_capture::ActionCapture,
     vars: HashMap<String, Value>,
     visits: HashMap<String, u32>,
     turns: u32,
@@ -138,7 +141,7 @@ impl<'p> Story<'p> {
             program,
             symbols: &analysis.symbols,
             catalog: &analysis.catalog,
-            state_actions: Default::default(),
+            action_capture: Default::default(),
             vars: HashMap::new(),
             visits: HashMap::new(),
             turns: 0,

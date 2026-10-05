@@ -76,9 +76,10 @@ pub(super) fn cmd_maps(args: &MapsArgs, out: &mut impl Write) -> Result<i32, Str
         for (id, map) in &snapshot.map_index.maps {
             writeln!(
                 out,
-                "{id}  {}  ({} 个标记)",
+                "{id}  {}  ({} 个旧标记 / {} 个原生图元)",
                 map.title,
-                map.placements.len()
+                map.placements.len(),
+                map.scene.as_ref().map_or(0, |scene| scene.nodes.len())
             )
             .map_err(|e| e.to_string())?;
         }

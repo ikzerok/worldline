@@ -43,7 +43,9 @@ pub(crate) fn check_story(story: &Story<'_>, maximum: usize) -> Result<(), Route
         .saturating_add(story.choice_coverage.len())
         .saturating_add(story.state_history.len())
         .saturating_add(story.anchors.len())
-        .saturating_add(story.choices().len());
+        .saturating_add(story.choices().len())
+        .saturating_add(story.state_action_evidence().records.len())
+        .saturating_add(story.variable_write_evidence().records.len());
     if records > MAX_ROUTE_REPORT_RECORDS {
         return Err(RouteComparisonError::new(
             "output_limit",
@@ -51,7 +53,9 @@ pub(crate) fn check_story(story: &Story<'_>, maximum: usize) -> Result<(), Route
         ));
     }
     // 固定状态字段与调用帧结构开销预留；内容仍逐项借用计数。
-    let overhead = 512usize.saturating_add(story.frames.len().saturating_mul(256));
+    let overhead = 512usize
+        .saturating_add(story.frames.len().saturating_mul(256))
+        .saturating_add(story.action_capture.encoded_size_bound());
     let mut remaining = maximum
         .checked_sub(overhead)
         .ok_or_else(|| RouteComparisonError::new("output_limit", "比较状态结构超过输出额度"))?;
@@ -132,6 +136,7 @@ pub(super) fn check_report(
             .saturating_add(side.states.as_ref().map_or(0, |values| values.len()))
             .saturating_add(side.vars.as_ref().map_or(0, |values| values.len()))
             .saturating_add(side.state_actions.records.len())
+            .saturating_add(side.variable_writes.records.len())
             .saturating_add(coverage(&side.coverage.inherited))
             .saturating_add(coverage(&side.coverage.executed))
             .saturating_add(coverage(&side.coverage.total));

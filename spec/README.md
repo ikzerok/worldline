@@ -48,3 +48,5 @@
 - [静态人物强引用](character-refs.md)：显式1.13双能力保护、typed property/schema/template、身份改写与披露边界
 
 - [bounded-execution.md](bounded-execution.md)：普通演练的预算、可恢复outcome、CLI与JSON-RPC协商。
+
+- [真实变量写入证据](https://github.com/ikzerok/worldline/blob/main/spec/variable-write-evidence.md)：路线验证区间、实际前后值、共享预算与可信来源

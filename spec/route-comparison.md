@@ -99,3 +99,9 @@ CLI：`wl route-compare PROJECT --left-trace-json DTO --right-trace-json DTO [--
 ## 实施与资源采样门
 
 实现完成前须在同一全新fixture的50/200规模及一份限额压力样本上记录：源码bytes、state/var/节点/选择数量、输入trace bytes/steps、实际解释器steps、实际输出条数/bytes、动作总数/保留数/omitted、最终DTO bytes、墙钟耗时与可取得的进程peak RSS。同步与合作式分别采样并核对同一结果；预算停止与预先/执行中取消分别验证两侧状态、合计步数和响应时间。报告包含OS/架构、debug或release、工具版本、单次还是重复次数以及测量方法；不可把单次debug结果当性能承诺。native与WASM的单语句不可抢占边界须保留；未实测平台明确标未测。构建或采样发现显著资源回归须先解决/说明再通过实现门，不能以UI截断掩盖runtime无界分配。
+
+## 工具0.27：全局变量的实际写入
+
+新增变量写入、起点/检查点边界、共享证据预算和可信来源见
+[变量写入证据](https://github.com/ikzerok/worldline/blob/main/spec/variable-write-evidence.md)。
+旧普通变量终值仍为事实，但不再用静态赋值点代替已执行动作；本功能也不提供完整因果证明。

@@ -50,6 +50,22 @@ fn same_nodes_different_inputs_and_results_are_the_shared_runtime_projection() {
     assert_eq!(pair["right"]["vars"]["credits"]["Num"], 7.0);
     assert_eq!(pair["state_differences"][0]["id"], "bell_fate");
     assert_eq!(pair["variable_differences"][0]["id"], "credits");
+    for side in ["left", "right"] {
+        let evidence = &pair[side]["variable_writes"];
+        assert_eq!(evidence["captured"], true);
+        assert_eq!(evidence["total_writes"], u64::from(side == "right"));
+        assert_eq!(evidence["omitted"], false);
+        if side == "left" {
+            assert_eq!(evidence["records"], json!([]));
+            continue;
+        }
+        let write = &evidence["records"][0];
+        assert_eq!(write["variable"], "credits");
+        assert_eq!(write["operation"], "set");
+        assert_eq!(write["before"]["Num"], 0.0);
+        assert_eq!(write["after"], pair[side]["vars"]["credits"]);
+        assert_eq!(write["source"]["kind"], "variable_write");
+    }
     assert_eq!(fixture.source(), SOURCE);
 }
 
@@ -78,6 +94,8 @@ fn partial_checkpoint_and_zero_budget_keep_their_actual_scope() {
             >= 2
     );
     assert_eq!(side["state_actions"]["total_actions"], 0);
+    assert_eq!(side["variable_writes"]["captured"], true);
+    assert_eq!(side["variable_writes"]["total_writes"], 0);
     let (code, result) = invoke(&fixture, &partial, &complete, &["--max-steps=0"]);
     assert_eq!(code, 1);
     for side in ["left", "right"] {

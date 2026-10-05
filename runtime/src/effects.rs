@@ -162,7 +162,7 @@ impl<'p> Story<'p> {
                     turn: self.turns,
                 });
                 if let Some(record) = self.state_history.last() {
-                    self.state_actions.record(
+                    self.action_capture.record(
                         record,
                         self.catalog.states.get(&a.id).map(|state| &state.target),
                         source,

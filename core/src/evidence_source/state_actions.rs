@@ -76,10 +76,10 @@ pub(super) fn find<'a>(
         if effect_index.is_some() || action_index.is_some() {
             return None;
         }
-        let (root, body) = node_body(program, node)?;
+        let body = node_body(program, node)?;
         let mut found = None;
         let mut count = 0;
-        visit_actions(body, &mut |loc, candidate, kind| {
+        visit_actions(body.body, &mut |loc, candidate, kind| {
             if loc.line == line && candidate == *action {
                 count += 1;
                 found = Some((loc, kind));
@@ -89,7 +89,7 @@ pub(super) fn find<'a>(
             return None;
         }
         let (loc, kind) = found?;
-        (root, loc, kind)
+        (SourceOwner::new(body.file, body.line), loc, kind)
     } else {
         let when = match timing.as_str() {
             "enter" => EffectWhen::Enter,
@@ -121,28 +121,43 @@ pub(super) fn find<'a>(
     (!file.is_empty()).then_some(StateActionSource { file, loc, kind })
 }
 
-fn node_body<'a>(program: &'a Program, node: &str) -> Option<(SourceOwner, &'a [Stmt])> {
+pub(super) struct NodeBody<'a> {
+    pub file: &'a str,
+    pub line: u32,
+    pub scenes: Vec<String>,
+    pub body: &'a [Stmt],
+}
+
+pub(super) fn node_body<'a>(program: &'a Program, node: &str) -> Option<NodeBody<'a>> {
     if let Some(name) = node.strip_prefix("fragment:") {
         let mut fragments = program.fragments.iter().filter(|f| f.name == name);
         let fragment = fragments.next()?;
-        return fragments.next().is_none().then(|| {
-            (
-                SourceOwner::new(&fragment.file, fragment.loc.line),
-                fragment.body.as_slice(),
-            )
+        return fragments.next().is_none().then_some(NodeBody {
+            file: &fragment.file,
+            line: fragment.loc.line,
+            scenes: Vec::new(),
+            body: fragment.body.as_slice(),
         });
     }
     let mut found = None;
     let mut count = 0;
     for (index, event) in program.events.iter().enumerate() {
         if is_node_prefix(&event.name, node) {
-            visit_node_bodies(&event.body, &event.name, node, &mut |body| {
-                count += 1;
-                found = program
-                    .event_files
-                    .get(index)
-                    .map(|file| (SourceOwner::new(file, event.loc.line), body));
-            });
+            visit_node_bodies(
+                &event.body,
+                &event.name,
+                node,
+                &mut Vec::new(),
+                &mut |scenes, body| {
+                    count += 1;
+                    found = program.event_files.get(index).map(|file| NodeBody {
+                        file,
+                        line: event.loc.line,
+                        scenes: scenes.to_vec(),
+                        body,
+                    });
+                },
+            );
         }
     }
     if count == 1 {
@@ -163,10 +178,11 @@ fn visit_node_bodies<'a>(
     body: &'a [Stmt],
     current: &str,
     target: &str,
-    visit: &mut impl FnMut(&'a [Stmt]),
+    scenes: &mut Vec<String>,
+    visit: &mut impl FnMut(&[String], &'a [Stmt]),
 ) {
     if current == target {
-        visit(body);
+        visit(scenes, body);
         return;
     }
     for statement in body {
@@ -174,13 +190,15 @@ fn visit_node_bodies<'a>(
             Stmt::Scene(scene) => {
                 let node = format!("{current}.{}", scene.name);
                 if is_node_prefix(&node, target) {
-                    visit_node_bodies(&scene.body, &node, target, visit);
+                    scenes.push(scene.name.clone());
+                    visit_node_bodies(&scene.body, &node, target, scenes, visit);
+                    scenes.pop();
                 }
             }
-            Stmt::Choice(choice) => visit_node_bodies(&choice.body, current, target, visit),
+            Stmt::Choice(choice) => visit_node_bodies(&choice.body, current, target, scenes, visit),
             Stmt::If(branches) => {
                 for (_, branch) in &branches.branches {
-                    visit_node_bodies(branch, current, target, visit);
+                    visit_node_bodies(branch, current, target, scenes, visit);
                 }
             }
             _ => {}

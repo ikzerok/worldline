@@ -1,8 +1,5 @@
 //! 有界作者证据，与持久化 StateRecord 完全分离。
-use crate::{
-    route_comparison::{encoded_size, MAX_ROUTE_EVIDENCE_BYTES, MAX_ROUTE_EVIDENCE_RECORDS},
-    StateRecord, Story,
-};
+use crate::{route_comparison::encoded_size, StateRecord, Story};
 use serde::{Deserialize, Serialize};
 use worldline_core::{
     ast::ChangeKind,
@@ -30,50 +27,14 @@ pub struct StateActionEvidence {
     pub total_actions: u64,
     pub omitted: bool,
 }
-pub(crate) struct StateActionCapture {
-    pub evidence: StateActionEvidence,
-    bytes: usize,
-    record_limit: usize,
-    byte_limit: usize,
-}
-impl Default for StateActionCapture {
-    fn default() -> Self {
-        Self {
-            evidence: Default::default(),
-            bytes: 0,
-            record_limit: MAX_ROUTE_EVIDENCE_RECORDS,
-            byte_limit: MAX_ROUTE_EVIDENCE_BYTES,
-        }
-    }
-}
-impl StateActionCapture {
-    pub fn set_limits(&mut self, records: usize, bytes: usize) {
-        self.record_limit = records;
-        self.byte_limit = bytes;
-        self.bytes = 0;
-        let mut keep = 0;
-        for record in &self.evidence.records {
-            let Ok(size) = encoded_size(record, bytes.saturating_sub(self.bytes)) else {
-                break;
-            };
-            if keep >= records {
-                break;
-            }
-            self.bytes += size;
-            keep += 1;
-        }
-        if keep < self.evidence.records.len() {
-            self.evidence.omitted = true;
-            self.evidence.records.truncate(keep);
-        }
-    }
+impl crate::action_capture::ActionCapture {
     pub fn record(
         &mut self,
         record: &StateRecord,
         target: Option<&TargetRef>,
         source: Option<EvidenceSource>,
     ) {
-        self.evidence.total_actions += 1;
+        self.states.total_actions += 1;
         let strings = std::iter::once(record.state.as_str())
             .chain(record.before.iter().map(String::as_str))
             .chain(record.after.iter().map(String::as_str))
@@ -100,7 +61,7 @@ impl StateActionCapture {
             source: &'a Option<EvidenceSource>,
         }
         let borrowed = Borrowed {
-            sequence: self.evidence.total_actions,
+            sequence: self.states.total_actions,
             kind: record.kind,
             state: &record.state,
             before: &record.before,
@@ -112,17 +73,16 @@ impl StateActionCapture {
             target,
             source: &source,
         };
-        if too_long || self.evidence.records.len() >= self.record_limit {
-            self.evidence.omitted = true;
+        if too_long {
+            self.states.omitted = true;
             return;
         }
-        let Ok(size) = encoded_size(&borrowed, self.byte_limit.saturating_sub(self.bytes)) else {
-            self.evidence.omitted = true;
+        if !self.reserve(&borrowed) {
+            self.states.omitted = true;
             return;
-        };
-        self.bytes += size;
-        self.evidence.records.push(StateActionRecord {
-            sequence: self.evidence.total_actions,
+        }
+        self.states.records.push(StateActionRecord {
+            sequence: self.states.total_actions,
             kind: record.kind,
             state: record.state.clone(),
             before: record.before.clone(),
@@ -138,7 +98,7 @@ impl StateActionCapture {
 }
 impl Story<'_> {
     pub fn state_action_evidence(&self) -> &StateActionEvidence {
-        &self.state_actions.evidence
+        &self.action_capture.states
     }
     pub(crate) fn action_source(&self, kind: ChangeKind, line: u32) -> Option<EvidenceSource> {
         let node = self.current_node()?;

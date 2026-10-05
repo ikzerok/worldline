@@ -1,5 +1,8 @@
 use super::{SchemaField, SchemaIndex, SchemaInstance};
-use crate::{catalog::TargetRef, project::Project, source_edit::SourceEditRequest, Diagnostic};
+use crate::{
+    catalog::TargetRef, diagnostic::DiagnosticSourceRole, project::Project,
+    source_edit::SourceEditRequest, Diagnostic,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -23,6 +26,46 @@ pub struct SchemaInstanceImpact {
     pub after_diagnostics: Vec<Diagnostic>,
 }
 
+/// 影响集合不完整的稳定分类；顺序与协议展示顺序一致。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SchemaIncompleteReason {
+    SourceLoading,
+    Syntax,
+    AmbiguousDeclaration,
+    SchemaDefinition,
+}
+
+impl SchemaIncompleteReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SourceLoading => "源码未完整加载（缺失、不可读、越界或 include 异常）",
+            Self::Syntax => "源码存在词法或解析错误",
+            Self::AmbiguousDeclaration => "对象身份、属性或声明存在歧义",
+            Self::SchemaDefinition => "schema 声明或绑定不完整",
+        }
+    }
+
+    fn from_diagnostic(diagnostic: &Diagnostic) -> Option<Self> {
+        match diagnostic.code {
+            "A105" => Some(Self::SourceLoading),
+            // 附件的 A109 指向声明；编译器的 A109 指向加载目标或入口文档。
+            "A109"
+                if matches!(
+                    diagnostic.source_role(),
+                    Some(DiagnosticSourceRole::Target | DiagnosticSourceRole::Document)
+                ) =>
+            {
+                Some(Self::SourceLoading)
+            }
+            code if code.starts_with('P') || code.starts_with('L') => Some(Self::Syntax),
+            "A104" | "A211" | "A212" | "A220" => Some(Self::AmbiguousDeclaration),
+            "SCH001" | "SCH002" | "SCH003" => Some(Self::SchemaDefinition),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaEditPreview {
     pub schema_version: u32,
@@ -30,8 +73,9 @@ pub struct SchemaEditPreview {
     pub expected_baseline: String,
     pub plan_digest: String,
     pub changed: bool,
-    /// 语法/声明/绑定不完整时仍保留计划和源码，不推断无影响。
+    /// 来源/语法/声明/绑定不完整时仍保留计划和源码，不推断无影响。
     pub complete: bool,
+    pub incomplete_reasons: Vec<SchemaIncompleteReason>,
     pub before_diagnostics: Vec<Diagnostic>,
     pub after_diagnostics: Vec<Diagnostic>,
     pub field_changes: Vec<SchemaFieldChange>,
@@ -84,18 +128,14 @@ impl Project {
         let changed_schemas: BTreeSet<_> =
             field_changes.iter().map(|c| c.schema_id.clone()).collect();
         let impacts = impacts(&before, &after, &changed_schemas);
-        let complete = before
+        let incomplete_reasons: Vec<_> = before
             .diagnostics
             .iter()
             .chain(&after.diagnostics)
-            .all(|d| {
-                !(d.code.starts_with('P')
-                    || d.code.starts_with('L')
-                    || matches!(
-                        d.code,
-                        "SCH001" | "SCH002" | "SCH003" | "A104" | "A211" | "A212" | "A220"
-                    ))
-            });
+            .filter_map(SchemaIncompleteReason::from_diagnostic)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         Ok((
             candidate,
             SchemaEditPreview {
@@ -104,7 +144,8 @@ impl Project {
                 expected_baseline: request.expected_baseline.clone(),
                 plan_digest: source_preview.plan_digest,
                 changed: source_preview.changed,
-                complete,
+                complete: incomplete_reasons.is_empty(),
+                incomplete_reasons,
                 before_diagnostics: before.diagnostics,
                 after_diagnostics: after.diagnostics,
                 field_changes,
