@@ -124,8 +124,8 @@ fn real_rpc_path_and_project_preview_apply_save_and_reopen_match_core() {
     let compiled = reopened.compile();
     assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
     assert_eq!(
-        compiled.analysis.catalog.entities[ID].file,
-        fixture.root.join(TARGET).to_string_lossy()
+        std::path::PathBuf::from(&compiled.analysis.catalog.entities[ID].file),
+        fixture.root.join(TARGET)
     );
     assert_eq!(compiled.analysis.catalog.states["lamp"].target.id, ID);
     assert_eq!(

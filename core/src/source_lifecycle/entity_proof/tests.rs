@@ -29,9 +29,11 @@ fn fixture() -> (CompileResult, CompileResult, LineMap) {
     let after = compile_sources_with_options(&entry, &moved, CompileOptions::v1_10());
     assert!(!before.has_errors(), "{:?}", before.diagnostics);
     assert!(!after.has_errors(), "{:?}", after.diagnostics);
+    // 与真实移源一致，来源身份取自正式编译结果；临时目录原始拼写在 Windows
+    // 可能含短文件名/设备前缀，不是编译器已规范化的 file 身份。
     let map = LineMap {
-        source: source.to_string_lossy().into(),
-        destination: destination.to_string_lossy().into(),
+        source: before.analysis.catalog.entities["tower"].file.clone(),
+        destination: after.analysis.catalog.entities["tower"].file.clone(),
         first: 1,
         last: 3,
         inserted: 2,

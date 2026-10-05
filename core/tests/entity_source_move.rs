@@ -158,12 +158,12 @@ fn complete_entity_moves_exact_utf8_crlf_without_neighbor_comments_or_blank_line
     assert_eq!(before.analysis.fingerprint, after.analysis.fingerprint);
     assert_eq!(after.analysis.catalog.states["lamp"].target.id, ID);
     assert_eq!(
-        after.analysis.catalog.entities[ID].file,
-        fixture.root.join(TARGET).to_string_lossy()
+        std::path::PathBuf::from(&after.analysis.catalog.entities[ID].file),
+        fixture.root.join(TARGET)
     );
     assert_eq!(
-        after.analysis.catalog.entities["neighboring"].file,
-        fixture.root.join(SOURCE).to_string_lossy()
+        std::path::PathBuf::from(&after.analysis.catalog.entities["neighboring"].file),
+        fixture.root.join(SOURCE)
     );
     assert_eq!(project.language_version(), "1.13");
 }
@@ -192,8 +192,8 @@ fn one_snapshot_undo_redo_save_reopen_and_export_keep_unreferenced_files() {
     assert_eq!(reopened.content_baseline(), project.content_baseline());
     assert_eq!(reopened.compile().analysis.fingerprint, before_fingerprint);
     assert_eq!(
-        reopened.compile().analysis.catalog.entities[ID].file,
-        fixture.root.join(TARGET).to_string_lossy()
+        std::path::PathBuf::from(&reopened.compile().analysis.catalog.entities[ID].file),
+        fixture.root.join(TARGET)
     );
     let exported = reopened.export_files().unwrap();
     for path in [
@@ -257,8 +257,8 @@ fn same_source_is_validated_no_change_and_multiple_active_targets_are_legal() {
             .unwrap();
         candidate.apply_source_lifecycle_plan(&plan).unwrap();
         assert_eq!(
-            candidate.compile().analysis.catalog.entities[ID].file,
-            fixture.root.join(target).to_string_lossy()
+            std::path::PathBuf::from(&candidate.compile().analysis.catalog.entities[ID].file),
+            fixture.root.join(target)
         );
     }
 }
@@ -306,7 +306,7 @@ fn entity_declared_in_the_entry_can_move_without_relocating_the_entry_file() {
     assert_eq!(before.program.entry, after.program.entry);
     assert_eq!(before.analysis.fingerprint, after.analysis.fingerprint);
     assert_eq!(
-        after.analysis.catalog.entities[ID].file,
-        fixture.root.join(TARGET).to_string_lossy()
+        std::path::PathBuf::from(&after.analysis.catalog.entities[ID].file),
+        fixture.root.join(TARGET)
     );
 }
