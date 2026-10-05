@@ -29,6 +29,10 @@ pub(super) fn command(args: &[String], out: &mut impl Write, mode: &str) -> Resu
         }
     };
     let mut payload = query_payload_base(&snapshot);
+    payload.insert(
+        "executable_context".into(),
+        json!(worldline_core::world_context::EXECUTABLE_CONTEXT_CAPABILITY),
+    );
     let mut ok = !snapshot.result.has_errors();
     match mode {
         "object" => match snapshot

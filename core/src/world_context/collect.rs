@@ -240,7 +240,7 @@ fn visit_properties(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn record(
+pub(super) fn record(
     kind: WorldContextKind,
     from_ref: &TargetRef,
     to_ref: &TargetRef,

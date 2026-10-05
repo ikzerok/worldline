@@ -1,6 +1,6 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.26.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.28.0候选不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
@@ -50,3 +50,6 @@
 - [bounded-execution.md](bounded-execution.md)：普通演练的预算、可恢复outcome、CLI与JSON-RPC协商。
 
 - [真实变量写入证据](https://github.com/ikzerok/worldline/blob/main/spec/variable-write-evidence.md)：路线验证区间、实际前后值、共享预算与可信来源
+
+- [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：调用与全局读写的明确语境、同快照索引与显式消费
+- [可读试玩审阅](https://github.com/ikzerok/worldline/blob/main/spec/playthrough-report.md)：重新验证的单路线、实际输出来源、私密交接与预算

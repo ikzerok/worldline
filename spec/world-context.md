@@ -59,3 +59,9 @@ Project 包装不偷偷 refresh；只读检查既有交叉修改/恢复冲突，
 原有预算/显示含义，不改变 read_only。无法读取冲突状态时返回 SOURCE_UNAVAILABLE，
 不得把不可检查当成无冲突。没有冲突也不承诺查询返回后磁盘不会再次改变。
 调用方若已有 CompileResult 与已知冲突，可用结果的 mark_source_conflict 标注同样状态。
+
+## 0.28 可执行使用处扩展
+
+通过 `include_executable:true` 或显式新 kind 协商启用静态调用与全局读写；默认旧
+请求的六类及计数不变。新增类型、typed context、来源与索引不完整原因见
+[executable-context.md](executable-context.md)。静态写入不是运行时写入证据。

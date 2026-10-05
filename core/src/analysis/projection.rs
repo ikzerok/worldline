@@ -144,6 +144,9 @@ pub struct Stats {
 
 #[derive(Debug, Serialize)]
 pub struct Analysis {
+    /// 同编译快照的只读静态使用处；不改变旧分析 JSON。
+    #[serde(skip)]
+    pub executable_context: crate::world_context::ExecutableContextIndex,
     pub catalog: crate::catalog::Catalog,
     pub timeline: crate::timeline::Timeline,
     pub world: Option<WorldInfo>,
@@ -159,6 +162,7 @@ pub struct Analysis {
 impl Clone for Analysis {
     fn clone(&self) -> Self {
         Analysis {
+            executable_context: self.executable_context.clone(),
             catalog: self.catalog.clone(),
             timeline: self.timeline.clone(),
             world: self.world.clone(),

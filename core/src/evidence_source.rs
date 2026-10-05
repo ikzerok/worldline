@@ -4,12 +4,14 @@ use crate::CompileResult;
 use serde::{Deserialize, Serialize};
 use std::{ops::Range, path::PathBuf};
 mod batch;
+mod outputs;
 mod state_actions;
 mod variable_writes;
 pub use batch::{
     resolve_evidence_source, resolve_evidence_sources, MAX_EVIDENCE_SOURCE_BATCH,
     MAX_EVIDENCE_SOURCE_BATCH_BYTES,
 };
+pub use outputs::runtime_output_source_file;
 pub use state_actions::state_action_source;
 pub use variable_writes::{variable_write_source, variable_write_source_file};
 

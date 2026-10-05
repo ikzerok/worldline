@@ -6,6 +6,13 @@
 
 升级边界：0.27运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.28重放、比较或生成已验证审阅，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
 
+## 0.28 作者工作流（候选）
+
+- [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：查看调用、读写和语境，回到真实源码
+- [可读试玩审阅](https://github.com/ikzerok/worldedit/blob/main/docs/playthrough-report.md)：重新验证单条路径，预览后明确复制或导出作者报告
+- [地图作者位置](https://github.com/ikzerok/worldedit/blob/main/docs/map-author-context.md)：资料、源码与地图间的有效身份返回
+- [平行连接审阅](https://github.com/ikzerok/worldedit/blob/main/docs/parallel-edges.md)：准确数量、完整分支条件与逐条来源
+
 ## 使用入口
 
 - [连续键盘试玩](https://github.com/ikzerok/worldedit/blob/main/docs/keyboard-play.md)：成功推进后的可选项与结束动作焦点，不替作者继续选择

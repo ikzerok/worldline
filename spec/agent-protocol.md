@@ -756,3 +756,33 @@ CLI/RPC共享同一core投影，错误草稿保存规则不变，详见
 [schema影响完整性](https://github.com/ikzerok/worldline/blob/main/spec/schemas.md)。
 `incomplete_reasons`固定顺序去重，值为`source_loading`、`syntax`、
 `ambiguous_declaration`、`schema_definition`；完整时序列化为空数组。
+
+## 0.28 可执行依赖查询
+
+initialize.capabilities 新增 `authoring.executable_context.v1`；协议仍为1，作品
+required_features 不变。既有 `wl world-context` 的 `--options-json` 与 RPC
+`world.context.options` 接受 `include_executable:true`，或显式选择
+`rule_call` / `fragment_call` / `global_read` / `global_write` kind；这构成选择新能力。
+默认 false 保留旧结果。响应加法提供 executable_context 能力字符串说明此服务支持，
+并原样返回 core 的 typed provenance、同快照来源与 complete/reasons；严格参数检查、
+业务错误、退出码、冲突和来源失效规则不变。细节见
+[executable-context.md](executable-context.md)。
+
+## 0.28 已验证试玩报告接口
+
+能力 `authoring.playthrough_report.v1`；`wl playthrough-report <目录或入口> --trace-json DTO
+[--max-steps N] [--time-budget-ms N] [--json]` 与 RPC `project.playthrough_report
+{project_id,trace,max_steps?,time_budget_ms?}` 共用 runtime 的单一路径验证及Markdown生产者。
+输入、信任边界、来源、时间、完整性和预算见 [playthrough-report.md](playthrough-report.md)。
+
+CLI默认写出同一Markdown，JSON与RPC结果为 `{ok,report}`；调用错误/编译错误为
+`{ok:false,report:null,error:{code,message}}`，编译错误附当前诊断。`ok` 仅在
+`report.status=replayed` 为真；即使此时 `complete=false`，也只表示已验证部分区段。
+完整结果还必须 `complete && ended`。其余真实停止状态保留报告但 `ok:false`，不得把状态
+伪造成参数错误。CLI验证通过退出0、故事/报告失败1、参数/输入/IO失败2。RPC协议参数错误
+用 `-32602`，合法请求的故事失败仍是正常结果。只接受上述参数，重复CLI参数拒绝。
+
+完整JSON响应（含id、外壳及换行）小于1MiB+4096字节；输入trace含JSON转义的计量先于克隆。
+巨大id不能保证有界响应时返回null id的 `-32600`，不反射超额id。诊断及错误文本先流式
+计量再投影；超额返回小型 `output_limit`。通知不输出响应。CLI只读打开当前磁盘稿，RPC
+只读编译已打开工程的已应用缓冲，不刷新磁盘、不恢复事务、不修改live session。

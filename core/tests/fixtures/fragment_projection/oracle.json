@@ -1,0 +1,176 @@
+{
+  "depth": [
+    0,
+    1,
+    2,
+    2
+  ],
+  "edges": [
+    {
+      "contexts": [
+        {
+          "choices": [],
+          "conditions": []
+        }
+      ],
+      "file": "oracle.wl",
+      "from": 0,
+      "kind": "enter",
+      "label": null,
+      "line": 22,
+      "target_requirement": null,
+      "to": 1
+    },
+    {
+      "contexts": [
+        {
+          "choices": [
+            "带上长名字的供水宪章"
+          ],
+          "conditions": [
+            "(count > 1)",
+            "open",
+            "(count > 0)",
+            "此选择尚未选取"
+          ]
+        }
+      ],
+      "file": "oracle.wl",
+      "from": 1,
+      "kind": "divert",
+      "label": "经片段 wrapper → jumping",
+      "line": 14,
+      "target_requirement": null,
+      "to": 2
+    },
+    {
+      "contexts": [
+        {
+          "choices": [],
+          "conditions": [
+            "(count > 1)",
+            "not (open)"
+          ]
+        }
+      ],
+      "file": "oracle.wl",
+      "from": 1,
+      "kind": "drift",
+      "label": "经片段 wrapper → jumping",
+      "line": 16,
+      "target_requirement": null,
+      "to": 3
+    },
+    {
+      "contexts": [
+        {
+          "choices": [
+            "带上长名字的供水宪章"
+          ],
+          "conditions": [
+            "(count > 1)",
+            "open",
+            "(count > 0)",
+            "此选择尚未选取"
+          ]
+        }
+      ],
+      "file": "oracle.wl",
+      "from": 1,
+      "kind": "divert",
+      "label": "经片段 wrapper → jumping",
+      "line": 14,
+      "target_requirement": null,
+      "to": 2
+    },
+    {
+      "contexts": [
+        {
+          "choices": [],
+          "conditions": [
+            "(count > 1)",
+            "not (open)"
+          ]
+        }
+      ],
+      "file": "oracle.wl",
+      "from": 1,
+      "kind": "drift",
+      "label": "经片段 wrapper → jumping",
+      "line": 16,
+      "target_requirement": null,
+      "to": 3
+    }
+  ],
+  "entry": 0,
+  "ids": {
+    "other": 3,
+    "start": 0,
+    "start.room": 1,
+    "target": 2
+  },
+  "nodes": [
+    {
+      "characters": [],
+      "choice_count": 0,
+      "file": "oracle.wl",
+      "is_event": true,
+      "line": 21,
+      "name": "start",
+      "perm": null,
+      "seq": 1,
+      "storyline": "main",
+      "summary": null,
+      "word_count": 0
+    },
+    {
+      "characters": [],
+      "choice_count": 0,
+      "file": "oracle.wl",
+      "is_event": false,
+      "line": 22,
+      "name": "start.room",
+      "perm": null,
+      "seq": 0,
+      "storyline": "main",
+      "summary": null,
+      "word_count": 0
+    },
+    {
+      "characters": [],
+      "choice_count": 0,
+      "file": "oracle.wl",
+      "is_event": true,
+      "line": 26,
+      "name": "target",
+      "perm": null,
+      "seq": 2,
+      "storyline": "main",
+      "summary": null,
+      "word_count": 0
+    },
+    {
+      "characters": [],
+      "choice_count": 0,
+      "file": "oracle.wl",
+      "is_event": true,
+      "line": 29,
+      "name": "other",
+      "perm": null,
+      "seq": 1,
+      "storyline": "far",
+      "summary": null,
+      "word_count": 0
+    }
+  ],
+  "storyline_order": [
+    [
+      "far",
+      "far"
+    ],
+    [
+      "main",
+      "main"
+    ]
+  ]
+}

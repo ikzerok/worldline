@@ -120,6 +120,7 @@ impl<'p> Story<'p> {
                     let new_line = !self.glue_pending;
                     self.glue_pending = false;
                     if !content.is_empty() {
+                        self.capture_report_output(fi);
                         out.push(Output::Text {
                             speaker: None,
                             content,

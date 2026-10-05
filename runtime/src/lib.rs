@@ -20,6 +20,7 @@ mod language_expression;
 mod language_persistence;
 mod model;
 mod persistence;
+mod playthrough_report;
 mod random;
 mod replay;
 mod replay_runner;
@@ -39,6 +40,7 @@ use model::FrameSrc;
 pub use model::{
     AnchorKind, AnchorRecord, ChoicePresentation, ChoiceView, Output, RunError, StateRecord, Value,
 };
+pub use playthrough_report::*;
 pub use replay::{
     AccessCoverage, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ConditionExplanation,
     ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,

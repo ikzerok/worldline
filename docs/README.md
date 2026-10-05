@@ -2,7 +2,12 @@
 
 - [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 
-当前产品版本为 0.26.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+当前产品候选版本为 0.28.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+
+## 作者依赖与试玩交接
+
+- [静态依赖契约](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：规则/片段/变量使用处及CLI/RPC明确opt-in
+- [试玩报告使用](https://github.com/ikzerok/worldline/blob/main/docs/playthrough-report.md)：当前稿重新验证后生成可读Markdown，明确私密内容范围
 
 ## 当前源码行列
 

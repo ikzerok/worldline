@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{self, Write};
 
 /// 同时覆盖 save 的 pretty 暂存和最终嵌套 state 字符串，之后才可构建检查点。
-pub(super) fn check_checkpoint(
+pub(crate) fn check_checkpoint(
     story: &Story<'_>,
     maximum: usize,
 ) -> Result<(), RouteComparisonError> {

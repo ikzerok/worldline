@@ -100,9 +100,10 @@ pub use topic_projection::{
     TopicProjectionTimeStatus,
 };
 pub use world_context::{
-    WorldContextError, WorldContextIdentity, WorldContextKind, WorldContextLimit, WorldContextNode,
-    WorldContextOptions, WorldContextPrecision, WorldContextProvenance, WorldContextRecord,
-    WorldContextResult, WorldContextSource,
+    ExecutableContextIndex, ExecutableContextRole, WorldContextError, WorldContextIdentity,
+    WorldContextKind, WorldContextLimit, WorldContextNode, WorldContextOptions,
+    WorldContextPrecision, WorldContextProvenance, WorldContextRecord, WorldContextResult,
+    WorldContextSource,
 };
 
 /// 编译快照:源文件、程序、分析与全部诊断。

@@ -40,6 +40,10 @@ impl CompileResult {
         let mut found = Vec::new();
         let mut seen = BTreeSet::new();
         let mut budget_exhausted = false;
+        let executable = options.executable_enabled();
+        let index = &self.analysis.executable_context;
+        let mut source_unavailable = executable && index.source_unavailable;
+        let mut source_lines = BTreeMap::new();
         while let Some((current, depth)) = queue.pop_front() {
             if cancelled() {
                 return Err(WorldContextError::Cancelled);
@@ -49,7 +53,7 @@ impl CompileResult {
             }
             let mut was_cancelled = false;
             let mut candidates = Vec::new();
-            let finished = collect::visit(self, &current, wiki.as_ref(), |record| {
+            let mut collect_record = |record: Option<WorldContextRecord>| {
                 if cancelled() {
                     was_cancelled = true;
                     return false;
@@ -70,7 +74,16 @@ impl CompileResult {
                 seen.insert(record.id.clone());
                 candidates.push(record);
                 true
-            });
+            };
+            let finished = collect::visit(self, &current, wiki.as_ref(), &mut collect_record)
+                && (!executable
+                    || index.visit(
+                        self,
+                        &current,
+                        &mut source_unavailable,
+                        &mut source_lines,
+                        &mut collect_record,
+                    ));
             if was_cancelled {
                 return Err(WorldContextError::Cancelled);
             }
@@ -93,13 +106,21 @@ impl CompileResult {
                 break;
             }
         }
-        let total = (!budget_exhausted).then_some(found.len());
+        let index_limited = executable && index.limited;
+        let total =
+            (!budget_exhausted && !index_limited && !source_unavailable).then_some(found.len());
         let mut reasons = Vec::new();
         if self.has_errors() {
             reasons.push(WorldContextLimit::InvalidSource);
         }
         if budget_exhausted {
             reasons.push(WorldContextLimit::CandidateBudget);
+        }
+        if index_limited {
+            reasons.push(WorldContextLimit::ExecutableIndexBudget);
+        }
+        if source_unavailable {
+            reasons.push(WorldContextLimit::SourceUnavailable);
         }
         let mut included = BTreeSet::from([target.clone()]);
         let mut records = Vec::new();
@@ -139,9 +160,14 @@ impl CompileResult {
             })
             .collect();
         nodes.sort_by(|a, b| (a.depth, &a.target).cmp(&(b.depth, &b.target)));
-        let truncated = reasons
-            .iter()
-            .any(|reason| *reason != WorldContextLimit::InvalidSource);
+        let truncated = reasons.iter().any(|reason| {
+            !matches!(
+                reason,
+                WorldContextLimit::InvalidSource
+                    | WorldContextLimit::SourceConflict
+                    | WorldContextLimit::SourceUnavailable
+            )
+        });
         Ok(WorldContextResult {
             schema_version: 1,
             target: target.clone(),

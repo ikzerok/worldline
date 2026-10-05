@@ -115,3 +115,51 @@ fn temporal_comparison_has_real_evidence_and_stale_baseline_rejection() {
     assert_eq!(response["error"]["code"], "STALE_BASELINE");
     assert!(response["comparison"].is_null());
 }
+
+#[test]
+fn executable_context_opt_in_and_explicit_kind_match_core_without_changing_defaults() {
+    let fixture = Fixture::new();
+    let source = "let score = 1\nrule ready() -> bool = score > 0\nevent start\n  choice \"行\" if ready()\n    set score = score + 1\n    -> END\n";
+    std::fs::write(fixture.root.join("world.wl"), source).unwrap();
+    let (_, old) = invoke(&fixture, "world-context", &["--target", "rule:ready"]).unwrap();
+    assert_eq!(old["context"]["returned"], 0);
+    for options in [
+        r#"{"include_executable":true}"#,
+        r#"{"kinds":["rule_call"]}"#,
+    ] {
+        let (code, response) = invoke(
+            &fixture,
+            "world-context",
+            &["--target", "rule:ready", "--options-json", options],
+        )
+        .unwrap();
+        assert_eq!(code, 0, "{response}");
+        assert_eq!(
+            response["executable_context"],
+            "authoring.executable_context.v1"
+        );
+        let project = worldline_core::project::Project::open(&fixture.root).unwrap();
+        let expected = project
+            .query_world_context(
+                &worldline_core::TargetRef::new("rule", "ready"),
+                serde_json::from_str(options).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(response["context"], serde_json::to_value(expected).unwrap());
+    }
+    assert!(invoke(
+        &fixture,
+        "world-context",
+        &[
+            "--target",
+            "rule:ready",
+            "--options-json",
+            r#"{"include_executable":"yes"}"#
+        ]
+    )
+    .is_err());
+    assert_eq!(
+        std::fs::read_to_string(fixture.root.join("world.wl")).unwrap(),
+        source
+    );
+}
