@@ -11,6 +11,7 @@ mod flow;
 mod flow_safety;
 mod flow_summary;
 mod fragment_flow;
+mod fragment_transfer;
 mod language;
 mod source;
 mod variables;
@@ -126,7 +127,10 @@ pub(super) fn analyze(
     sort_diagnostics(&mut all);
     timeline.mark_incomplete(&all);
 
+    let executable_context =
+        crate::world_context::ExecutableContextIndex::build(program, &ctx.symbols);
     let analysis = Analysis {
+        executable_context,
         catalog,
         timeline,
         world,

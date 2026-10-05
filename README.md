@@ -1,10 +1,19 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 工具链。0.27 围绕可信路线审阅与资料维护：查看真实变量写入与来源，连续用键盘试玩，准确识别缺源码时的schema影响范围，并区分地图旧标记与原生图元。语言源码仍是唯一真源，语义和可信证据由 core/runtime 提供。
+世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.28围绕可解释依赖、可读试玩审阅、地图往返、汇聚分支可读性和共享片段分析性能。语义、来源与可信证据由core/runtime产生，编辑器消费同一投影。
 
-工作分支不表示已交付或正式发行；实际范围持续记录在[0.27版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.27.0.md)。本轮不新增 DSL，默认语言1.9、最高既有显式版本1.13保持；已交付的本文件结构、实体移源、逐处改稿、书稿审阅、试玩与读者公开选择继续保留。
+工作分支不表示已交付或正式发行；实际范围与验证状态见[0.28版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.28.0.md)。本轮不新增 DSL，默认语言1.9、最高既有显式版本1.13保持；既有资料、审稿、试玩、地图和读者公开选择继续保留。
 
-升级边界：0.26运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.27重放或比较，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
+升级边界：0.27运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.28重放、比较或生成已验证审阅，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
+
+## 0.28 作者工作流
+
+- [蓝时水库原创演练](https://github.com/ikzerok/worldline/tree/main/examples/blue-hour-reservoir)：直接打开两地图与两条路线，验证本轮作者流程
+
+- [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：查看调用、读写和语境，回到真实源码
+- [可读试玩审阅](https://github.com/ikzerok/worldedit/blob/main/docs/playthrough-report.md)：重新验证单条路径，预览后明确复制或导出作者报告
+- [地图作者位置](https://github.com/ikzerok/worldedit/blob/main/docs/map-author-context.md)：资料、源码与地图间的有效身份返回
+- [平行连接审阅](https://github.com/ikzerok/worldedit/blob/main/docs/parallel-edges.md)：准确数量、完整分支条件与逐条来源
 
 ## 使用入口
 

@@ -6,6 +6,7 @@ use crate::{
 use serde::Serialize;
 
 pub(crate) struct ActionCapture {
+    pub report_outputs: Option<crate::playthrough_report::OutputSources>,
     pub states: StateActionEvidence,
     pub variables: VariableWriteEvidence,
     bytes: usize,
@@ -15,6 +16,7 @@ pub(crate) struct ActionCapture {
 impl Default for ActionCapture {
     fn default() -> Self {
         Self {
+            report_outputs: None,
             states: Default::default(),
             variables: Default::default(),
             bytes: 0,

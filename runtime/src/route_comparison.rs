@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use worldline_core::evidence_source::EvidenceSource;
 
 mod checkpoint_limit;
+pub(crate) use checkpoint_limit::check_checkpoint;
 mod limits;
 mod projection;
 mod session;

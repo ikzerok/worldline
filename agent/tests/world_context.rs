@@ -160,3 +160,60 @@ fn io_failures_keep_the_common_query_envelope() {
         }
     }
 }
+
+#[test]
+fn executable_capability_is_explicit_and_rpc_projection_matches_core() {
+    let fixture = Fixture::new();
+    let source = "let score = 1\nrule ready() -> bool = score > 0\nevent start\n  choice \"行\" if ready()\n    set score = score + 1\n    -> END\n";
+    std::fs::write(fixture.root.join("world.wl"), source).unwrap();
+    let target = json!({"kind":"rule","id":"ready"});
+    let responses = exchange(vec![
+        request("initialize", json!({})),
+        request(
+            "world.context",
+            json!({"path":fixture.root,"target":target}),
+        ),
+        request(
+            "world.context",
+            json!({"path":fixture.root,"target":target,"options":{"include_executable":true}}),
+        ),
+        request(
+            "world.context",
+            json!({"path":fixture.root,"target":target,"options":{"kinds":["rule_call"]}}),
+        ),
+        request(
+            "world.context",
+            json!({"path":fixture.root,"target":target,"options":{"include_executable":"yes"}}),
+        ),
+    ]);
+    assert!(responses[0]["result"]["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("authoring.executable_context.v1")));
+    assert_eq!(responses[1]["result"]["context"]["returned"], 0);
+    assert_eq!(
+        responses[2]["result"]["executable_context"],
+        "authoring.executable_context.v1"
+    );
+    assert_eq!(responses[2]["result"]["context"]["returned"], 2);
+    assert_eq!(responses[3]["result"]["context"]["returned"], 1);
+    assert_eq!(responses[4]["error"]["code"], -32602);
+    let project = worldline_core::project::Project::open(&fixture.root).unwrap();
+    let expected = project
+        .query_world_context(
+            &worldline_core::TargetRef::new("rule", "ready"),
+            worldline_core::WorldContextOptions {
+                include_executable: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        responses[2]["result"]["context"],
+        serde_json::to_value(expected).unwrap()
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.root.join("world.wl")).unwrap(),
+        source
+    );
+}

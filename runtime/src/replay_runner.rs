@@ -19,6 +19,7 @@ use super::{
 mod tests;
 
 pub(crate) struct ReplayCursor {
+    pub(crate) report: Option<crate::playthrough_report::ReportObserver>,
     pub(crate) initial_state: serde_json::Value,
     pub(crate) initial_pending: bool,
     pub(crate) initial_verified: bool,
@@ -32,6 +33,7 @@ pub(crate) struct ReplayCursor {
 impl ReplayCursor {
     pub(crate) fn new(story: &Story<'_>) -> Self {
         Self {
+            report: None,
             initial_state: story.state_view(),
             initial_pending: true,
             initial_verified: false,
@@ -314,6 +316,13 @@ pub(crate) fn run_replay_slice(
                 });
             }
         }
+        if trace.initial_observation.is_some() {
+            if let Some(report) = &mut cursor.report {
+                if let Err(error) = report.record(&initial_actual, story) {
+                    return ReplayProgress::Rejected(error);
+                }
+            }
+        }
         cursor.initial_verified = trace.initial_observation.is_some();
         cursor.initial_pending = false;
     }
@@ -366,6 +375,10 @@ pub(crate) fn run_replay_slice(
             } else {
                 None
             };
+            let report_choice = cursor
+                .report
+                .as_ref()
+                .and_then(|_| story.report_choice(&step.choice));
             if let Err(error) = story.choose(choice_index) {
                 return ReplayProgress::Finished(ReplayEnd {
                     status: ReplayStatus::StoryFailed {
@@ -375,6 +388,11 @@ pub(crate) fn run_replay_slice(
                     },
                     initial_state: cursor.initial_state.clone(),
                 });
+            }
+            if let (Some(report), Some((choice, source))) = (&mut cursor.report, report_choice) {
+                if let Err(error) = report.selected(choice, source) {
+                    return ReplayProgress::Rejected(error);
+                }
             }
             if let Some(selected) = selected {
                 cursor.verified_choices.push(selected);
@@ -435,6 +453,11 @@ pub(crate) fn run_replay_slice(
                 },
                 initial_state: expected_observation.state.clone(),
             });
+        }
+        if let Some(report) = &mut cursor.report {
+            if let Err(error) = report.record(&actual, story) {
+                return ReplayProgress::Rejected(error);
+            }
         }
         cursor.step_index += 1;
         cursor.choice_pending = false;

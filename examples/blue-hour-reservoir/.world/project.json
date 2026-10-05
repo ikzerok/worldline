@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "project_id": "blue_hour_acceptance",
+  "language_version": "1.13",
+  "entry": "world.wl",
+  "required_features": [
+    "content.entities.v1",
+    "content.relations.v1",
+    "content.object_refs.v1",
+    "content.character_refs.v1",
+    "content.choice_presentation.v1",
+    "presentation.maps.v1",
+    "presentation.geometry.line_area.v1",
+    "presentation.manuscripts.v1"
+  ],
+  "maps": {
+    "reservoir_map": ".world/maps/reservoir.json",
+    "tower_detail": ".world/maps/tower_detail.json"
+  },
+  "graph_views": {},
+  "manuscripts": {
+    "blue_hour": ".world/manuscripts/blue_hour.json"
+  }
+}

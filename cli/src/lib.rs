@@ -327,6 +327,8 @@ mod parse_relation_edits;
 mod parse_relation_query;
 #[path = "lib/play.rs"]
 mod play;
+#[path = "lib/playthrough_report.rs"]
+mod playthrough_report;
 #[path = "lib/problems.rs"]
 mod problems;
 #[path = "lib/reader_export.rs"]
@@ -413,8 +415,9 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "replay" => play::cmd_replay(&play::parse_replay_args(rest)?, out),
         "route-compare" => route_comparison::command(rest, out),
+        "playthrough-report" => playthrough_report::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

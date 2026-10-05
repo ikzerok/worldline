@@ -95,6 +95,7 @@ impl<'p> Story<'p> {
             }
             Stmt::Say(s) => {
                 let (content, links) = self.render_parts(&s.text.parts)?;
+                self.capture_report_output(fi);
                 out.push(Output::Text {
                     speaker: Some(worldline_core::catalog::TargetRef {
                         kind: "character".into(),

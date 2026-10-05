@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "id": "reservoir_map",
+  "title": "蓝时水库 · 塔镇与通行路线",
+  "raster_layers": [],
+  "canvas": {
+    "width": 1600,
+    "height": 1000,
+    "unit": "normalized"
+  },
+  "layer_order": [
+    "routes",
+    "places"
+  ],
+  "layers": {
+    "routes": {
+      "title": "叙事路线",
+      "visible_default": true,
+      "locked": false
+    },
+    "places": {
+      "title": "塔镇",
+      "visible_default": true,
+      "locked": false
+    }
+  },
+  "placements": {
+    "pin_east_town": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "entity",
+        "id": "east_town"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.2,
+          0.55
+        ]
+      },
+      "annotation": "资料入口；坐标不构成运行事实。",
+      "role": "地点资料入口",
+      "scope_refs": []
+    },
+    "pin_west_town": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "entity",
+        "id": "west_town"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.78,
+          0.5
+        ]
+      },
+      "annotation": "资料入口；坐标不构成运行事实。",
+      "role": "地点资料入口",
+      "scope_refs": []
+    },
+    "pin_watchtower": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "entity",
+        "id": "watchtower"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.53,
+          0.22
+        ]
+      },
+      "annotation": "资料入口；坐标不构成运行事实。",
+      "role": "地点资料入口",
+      "scope_refs": []
+    },
+    "salt_road": {
+      "layer_id": "routes",
+      "target_ref": {
+        "kind": "relation",
+        "id": "salt_road"
+      },
+      "geometry": {
+        "kind": "polyline",
+        "points": [
+          [
+            0.2,
+            0.55
+          ],
+          [
+            0.78,
+            0.5
+          ]
+        ]
+      },
+      "annotation": "可用性以故事条件为准。",
+      "role": "路线说明",
+      "scope_refs": []
+    },
+    "ferry_route": {
+      "layer_id": "routes",
+      "target_ref": {
+        "kind": "relation",
+        "id": "ferry_route"
+      },
+      "geometry": {
+        "kind": "polyline",
+        "points": [
+          [
+            0.2,
+            0.55
+          ],
+          [
+            0.53,
+            0.22
+          ]
+        ]
+      },
+      "annotation": "可用性以故事条件为准。",
+      "role": "路线说明",
+      "scope_refs": []
+    }
+  },
+  "extensions": {}
+}

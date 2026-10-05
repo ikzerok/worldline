@@ -122,6 +122,10 @@ fn execute(project: &mut Project, request: Request, mode: &str) -> Value {
         }
     };
     let mut payload = query_payload_base(&snapshot);
+    payload.insert(
+        "executable_context".into(),
+        json!(worldline_core::world_context::EXECUTABLE_CONTEXT_CAPABILITY),
+    );
     let mut ok = !snapshot.result.has_errors();
     match mode {
         "object" => match snapshot

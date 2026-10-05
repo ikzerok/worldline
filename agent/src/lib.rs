@@ -36,6 +36,8 @@ mod localization;
 mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
+#[path = "lib/playthrough_report.rs"]
+mod playthrough_report;
 #[path = "lib/problems.rs"]
 mod problems;
 #[path = "lib/projects.rs"]
@@ -194,6 +196,9 @@ impl Server {
         if msg.get("method").and_then(Value::as_str) == Some("project.compare_routes") {
             return route_comparison::dispatch(self, &msg);
         }
+        if msg.get("method").and_then(Value::as_str) == Some("project.playthrough_report") {
+            return playthrough_report::dispatch(self, &msg);
+        }
         if msg.get("method").and_then(Value::as_str) == Some("project.problems") {
             return problems::dispatch_rpc(self, &msg);
         }
@@ -231,8 +236,10 @@ impl Server {
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,
                     worldline_runtime::ROUTE_COMPARISON_CAPABILITY,
+                    worldline_runtime::PLAYTHROUGH_REPORT_CAPABILITY,
                     worldline_core::scene_protocol::CAPABILITY,
                     worldline_core::world_context::WORLD_CONTEXT_CAPABILITY,
+                    worldline_core::world_context::EXECUTABLE_CONTEXT_CAPABILITY,
                     worldline_core::world_context::TEMPORAL_EXPLANATIONS_CAPABILITY,
                 ],
             })),

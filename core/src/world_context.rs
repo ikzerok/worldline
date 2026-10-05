@@ -3,9 +3,12 @@ use crate::{CatalogObject, Diagnostic, RelationDirection, RelationQueryDirection
 use serde::{Deserialize, Serialize};
 
 mod collect;
+mod executable;
+pub use executable::{ExecutableContextIndex, ExecutableContextRole};
 mod project;
 mod query;
 
+pub const EXECUTABLE_CONTEXT_CAPABILITY: &str = "authoring.executable_context.v1";
 pub const WORLD_CONTEXT_CAPABILITY: &str = "authoring.world_context.v1";
 pub const TEMPORAL_EXPLANATIONS_CAPABILITY: &str = "authoring.temporal_explanations.v1";
 
@@ -18,6 +21,18 @@ pub enum WorldContextKind {
     EventParticipation,
     ExplicitBodyLink,
     TextMention,
+    RuleCall,
+    FragmentCall,
+    GlobalRead,
+    GlobalWrite,
+}
+impl WorldContextKind {
+    pub fn is_executable(self) -> bool {
+        matches!(
+            self,
+            Self::RuleCall | Self::FragmentCall | Self::GlobalRead | Self::GlobalWrite
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +42,7 @@ pub struct WorldContextOptions {
     pub direction: RelationQueryDirection,
     pub kinds: Vec<WorldContextKind>,
     pub include_text_mentions: bool,
+    pub include_executable: bool,
     pub max_nodes: usize,
     pub max_records: usize,
     pub max_candidates: usize,
@@ -39,6 +55,7 @@ impl Default for WorldContextOptions {
             direction: RelationQueryDirection::Both,
             kinds: Vec::new(),
             include_text_mentions: false,
+            include_executable: false,
             max_nodes: 250,
             max_records: 500,
             max_candidates: 10_000,
@@ -47,6 +64,9 @@ impl Default for WorldContextOptions {
     }
 }
 impl WorldContextOptions {
+    pub fn executable_enabled(&self) -> bool {
+        self.include_executable || self.kinds.iter().any(|kind| kind.is_executable())
+    }
     pub fn validate(&self) -> Result<(), WorldContextError> {
         if !matches!(self.depth, 1 | 2)
             || !(1..=250).contains(&self.max_nodes)
@@ -101,6 +121,10 @@ pub enum WorldContextProvenance {
     TextMention {
         preview: String,
     },
+    Executable {
+        context: ExecutableContextRole,
+        occurrence: usize,
+    },
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldContextRecord {
@@ -131,6 +155,8 @@ pub enum WorldContextLimit {
     CandidateBudget,
     NodeLimit,
     RecordLimit,
+    ExecutableIndexBudget,
+    SourceUnavailable,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldContextResult {
