@@ -4,6 +4,8 @@
 use crate::ast::Loc;
 use crate::diagnostic::{Diagnostic, Span};
 mod classify;
+mod comments;
+pub(crate) use comments::CommentSource;
 mod source;
 pub(crate) use source::LineSource;
 mod identity;
@@ -283,67 +285,11 @@ pub fn parse_quoted_raw(
 /// 注释剥离:字符串感知(引号内的 `//` `/*` 不算注释),跨行块注释。
 /// 注释字符替换为空格,保持行号与列不漂移。
 pub fn strip_comments(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    let mut chars = src.chars().peekable();
-    let mut in_string = false;
-    let mut in_block = false;
-    while let Some(c) = chars.next() {
-        if in_block {
-            if c == '*' && chars.peek() == Some(&'/') {
-                chars.next();
-                out.push_str("  ");
-                in_block = false;
-            } else if c == '\n' {
-                out.push('\n');
-            } else {
-                out.push(' ');
-            }
-            continue;
-        }
-        if in_string {
-            out.push(c);
-            match c {
-                '\\' => {
-                    if let Some(&n) = chars.peek() {
-                        out.push(n);
-                        chars.next();
-                    }
-                }
-                '"' | '\n' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => {
-                in_string = true;
-                out.push(c);
-            }
-            '/' => {
-                if chars.peek() == Some(&'/') {
-                    // 行注释:吃掉本行剩余
-                    chars.next();
-                    out.push_str("  ");
-                    for n in chars.by_ref() {
-                        if n == '\n' {
-                            out.push('\n');
-                            in_string = false;
-                            break;
-                        }
-                        out.push(' ');
-                    }
-                } else if chars.peek() == Some(&'*') {
-                    chars.next();
-                    out.push_str("  ");
-                    in_block = true;
-                } else {
-                    out.push(c);
-                }
-            }
-            _ => out.push(c),
-        }
-    }
-    out
+    comments::scan(src).0
+}
+
+pub(crate) fn comment_source_spans(src: &str) -> Vec<CommentSource> {
+    comments::scan(src).1
 }
 
 fn is_ident_start(c: char) -> bool {

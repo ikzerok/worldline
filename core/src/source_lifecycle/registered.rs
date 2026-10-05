@@ -134,6 +134,7 @@ fn checked_registry(project: &Project) -> Result<Registry, String> {
         return Err("已登记 proposals 捕获了源码路径、摘要与基线；本版无法证明提案迁移等价，拒绝整个源码移动".into());
     }
     for (path, inherited) in &registry.documents {
+        super::safety::writable_path(path)?;
         let document = project.authoring_document(path)?;
         if document.is_deleted() || document.is_read_only() || *inherited {
             return Err(format!(

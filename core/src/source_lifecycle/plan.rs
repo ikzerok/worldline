@@ -10,7 +10,10 @@ pub(super) fn prepare(
     check_cancelled(cancelled)?;
     project.ensure_workspace_writable()?;
     project.source_lifecycle_disk_baselines_match_classified()?;
-    safety::inventory(project)?;
+    let inventory = safety::inventory(project)?;
+    let guard = matches!(request, SourceLifecycleRequest::MoveEntity { .. })
+        .then(|| project.source_lifecycle_guard(&inventory))
+        .transpose()?;
     let before = project.compile_current();
     let mut candidate = project.clone();
     let (source_path, destination_path, membership, changes, resources) = match request {
@@ -36,6 +39,16 @@ pub(super) fn prepare(
                 member(project, &source),
                 diff(project, &candidate)?,
                 Vec::new(),
+            )
+        }
+        SourceLifecycleRequest::MoveEntity { id, to } => {
+            let result = entity::prepare(project, &mut candidate, &before, id, to, cancelled)?;
+            (
+                Some(result.source),
+                Some(result.destination),
+                result.membership,
+                result.changes,
+                result.resources,
             )
         }
         SourceLifecycleRequest::Move { from, to } => {
@@ -111,14 +124,19 @@ pub(super) fn prepare(
         load_order_before: before.program.files,
         load_order_after: after.program.files,
         resources,
+        guard,
     };
-    let payload = serde_json::to_vec(&(&plan, candidate.content_baseline()))
-        .map_err(|error| error.to_string())?;
+    let payload = if let Some(guard) = &plan.guard {
+        serde_json::to_vec(&(&plan, guard, candidate.content_baseline()))
+    } else {
+        serde_json::to_vec(&(&plan, candidate.content_baseline()))
+    }
+    .map_err(|error| error.to_string())?;
     plan.plan_digest = digest(&payload);
     Ok((candidate, plan))
 }
 
-fn member(project: &Project, path: &Path) -> String {
+pub(super) fn member(project: &Project, path: &Path) -> String {
     match project.source_selection() {
         None => "recursive",
         Some(selection) if selection.is_active(path) => "active",

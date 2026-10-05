@@ -66,7 +66,7 @@ CLI 的 `relation-type update` 可用 `--clear-inverse-display`、`--clear-from-
 均原样返回同一计划。先调用 `project.source_lifecycle_preview`，参数为
 `{path,request}` 或 `{project_id,request}`；确认逐处变更后调用
 `project.source_lifecycle_apply`，增加原计划的 `plan_digest`。request 的 `operation`
-为 `create` / `include` / `move`，具体 JSON 与完整流程见[安全源码组织](source-lifecycle.md)。
+为 `create` / `include` / `move` / `move_entity`，具体 JSON 与完整流程见[安全源码组织](source-lifecycle.md)。
 未知或不适用参数是协议错误；过期、只读、路径冲突及等价性检查失败返回
 `ok:false` / `SOURCE_LIFECYCLE_REJECTED`。保存失败另标 `error.stage:"save"`，
 `applied:true,saved:false`；当前缓冲和可恢复日志保留，不能推断磁盘未修改。
@@ -74,7 +74,8 @@ CLI 的 `relation-type update` 可用 `--clear-inverse-display`、`--clear-from-
 Rust `preview_source_lifecycle(&request)` 只读；`apply_source_lifecycle(&request,digest)`
 仅提交内存，不保存。需要一次 undo 时，应用前捕获 Project clone，使用同一会话的
 `restore` 恢复；不要在 save 失败后回滚到旧快照来假装磁盘零修改。CLI / RPC 成功 apply
-会另外调用 `save`，只有 `saved:true` 表示完成保存。
+会另外调用 `save`，只有 `saved:true` 表示完成保存。`move_entity` 同源空计划不建立
+保存动作，返回 `applied:false,saved:false`；其它生命周期操作的回执规则保持不变。
 
 `compile_source(file, text)`、`compile_path(path)` 和 `compile_sources(entry, ...)` 保持
 1.9 默认；需要解析 entity 时使用对应的 `*_with_options` 入口并传入

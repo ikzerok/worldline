@@ -1,6 +1,6 @@
 # 安全源码组织
 
-源码新建、引用与路径移动使用同一份 core 计划，CLI 和 JSON-RPC 不另建路径解析器。
+源码新建、引用、路径移动与单实体声明移源使用同一份 core 计划，CLI 和 JSON-RPC 不另建路径解析器。
 默认语言仍为 1.9，最高显式语言仍为 1.13；本操作不升级作品语言或自动启用资料能力。
 完整契约见 [source-lifecycle.md](../spec/source-lifecycle.md)。
 
@@ -12,6 +12,9 @@
   另行授权启用；不能引用入口自身
 - move：移动一个已跟踪、非入口的 `.wl` 到不存在的新相对路径。保持 active、archived
   或未活动身份，支持中文、空格和多级目录；不支持目录批量移动、入口迁移或附件移动
+
+- move_entity：按唯一稳定 ID 将一个 entity 声明移到另一已有活动 `.wl`，不创建文件、
+  不改 include，不带走相邻声明和独立前置注释；来源由 core 查明，入口中的 entity 也可移动
 
 新建与引用不要求先修完无关的正文草稿。移动要求当前和候选活动源码均编译通过，
 并证明对象身份与顺序、正式引用、默认入口、加载顺序、附件解析及运行指纹等价。
@@ -38,11 +41,13 @@ wl source-lifecycle apply "D:/作品/我的世界" --request-json '{"operation":
 ```json
 {"operation":"include","path":"人物/已有.wl"}
 {"operation":"move","from":"旧章.wl","to":"章节/新章.wl"}
+{"operation":"move_entity","id":"north_lighthouse","to":"设定/地点.wl"}
 ```
 
 preview 返回 `applied:false,saved:false`，不应用计划。apply 重新检查完整请求、内容
 基线、保存基线、目标缺失及资源指纹，通过后应用并保存；成功返回
-`applied:true,saved:true`。两者的 plan 都是 core 的完整逐处计划。
+`applied:true,saved:true`。move_entity 同源请求返回 changes 为空的无变化计划；即使调用
+apply，也返回 `applied:false,saved:false`，不建立保存动作。两者的 plan 都是 core 的完整逐处计划。
 请求过期时重新预览，不能靠替换摘要绕过变化。用法失败退出码 2，业务或保存失败
 退出码 1，成功为 0；不加 `--json` 时显示中文摘要。
 
@@ -74,3 +79,19 @@ error；合法请求因工作区状态被拒绝时，result 为 `ok:false`，错
 RPC 的 project_id 会话也保留应用后的稿件。不要删除日志、盲目重发旧计划或将旧
 快照强行覆盖回磁盘；存在恢复冲突时按[工作区恢复契约](../spec/workspace.md)处理。
 跨文件保存采用可恢复 journal，不宣称物理原子写入。
+
+## 移动实体资料声明
+
+实体移源预览的两处变更分别是源删除和目标末尾插入，直接显示真实 UTF-8 范围、原文和
+前后上下文。声明的 description、property、块内及同行注释保留原始字节和 CRLF；
+无法明确归属的跨界注释拒绝，不猜测它属于哪个对象。目标末尾没有换行时，分隔换行
+同样展示在插入预览中。人物、事件、关系定义和批量迁移不属于此动作。
+
+core 比较完整 entity 资料、属性类型/值、正式引用多重集、schema 绑定和真实来源偏移，
+再检查运行指纹、入口与加载顺序。源码被 asset 当作原始附件，导致原始字节改变时，
+整个请求会拒绝；普通文字中的路径不猜改。预览后源码、清单、资源、其它普通文件的
+字节或库存变化，都需要重新预览。库存单文件64 MiB、总计256 MiB是证明上限，超过时
+明确拒绝。详见[单实体安全移源契约](../spec/entity-source-move.md)。
+
+Rust调用复用 SourceLifecycleRequest::MoveEntity { id, to } 与完整计划应用入口；
+编辑器可在应用前保存一次 Project 快照，完成一次撤销/重做，保存继续走既有 journal。

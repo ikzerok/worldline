@@ -100,3 +100,52 @@ impl Project {
         Ok(())
     }
 }
+
+impl Project {
+    /// 单实体计划绑定完整保存基线、刷新代次和所有普通文件库存。
+    pub(crate) fn source_lifecycle_guard(&self, inventory: &[PathBuf]) -> Result<String, Failure> {
+        let hash = crate::presentation_commands::document_hash;
+        let mut disk = Vec::new();
+        let mut total = 0usize;
+        for path in inventory {
+            let bytes = crate::source_lifecycle::resources::disk_bytes(self, path)?;
+            total = total.saturating_add(bytes.len());
+            if total > 256 * 1024 * 1024 {
+                return Err("实体移源库存内容超过 256 MiB 验证预算，工程未修改".into());
+            }
+            disk.push((path, hash(&bytes)));
+        }
+        let sources: Vec<_> = self
+            .documents
+            .iter()
+            .map(|(path, document)| {
+                (
+                    path,
+                    document.saved.as_ref().map(|text| hash(text.as_bytes())),
+                )
+            })
+            .collect();
+        let authoring: Vec<_> = self
+            .authoring_documents
+            .iter()
+            .map(|(path, document)| {
+                (
+                    path,
+                    document.saved.as_ref().map(|bytes| hash(bytes)),
+                    document.is_read_only(),
+                )
+            })
+            .collect();
+        let bytes = serde_json::to_vec(&(
+            self.refresh_generation,
+            inventory,
+            disk,
+            sources,
+            authoring,
+            self.content_baseline(),
+            self.language_version(),
+        ))
+        .expect("受控基线可序列化");
+        Ok(hash(&bytes))
+    }
+}
