@@ -3,6 +3,7 @@ use crate::ast::Expr;
 use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
 use std::collections::BTreeMap;
 mod origin;
+mod variable_writes;
 pub(crate) use origin::{bind_diagnostics, SourceOwner, StatementKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -98,6 +99,8 @@ pub struct SourceProvenance {
     /// 最后消费的物理语句行；只用于声明结构范围，不参与语义。
     pub(crate) block_ends: BTreeMap<(String, u32), u32>,
     pub(crate) statement_origins: BTreeMap<origin::StatementOriginKey, Option<String>>,
+    pub(crate) variable_write_origins:
+        BTreeMap<variable_writes::VariableWriteOriginKey, Option<String>>,
     pub(crate) statements: BTreeMap<(String, u32), StatementSource>,
     /// 正式 parser 消费的 if/else if/else 头，键为首 if 文件/行及分支序号。
     pub(crate) branch_headers: BTreeMap<(String, u32, usize), (String, Span)>,

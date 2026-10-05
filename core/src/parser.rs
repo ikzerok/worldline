@@ -132,6 +132,8 @@ pub struct Parser<'a> {
     allow_localization_ids: bool,
     sources: SourceProvenance,
     source_owner: Option<crate::source_provenance::SourceOwner>,
+    /// 变量写入的正式场景路径；条件与选择不创建新节点。
+    source_scenes: Vec<String>,
     remainder_bases: std::collections::BTreeMap<(String, u32), u32>,
 }
 
@@ -155,6 +157,7 @@ impl<'a> Parser<'a> {
             allow_character_refs: options.character_refs,
             allow_localization_ids: options.localization_ids,
             source_owner: None,
+            source_scenes: Vec::new(),
             remainder_bases: lines
                 .iter()
                 .map(|line| {

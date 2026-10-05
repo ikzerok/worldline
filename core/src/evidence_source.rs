@@ -5,11 +5,21 @@ use serde::{Deserialize, Serialize};
 use std::{ops::Range, path::PathBuf};
 mod batch;
 mod state_actions;
+mod variable_writes;
 pub use batch::{
     resolve_evidence_source, resolve_evidence_sources, MAX_EVIDENCE_SOURCE_BATCH,
     MAX_EVIDENCE_SOURCE_BATCH_BYTES,
 };
 pub use state_actions::state_action_source;
+pub use variable_writes::{variable_write_source, variable_write_source_file};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableWriteOperation {
+    Let,
+    Const,
+    Set,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EvidenceSource {
@@ -34,6 +44,11 @@ pub enum EvidenceSourceOwner {
         timing: String,
         effect_index: Option<usize>,
         action_index: Option<usize>,
+    },
+    VariableWrite {
+        node: String,
+        variable: String,
+        operation: VariableWriteOperation,
     },
 }
 

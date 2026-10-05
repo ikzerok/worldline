@@ -1,5 +1,7 @@
 //! 同一当前稿的真实双路线对照；契约见 spec/route-comparison.md。
-use crate::{AccessCoverage, ChoiceIdentity, ReplayBudget, StateActionEvidence, Value};
+use crate::{
+    AccessCoverage, ChoiceIdentity, ReplayBudget, StateActionEvidence, Value, VariableWriteEvidence,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldline_core::evidence_source::EvidenceSource;
@@ -125,6 +127,8 @@ pub struct RouteSideResult {
     pub vars: Option<BTreeMap<String, Value>>,
     pub coverage: RouteCoverage,
     pub state_actions: StateActionEvidence,
+    #[serde(default)]
+    pub variable_writes: VariableWriteEvidence,
     pub omitted: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

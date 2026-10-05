@@ -188,7 +188,7 @@ impl<'p> Story<'p> {
             program,
             symbols: &analysis.symbols,
             catalog: &analysis.catalog,
-            state_actions: Default::default(),
+            action_capture: Default::default(),
             vars: state.vars,
             visits: state.visits,
             turns: state.turns,

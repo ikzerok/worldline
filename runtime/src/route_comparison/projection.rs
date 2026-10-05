@@ -57,6 +57,7 @@ pub(super) fn empty_result(
         vars: None,
         coverage: RouteCoverage::default(),
         state_actions: StateActionEvidence::default(),
+        variable_writes: VariableWriteEvidence::default(),
         omitted: false,
     }
 }
@@ -124,7 +125,8 @@ pub(super) fn result(
             total,
         },
         state_actions: story.state_action_evidence().clone(),
-        omitted: story.state_action_evidence().omitted,
+        variable_writes: story.variable_write_evidence().clone(),
+        omitted: story.state_action_evidence().omitted || story.variable_write_evidence().omitted,
     }
 }
 pub(super) fn differences<T: Serialize + PartialEq>(
@@ -224,6 +226,9 @@ pub(super) fn verify_sources(
     }
     for side in [left, right] {
         for record in &mut side.state_actions.records {
+            slots.push(&mut record.source);
+        }
+        for record in &mut side.variable_writes.records {
             slots.push(&mut record.source);
         }
     }

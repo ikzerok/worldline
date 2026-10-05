@@ -309,7 +309,9 @@ impl<'a> Parser<'a> {
                 })
             }
             LineKind::Scene { name, loc } => {
+                self.source_scenes.push(name.clone());
                 let body = self.parse_block(indent, &file, true);
+                self.source_scenes.pop();
                 Stmt::Scene(SceneStmt {
                     name,
                     body,
@@ -490,6 +492,12 @@ impl<'a> Parser<'a> {
             }
         };
         if let Some(owner) = &self.source_owner {
+            self.sources.record_variable_write(
+                owner,
+                &self.source_scenes,
+                &statement,
+                &actual_file,
+            );
             self.sources.record_statement(
                 owner,
                 crate::language::statement_loc(&statement),

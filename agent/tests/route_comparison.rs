@@ -74,6 +74,24 @@ fn advertised_pair_is_exactly_the_runtime_projection_and_preserves_live_story() 
         .contains(&json!("authoring.route_comparison.v1")));
     assert_eq!(rows[7]["result"]["ok"], true, "{}", rows[7]);
     assert_eq!(rows[7]["result"]["comparison"], json!(expected));
+    for side in ["left", "right"] {
+        let evidence = &rows[7]["result"]["comparison"][side]["variable_writes"];
+        assert_eq!(evidence["captured"], true);
+        assert_eq!(evidence["total_writes"], u64::from(side == "right"));
+        assert_eq!(evidence["omitted"], false);
+        if side == "left" {
+            assert_eq!(evidence["records"], json!([]));
+            continue;
+        }
+        assert_eq!(evidence["records"][0]["operation"], "set");
+        assert_eq!(evidence["records"][0]["before"]["Num"], 0.0);
+        assert_eq!(evidence["records"][0]["source"]["kind"], "variable_write");
+    }
+    for index in [5, 6, 8, 9] {
+        assert!(!rows[index]["result"]
+            .to_string()
+            .contains("variable_writes"));
+    }
     assert_eq!(rows[5]["result"], rows[8]["result"]);
     assert_eq!(rows[6]["result"], rows[9]["result"]);
     assert_eq!(fixture.source(), SOURCE);
@@ -95,6 +113,8 @@ fn partial_checkpoint_one_sided_divergence_and_story_failure_are_business_result
     assert_eq!(side["coverage"]["executed"]["visited_nodes"], json!({}));
     assert_eq!(side["coverage"]["executed"]["selected_choices"], json!([]));
     assert_eq!(side["state_actions"]["records"], json!([]));
+    assert_eq!(side["variable_writes"]["captured"], true);
+    assert_eq!(side["variable_writes"]["total_writes"], 0);
     assert!(!side["coverage"]["inherited"]["visited_nodes"]
         .as_object()
         .unwrap()

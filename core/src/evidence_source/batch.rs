@@ -1,5 +1,6 @@
 //! 一次调用内按文件复用正式词法结果；身份验证与单项入口完全共用。
 use super::state_actions::{self, StateActionSource};
+use super::variable_writes::{self, VariableWriteSource};
 use super::{EvidenceSource, EvidenceSourceOwner, EvidenceSourcePrecision, EvidenceSourceTarget};
 use crate::lexer::{Line, LineKind};
 use crate::{CompileOptions, CompileResult, Diagnostic};
@@ -39,14 +40,17 @@ fn check_limits(sources: &[&EvidenceSource]) -> Result<(), String> {
     }
     let mut used = 0usize;
     for source in sources {
-        let (identity, timing) = match &source.owner {
+        let (identity, detail) = match &source.owner {
             EvidenceSourceOwner::Choice { node } => (node.as_str(), ""),
             EvidenceSourceOwner::Rule { name } => (name.as_str(), ""),
             EvidenceSourceOwner::StateAction { node, timing, .. } => {
                 (node.as_str(), timing.as_str())
             }
+            EvidenceSourceOwner::VariableWrite { node, variable, .. } => {
+                (node.as_str(), variable.as_str())
+            }
         };
-        for field in [source.file.as_str(), identity, timing] {
+        for field in [source.file.as_str(), identity, detail] {
             used = used
                 .checked_add(field.len())
                 .filter(|used| *used <= MAX_EVIDENCE_SOURCE_BATCH_BYTES)
@@ -60,6 +64,7 @@ struct Prepared<'a> {
     path: PathBuf,
     text: &'a str,
     action: Option<StateActionSource<'a>>,
+    variable_write: Option<VariableWriteSource<'a>>,
 }
 fn prepare<'a>(
     snapshot: &'a CompileResult,
@@ -74,6 +79,7 @@ fn prepare<'a>(
         .get(&path)
         .ok_or("证据来源不属于此编译快照")?;
     let action = state_actions::find(&snapshot.program, source.line, &source.owner);
+    let variable_write = variable_writes::find(&snapshot.program, source.line, &source.owner);
     let valid = match &source.owner {
         EvidenceSourceOwner::Choice { node } => super::choice_body(snapshot, &source.file, node)
             .is_some_and(|body| super::count_choices(body, source.line) == 1),
@@ -91,6 +97,9 @@ fn prepare<'a>(
         EvidenceSourceOwner::StateAction { .. } => action
             .as_ref()
             .is_some_and(|action| action.file == source.file),
+        EvidenceSourceOwner::VariableWrite { .. } => variable_write
+            .as_ref()
+            .is_some_and(|write| write.file == source.file),
     };
     if !valid {
         return Err("证据所属声明已变化或无法唯一确认".into());
@@ -100,6 +109,7 @@ fn prepare<'a>(
         path,
         text,
         action,
+        variable_write,
     })
 }
 struct HeaderRange {
@@ -144,6 +154,10 @@ fn finish(
             .action
             .as_ref()
             .is_some_and(|source| source.matches_header(*action, kind)),
+        (EvidenceSourceOwner::VariableWrite { .. }, kind) => prepared
+            .variable_write
+            .as_ref()
+            .is_some_and(|source| source.matches_header(kind)),
         _ => false,
     };
     if !classified {
@@ -218,6 +232,7 @@ fn resolve_inner(
 mod tests {
     use super::*;
     use crate::ast::ChangeKind;
+    use crate::evidence_source::{variable_write_source, VariableWriteOperation};
     use std::cell::Cell;
     thread_local! { static LEX_CALLS: Cell<usize> = const { Cell::new(0) }; }
     fn counted_lex(
@@ -230,24 +245,42 @@ mod tests {
         crate::lexer::lex_source_with_options(file, text, diagnostics, options)
     }
     #[test]
-    fn repeated_actions_and_duplicate_inputs_lex_a_file_once() {
-        let compiled = crate::compile_source("batch.wl", "tag one\nworld setting\nstate fate on world setting with []\nevent start\n  become fate with one\n  become fate add one\n  -> END\n");
+    fn repeated_actions_variables_and_duplicate_inputs_lex_a_file_once() {
+        let compiled = crate::compile_source("batch.wl", "tag one\nworld setting\nstate fate on world setting with []\nevent start\n  become fate with one\n  become fate add one\n  let total = 0\n  set total = 1\n  -> END\n");
         assert!(!compiled.has_errors());
-        let sources = [5, 6, 5].map(|line| EvidenceSource {
-            file: "batch.wl".into(),
-            line,
-            owner: EvidenceSourceOwner::StateAction {
-                node: "start".into(),
-                action: if line == 5 {
-                    ChangeKind::Become
-                } else {
-                    ChangeKind::AddTags
+        let mut sources = [5, 6, 5]
+            .map(|line| EvidenceSource {
+                file: "batch.wl".into(),
+                line,
+                owner: EvidenceSourceOwner::StateAction {
+                    node: "start".into(),
+                    action: if line == 5 {
+                        ChangeKind::Become
+                    } else {
+                        ChangeKind::AddTags
+                    },
+                    timing: "during".into(),
+                    effect_index: None,
+                    action_index: None,
                 },
-                timing: "during".into(),
-                effect_index: None,
-                action_index: None,
-            },
-        });
+            })
+            .to_vec();
+        sources.extend([7, 8].map(|line| {
+            variable_write_source(
+                &compiled.program,
+                line,
+                &EvidenceSourceOwner::VariableWrite {
+                    node: "start".into(),
+                    variable: "total".into(),
+                    operation: if line == 7 {
+                        VariableWriteOperation::Let
+                    } else {
+                        VariableWriteOperation::Set
+                    },
+                },
+            )
+            .unwrap()
+        }));
         let refs = sources.iter().collect::<Vec<_>>();
         LEX_CALLS.with(|calls| calls.set(0));
         let results = resolve_inner(&compiled, &refs, counted_lex);

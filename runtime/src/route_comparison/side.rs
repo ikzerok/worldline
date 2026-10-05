@@ -1,8 +1,8 @@
 use super::*;
 use crate::{
+    action_capture::ActionCapture,
     execution::ReplayExecutionBudget,
     replay_runner::{replay_story, run_replay_slice, ReplayCursor, ReplayProgress},
-    state_actions::StateActionCapture,
     AccessCoverage, ReplayCheckpoint, ReplayOrigin, ReplayTrace, Story,
 };
 use worldline_core::CompileResult;
@@ -11,7 +11,7 @@ pub(super) struct Side {
     pub trace: ReplayTrace,
     pub cursor: Option<ReplayCursor>,
     checkpoint: Option<ReplayCheckpoint>,
-    evidence: StateActionCapture,
+    evidence: ActionCapture,
     inherited: AccessCoverage,
     pub result: Option<RouteSideResult>,
     steps: u64,
@@ -68,11 +68,12 @@ impl Side {
             }
         };
         if self.cursor.is_some() {
-            story.state_actions = std::mem::take(&mut self.evidence);
+            story.action_capture = std::mem::take(&mut self.evidence);
+        } else {
+            story
+                .action_capture
+                .enable_variable_writes(options.max_evidence_records, options.max_evidence_bytes);
         }
-        story
-            .state_actions
-            .set_limits(options.max_evidence_records, options.max_evidence_bytes);
         check_story(&story, options.max_output_bytes)?;
         if self.cursor.is_none() {
             if matches!(self.trace.origin, ReplayOrigin::Checkpoint { .. }) {
@@ -95,7 +96,7 @@ impl Side {
                         RouteComparisonError::new("output_limit", error.message)
                     })?);
                 encoded_size(self.checkpoint.as_ref().unwrap(), options.max_output_bytes)?;
-                self.evidence = std::mem::take(&mut story.state_actions);
+                self.evidence = std::mem::take(&mut story.action_capture);
             }
             ReplayProgress::Finished(end) => {
                 self.result = Some(projection::result(
