@@ -744,3 +744,8 @@ Save 保留原有兼容规则，不新增同样的 runtime_version 拒绝条件�
 三方法均拒绝未知顶层参数；导入request及嵌套映射拒绝未知字段、未知enum；既有JSON入口拒绝重复键。非空project_id须已通过project.open建立，不支持path临时工程，不暗中刷新、恢复或保存。preview正常返回`{ok:plan.can_apply,operation:"preview",plan,saved:false}`，apply成功返回`{ok:true,operation:"apply",plan,changed_files,new_baseline,saved:false}`。CSV/映射/类型/schema数据错误留在plan.diagnostics并令ok:false，同时保留error:{code:"CATALOG_IMPORT_BLOCKED",message}；读取/过期/冲突/能力等失败返回`{ok:false,error:{code:"CATALOG_IMPORT_REJECTED",message},saved:false}`。参数类型/结构/未知ID才走JSON-RPC error。保存陈旧返回STALE_BASELINE，保存故障SAVE_FAILED。
 
 `wl catalog-import preview|apply PROJECT --request-json '<DTO>' [--csv UTF8_FILE] [--plan-digest DIGEST] [--save] [--json]`使用同一core。CLI先按Project::open_read_only加载并拒绝待恢复事务，完整工作区限4096文件/64MiB；--csv先有界读取为快照，core不接受外部CSV路径；不指定时使用request.csv。apply需要摘要，preview禁止摘要/--save。apply默认只改短命内存，响应明确saved:false和退出丢弃提示；显式--save后调用既有保存事务。命令成功退出0，业务阻断及CSV输入失败1，参数格式错误2，--json失败仍返回结构化ok:false。CSV输入失败返回stage:"input"/CSV_INPUT_REJECTED；保存失败返回applied:true、stage:"save"、plan、saved:false、SAVE_FAILED和可能存在待恢复磁盘事务提示，不假称零磁盘写入。源CSV改变导致重建摘要不匹配，不能复用旧授权。
+
+工具0.27的`route-compare`与`project.compare_routes`加法返回每侧`variable_writes`，
+仍是同一schema1只读结果，不改变ReplayTrace/ReplayCheckpoint协议。旧结果缺字段
+表示未提供证据，不表示没有写入。语义与预算见
+[变量写入证据](https://github.com/ikzerok/worldline/blob/main/spec/variable-write-evidence.md)。

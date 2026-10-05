@@ -61,3 +61,5 @@
 - [发布构建](release.md)：配对、源码和包；历史版本记录不代表当前候选已完成验收
 
 当前 0.26 的完整门禁、性能与真实平台覆盖以配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。
+
+- [从变量终值找到实际写入](https://github.com/ikzerok/worldline/blob/main/docs/variable-write-evidence.md)：两路线的成功写入、初始化边界与机器接口
