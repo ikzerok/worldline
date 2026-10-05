@@ -6,6 +6,12 @@ fn exact_unsaved_editor_source_is_read_only_and_not_an_applied_buffer_requiremen
     let mut fixture = Fixture::new(source, None);
     let before = fixture.project.content_baseline();
     let compiled_before = fixture.project.compile();
+    let mut without_provenance = compiled_before.program.clone();
+    without_provenance.source_provenance = Default::default();
+    assert_eq!(
+        worldline_core::fingerprint_program(&compiled_before.program),
+        worldline_core::fingerprint_program(&without_provenance)
+    );
     let draft = "// 新稿🙂\nevent fresh as \"新名\"\n  新正文\n  -> END\n";
     let outline = fixture.ready(draft);
     assert_eq!(outline.entries[0].id, "fresh");
@@ -194,4 +200,59 @@ fn archived_unknown_capability_deleted_and_moved_sources_never_jump() {
     .unwrap();
     unknown_feature.project.refresh().unwrap();
     assert_eq!(unknown_feature.outline(source).status, Status::Unavailable);
+}
+
+#[test]
+fn tombstones_and_unresolved_transactions_disable_navigation_without_writes() {
+    let mut fixture = Fixture::new("character c\n", None);
+    let other = fixture.root.join("other.wl");
+    fs::write(&other, "character other\n").unwrap();
+    fixture.project.refresh().unwrap();
+    let outline = fixture.project.source_outline(&other, "character other\n");
+    assert_eq!(outline.status, Status::Ready);
+    fixture.project.delete_document(&other).unwrap();
+    assert!(fixture
+        .project
+        .source_outline_range(&outline, "character other\n", 0)
+        .is_err());
+    assert_eq!(
+        fixture
+            .project
+            .source_outline(&other, "character other\n")
+            .status,
+        Status::Unavailable
+    );
+    fs::create_dir_all(fixture.root.join(".world/.transactions/pending")).unwrap();
+    let baseline = fixture.project.content_baseline();
+    assert_eq!(fixture.outline("character c\n").status, Status::Unavailable);
+    assert_eq!(fixture.project.content_baseline(), baseline);
+    assert!(other.exists());
+}
+
+#[test]
+fn explicit_113_character_ref_capability_is_used_without_automatic_upgrades() {
+    let source =
+        "character c\n  property friend = ref(\"character\", \"other\")\ncharacter other\n";
+    let mut fixture = Fixture::new(source, Some("1.13"));
+    assert_eq!(fixture.outline(source).status, Status::SyntaxInvalid);
+    fs::write(fixture.root.join(".world/project.json"), r#"{"schema_version":1,"language_version":"1.13","required_features":["content.object_refs.v1","content.character_refs.v1"]}"#).unwrap();
+    fixture.project.refresh().unwrap();
+    assert_eq!(fixture.ready(source).entries.len(), 2);
+    assert_eq!(fixture.project.language_version(), "1.13");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_boundaries_cannot_be_used_for_a_source_outline() {
+    let fixture = Fixture::new("character c\n", None);
+    let other = Fixture::new("character outside\n", None);
+    std::os::unix::fs::symlink(&other.project.entry, fixture.root.join("link.wl")).unwrap();
+    assert_eq!(
+        fixture
+            .project
+            .source_outline(&fixture.root.join("link.wl"), "character outside\n")
+            .status,
+        Status::Unavailable
+    );
+    assert_eq!(fixture.outline("character c\n").status, Status::Unavailable);
 }

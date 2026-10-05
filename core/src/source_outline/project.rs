@@ -91,7 +91,8 @@ impl Project {
                 "工作区清单或能力尚未确认，本文件结构暂不可用".into(),
             ));
         }
-        let source = self.document(path).map_err(unavailable)?;
+        crate::file_access::within(&self.root, path).map_err(unavailable)?;
+        self.document(path).map_err(unavailable)?;
         if self
             .source_selection()
             .is_some_and(|selection| !selection.is_active(path))
@@ -101,9 +102,14 @@ impl Project {
                 "非活动源码不提供可导航结构".into(),
             ));
         }
-        self.verify_source_navigation(path, source)
-            .map_err(unavailable)?;
-        // Also validates externally changed/new manifests and unresolved transactions.
-        self.verify_review_navigation().map_err(unavailable)
+        // One bounded inventory validates all baselines, newly added manifests and transactions.
+        self.verify_review_navigation().map_err(|message| {
+            unavailable(
+                message
+                    .replace("审稿", "源码结构")
+                    .replace("组织源码", "确认源码结构")
+                    .replace("源码组织未提交", "源码结构暂不可用"),
+            )
+        })
     }
 }

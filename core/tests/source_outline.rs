@@ -148,12 +148,12 @@ fn duplicate_ids_titles_storyline_blocks_and_nested_scenes_keep_source_identity(
 
 #[test]
 fn unicode_crlf_comments_and_eof_keep_exact_physical_bytes() {
-    let source = "// event fake\r\n/*中文🙂*/ character hero as \"同名🙂\" //尾注🙂\r\nevent start as \"起点🙂\"\r\n  scene room\r\n    中文🙂 /*内注🙂*/ 后文\r\n\r\n// 尾注";
+    let source = "// event fake\r\ncharacter /*中文🙂*/ hero as \"同名🙂\" //尾注🙂\r\nevent start as \"起点🙂\"\r\n  scene room\r\n    中文🙂 /*内注🙂*/ 后文\r\n\r\n// 尾注";
     let fixture = Fixture::new(source, None);
     let outline = fixture.ready(source);
     assert_eq!(
         &source[outline.entries[0].header.clone()],
-        "character hero as \"同名🙂\""
+        "character /*中文🙂*/ hero as \"同名🙂\""
     );
     assert_eq!(
         &source[outline.entries[1].header.clone()],

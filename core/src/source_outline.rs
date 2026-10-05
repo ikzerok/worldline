@@ -112,3 +112,29 @@ fn output_within_budget(outline: &SourceOutline, limit: usize) -> bool {
     }
     serde_json::to_writer(Counter(limit), outline).is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn serialized_output_limit_is_exact_and_inclusive() {
+        let outline = SourceOutline {
+            path: PathBuf::from("世界🙂.wl"),
+            status: SourceOutlineStatus::Ready,
+            message: None,
+            entries: Vec::new(),
+            statements: Vec::new(),
+            comments: Vec::new(),
+            non_boundaries: Vec::new(),
+            stamp: Stamp {
+                source: signature(""),
+                baseline: String::new(),
+                generation: 0,
+                options: crate::CompileOptions::default(),
+            },
+        };
+        let bytes = serde_json::to_vec(&outline).unwrap().len();
+        assert!(output_within_budget(&outline, bytes));
+        assert!(!output_within_budget(&outline, bytes - 1));
+    }
+}

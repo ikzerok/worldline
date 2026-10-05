@@ -47,7 +47,6 @@ pub(super) fn build(
             "块注释未闭合，本文件结构暂不可用".into(),
         ));
     }
-    check_expression_budget(source)?;
     let mut diagnostics = Vec::new();
     let all_lines = crate::lexer::lex_source_with_options(file, source, &mut diagnostics, options);
     if all_lines.len() > MAX_SOURCE_OUTLINE_LINES {
@@ -68,7 +67,10 @@ pub(super) fn build(
         .filter(|line| !matches!(line.kind, LineKind::Include { .. }) || line.indent != 0)
         .cloned()
         .collect();
-    let program = Parser::new_with_options(&lines, &mut diagnostics, options).parse_program();
+    let program = crate::expression::outline_budget::scoped(|| {
+        Parser::new_with_options(&lines, &mut diagnostics, options).parse_program()
+    })
+    .map_err(|()| budget("真实表达式超过 256 token 或 64 层括号/一元运算结构预算"))?;
     if let Some(error) = diagnostics
         .iter()
         .find(|error| error.severity == Severity::Error)
@@ -163,42 +165,4 @@ fn character_byte(text: &str, column: usize) -> Option<usize> {
         .map(|(offset, _)| offset)
         .chain(std::iter::once(text.len()))
         .nth(column)
-}
-
-// Conservative resource guard, not syntax classification. Literal punctuation counts too:
-// this bounds recursive expression/interpolation work before invoking the formal parser.
-fn check_expression_budget(source: &str) -> Result<(), Failure> {
-    let cleaned = crate::lexer::strip_comments(source);
-    for line in cleaned.lines() {
-        let mut depth = 0usize;
-        let mut operators = 0;
-        for ch in line.chars() {
-            match ch {
-                '(' | '[' | '{' => {
-                    depth += 1;
-                    operators += 1;
-                }
-                ')' | ']' | '}' => {
-                    depth = depth.saturating_sub(1);
-                    operators += 1;
-                }
-                '+' | '-' | '*' | '/' | '%' | '!' => operators += 1,
-                _ => {}
-            }
-            if depth > MAX_SOURCE_OUTLINE_DEPTH || operators > 256 {
-                return Err(budget(
-                    "单行分隔符/运算符超过结构安全预算（64 层或 256 个）",
-                ));
-            }
-        }
-        if line
-            .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-            .filter(|word| *word == "not")
-            .count()
-            > 64
-        {
-            return Err(budget("单行 not 词超过 64 个结构安全预算"));
-        }
-    }
-    Ok(())
 }
