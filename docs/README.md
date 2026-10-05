@@ -2,7 +2,12 @@
 
 - [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 
-当前产品版本为 0.25.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+当前产品版本为 0.26.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+
+## 当前源码行列
+
+- [使用与接入](https://github.com/ikzerok/worldline/blob/main/docs/source-coordinates.md)：当前光标、精确文本预览与跳转守卫
+- [正式契约](https://github.com/ikzerok/worldline/blob/main/spec/source-coordinates.md)：物理行、Unicode字符列、边界与预算
 
 ## 当前源码结构
 
@@ -55,4 +60,4 @@
 - [后台快照](../spec/workspace-snapshot.md)：精确当前稿、墓碑、只读与传输限制
 - [发布构建](release.md)：配对、源码和包；历史版本记录不代表当前候选已完成验收
 
-当前 0.25 的完整门禁、性能与真实平台覆盖以配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。
+当前 0.26 的完整门禁、性能与真实平台覆盖以配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。
