@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "id": "tower_detail",
+  "title": "第三观察塔内与供水宪章保管处",
+  "raster_layers": [],
+  "canvas": {
+    "width": 1600,
+    "height": 1000,
+    "unit": "normalized"
+  },
+  "layer_order": [
+    "routes",
+    "places"
+  ],
+  "layers": {
+    "routes": {
+      "title": "叙事路线",
+      "visible_default": true,
+      "locked": false
+    },
+    "places": {
+      "title": "塔镇",
+      "visible_default": true,
+      "locked": false
+    }
+  },
+  "placements": {
+    "charter_marker": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "entity",
+        "id": "charter"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.5,
+          0.4
+        ]
+      },
+      "annotation": "宪章原件资料入口",
+      "role": "资料位置",
+      "scope_refs": []
+    },
+    "tower_marker": {
+      "layer_id": "places",
+      "target_ref": {
+        "kind": "entity",
+        "id": "watchtower"
+      },
+      "geometry": {
+        "kind": "point",
+        "position": [
+          0.3,
+          0.7
+        ]
+      },
+      "annotation": "同一观察塔在第二张图的作者说明",
+      "role": "地点资料入口",
+      "scope_refs": []
+    }
+  },
+  "extensions": {}
+}

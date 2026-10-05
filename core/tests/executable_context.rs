@@ -1,8 +1,5 @@
 //! 静态使用处来自 AST；不改变旧目录/运行证据。
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
-};
+use std::collections::{BTreeMap, BTreeSet};
 use worldline_core::{
     compile_source_with_options, compile_sources_with_options, CompileOptions, CompileResult,
     ExecutableContextRole as Role, RelationQueryDirection, TargetRef, WorldContextKind as Kind,
@@ -303,7 +300,7 @@ fn physical_include_file_unicode_columns_and_scene_identity_are_preserved() {
     assert!(result
         .records
         .iter()
-        .all(|row| PathBuf::from(&row.source.file) == root.join("body.wl")));
+        .all(|row| std::path::Path::new(&row.source.file) == root.join("body.wl")));
     let text: Vec<_> = result
         .records
         .iter()

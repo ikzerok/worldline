@@ -8,6 +8,8 @@
 
 ## 0.28 作者工作流（候选）
 
+- [蓝时水库原创演练](https://github.com/ikzerok/worldline/tree/main/examples/blue-hour-reservoir)：直接打开两地图与两条路线，验证本轮作者流程
+
 - [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：查看调用、读写和语境，回到真实源码
 - [可读试玩审阅](https://github.com/ikzerok/worldedit/blob/main/docs/playthrough-report.md)：重新验证单条路径，预览后明确复制或导出作者报告
 - [地图作者位置](https://github.com/ikzerok/worldedit/blob/main/docs/map-author-context.md)：资料、源码与地图间的有效身份返回
