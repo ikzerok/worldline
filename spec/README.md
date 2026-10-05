@@ -1,10 +1,12 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.22.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.24.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
 | [workspace.md](workspace.md) | 工作区目录边界、递归索引、外部刷新与完整导出 |
+| [source-lifecycle.md](source-lifecycle.md) | 源码新建、引用、文件移动与统一事务 |
+| [entity-source-move.md](entity-source-move.md) | 单实体声明精确移源、完整静态/运行证明与零修改守卫 |
 | [terms.md](terms.md) | v1.9 术语表:事件 / 状态 / 身份标签 / 独立锚点 / 演练记录 |
 | [syntax.md](syntax.md) | 词法、语法、语句、表达式、森林结构与准入、效果与锚点、与 Ink 的差异 |
 | [semantics.md](semantics.md) | 执行模型、选择与汇聚、故事线/准入/效果/锚点、输出契约、存读档 |

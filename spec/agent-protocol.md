@@ -620,7 +620,8 @@ RPC 参数形状错误为 `-32602`，重复 JSON key 按既有消息解析规则
 
 两接口成功结果为 `{ok:true,operation,plan,baseline,applied,saved}`，`plan` 原样
 序列化 core DTO，`baseline` 是操作后当前 Project 内容基线。preview 不改缓冲或
-磁盘，`applied:false,saved:false`；apply 成功为 `applied:true,saved:true`。
+磁盘，`applied:false,saved:false`；非空 apply 成功为 `applied:true,saved:true`。
+`move_entity` 使用同一 DTO；同源空计划 apply 不保存，返回 `applied:false,saved:false`。
 业务失败为 `{ok:false,operation,plan,baseline,applied:false,saved:false,
 error:{code:"SOURCE_LIFECYCLE_REJECTED",message,stage}}`，其中 `stage` 为 preview 或
 apply，`plan` 为 null。打开失败沿用 `IO_ERROR`、`stage:"open"`，baseline 为 null，

@@ -1,4 +1,8 @@
 //! 单源码生命周期：纯预览、完整重校验、一次内存提交；不改变语言能力。
+mod entity;
+mod entity_proof;
+mod entity_resources;
+mod entity_span;
 mod error;
 mod plan;
 mod proof;
@@ -16,9 +20,21 @@ use SourceLifecycleFailure as Failure;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SourceLifecycleRequest {
-    Create { path: PathBuf },
-    Include { path: PathBuf },
-    Move { from: PathBuf, to: PathBuf },
+    Create {
+        path: PathBuf,
+    },
+    Include {
+        path: PathBuf,
+    },
+    Move {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    MoveEntity {
+        id: String,
+        #[serde(deserialize_with = "portable_request_path")]
+        to: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -60,6 +76,8 @@ pub struct SourceLifecyclePlan {
     pub load_order_before: Vec<String>,
     pub load_order_after: Vec<String>,
     pub resources: Vec<SourceLifecycleResource>,
+    #[serde(skip)]
+    pub(super) guard: Option<String>,
 }
 
 impl Project {
@@ -181,3 +199,15 @@ fn digest(bytes: &[u8]) -> String {
 }
 
 use resources::resource_bytes;
+
+fn portable_request_path<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<PathBuf, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.contains('\\') {
+        return Err(serde::de::Error::custom(
+            "机器源码请求路径须使用 /，不能含反斜杠",
+        ));
+    }
+    Ok(PathBuf::from(value))
+}

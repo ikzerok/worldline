@@ -88,7 +88,10 @@ fn execute(project: &mut Project, request: &SourceLifecycleRequest, digest: Opti
                     "stage":operation}});
         }
     };
-    if digest.is_some() {
+    let applied = digest.is_some()
+        && !(matches!(plan.request, SourceLifecycleRequest::MoveEntity { .. })
+            && plan.changes.is_empty());
+    if applied {
         // 保存失败可能已有文件替换；不可恢复旧快照、谎报零修改或丢弃恢复日志。
         if let Err(message) = project.save() {
             return json!({"ok":false,"operation":operation,"plan":plan,
@@ -97,7 +100,6 @@ fn execute(project: &mut Project, request: &SourceLifecycleRequest, digest: Opti
                     "stage":"save"}});
         }
     }
-    let applied = digest.is_some();
     json!({"ok":true,"operation":operation,"plan":plan,
         "baseline":project.content_baseline(),"applied":applied,"saved":applied})
 }

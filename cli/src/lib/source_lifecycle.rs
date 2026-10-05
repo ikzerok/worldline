@@ -38,7 +38,10 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
             return output(out, args.json, 1, payload);
         }
     };
-    if args.digest.is_some() {
+    let applied = args.digest.is_some()
+        && !(matches!(plan.request, SourceLifecycleRequest::MoveEntity { .. })
+            && plan.changes.is_empty());
+    if applied {
         // 保存可在逐文件替换中失败；保留已应用缓冲与 recoverable journal。
         if let Err(message) = project.save() {
             let payload = json!({"ok":false,"operation":operation,"plan":plan,
@@ -48,7 +51,6 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
             return output(out, args.json, 1, payload);
         }
     }
-    let applied = args.digest.is_some();
     let payload = json!({"ok":true,"operation":operation,"plan":plan,
         "baseline":project.content_baseline(),"applied":applied,"saved":applied});
     output(out, args.json, 0, payload)

@@ -192,13 +192,29 @@ pub(super) fn revalidate(
 ) -> Result<(), Failure> {
     project.source_lifecycle_disk_baselines_match_classified()?;
     writable_paths(&plan.changes)?;
-    inventory(project)?;
+    let inventory = inventory(project)?;
+    if let Some(guard) = &plan.guard {
+        if *guard != project.source_lifecycle_guard(&inventory)? {
+            return Err(Failure::changed(
+                "工作区内容、库存、刷新代次或保存基线已变化，请重新预览",
+            ));
+        }
+    }
     match &plan.request {
         super::SourceLifecycleRequest::Create { path } => {
             destination(project, path)?;
         }
         super::SourceLifecycleRequest::Move { to, .. } => {
             destination(project, to)?;
+        }
+        super::SourceLifecycleRequest::MoveEntity { .. } => {
+            for path in [&plan.source_path, &plan.destination_path]
+                .into_iter()
+                .flatten()
+            {
+                writable_path_classified(path)?;
+            }
+            super::registered::validate_candidate(project, project)?;
         }
         super::SourceLifecycleRequest::Include { .. } => {}
     }

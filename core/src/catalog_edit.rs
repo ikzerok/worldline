@@ -220,7 +220,13 @@ impl Project {
     }
 
     pub(crate) fn portable_assets(&self) -> Result<PortableAssets, String> {
-        let sources = self.sources();
+        // 完整工程打包保留全部非删除源码缓冲；活动选择只约束编译和公开发布。
+        let sources: BTreeMap<_, _> = self
+            .documents
+            .iter()
+            .filter(|(_, document)| !document.is_deleted())
+            .map(|(path, document)| (path.clone(), document.text.clone()))
+            .collect();
         let authoring = self
             .authoring_documents
             .iter()

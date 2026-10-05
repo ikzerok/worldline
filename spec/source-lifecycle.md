@@ -105,6 +105,8 @@ required feature、未知 schema、无效 JSON、只读或未受支持路径语�
 - `{"operation":"create","path":"章节/新章.wl"}`
 - `{"operation":"include","path":"章节/已有.wl"}`
 - `{"operation":"move","from":"old.wl","to":"章节/新章.wl"}`
+- `{"operation":"move_entity","id":"north_lighthouse","to":"设定/地点.wl"}`：
+  仅搬移一个明确 entity 声明，详见 [单实体声明安全移源](entity-source-move.md)
 
 `Project::preview_source_lifecycle(&request)` 返回只读 `SourceLifecyclePlan`：request、
 content_baseline、plan_digest、changes（path/after_path/kind/occurrences）、source_path、
