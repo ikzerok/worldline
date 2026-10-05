@@ -1,6 +1,6 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.28.0候选不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.28.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
