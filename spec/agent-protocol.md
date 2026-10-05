@@ -749,3 +749,10 @@ Save 保留原有兼容规则，不新增同样的 runtime_version 拒绝条件�
 仍是同一schema1只读结果，不改变ReplayTrace/ReplayCheckpoint协议。旧结果缺字段
 表示未提供证据，不表示没有写入。语义与预算见
 [变量写入证据](https://github.com/ikzerok/worldline/blob/main/spec/variable-write-evidence.md)。
+
+工具0.27的schema预览/应用结果加法提供`incomplete_reasons`，并在源码加载缺失、
+越界或解析/身份不完整时准确标记complete=false；已知实例违规不冒充来源缺失。
+CLI/RPC共享同一core投影，错误草稿保存规则不变，详见
+[schema影响完整性](https://github.com/ikzerok/worldline/blob/main/spec/schemas.md)。
+`incomplete_reasons`固定顺序去重，值为`source_loading`、`syntax`、
+`ambiguous_declaration`、`schema_definition`；完整时序列化为空数组。

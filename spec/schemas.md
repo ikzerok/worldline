@@ -48,3 +48,29 @@ required 只判断该 key 是否实际存在；0、false、空字符串是已填
 schema 声明、字段约束、绑定及其位置不进入 runtime fingerprint。1.12 本身不额外混入版本盐；未使用运行新增能力时，仅增加、编辑或删除静态约束不得使存档失效。约束不授权公开任何属性、schema 文本或引用目标，读者包仍严格使用既有白名单。
 
 显式语言 1.13 可在 `content.object_refs.v1` 与新增 `content.character_refs.v1` 双能力保护下使用静态人物属性引用、`ref character` 约束及人物模板字段；完整兼容、改名和发布边界见 [character-refs.md](character-refs.md)。
+
+## 工具0.27：影响完整性与缺失源码
+
+`SchemaEditPreview.complete`描述实例影响集合是否可被当作完整集合，不等于候选没有
+语义错误。解析/词法失败、源码加载缺失或越界、声明身份歧义、schema声明/绑定不完整
+都会使预览不完整；不能因已知实例列表为空就宣称没有影响。before或after任一侧
+不完整时，仍保留已知实例影响、字段变化和两侧诊断，同时将complete置false。
+
+预览加法提供稳定去重的`incomplete_reasons`，标明实际出现的来源加载、语法、声明
+歧义或schema声明/绑定原因。CLI/RPC原样传递core同一投影，UI展示不完整说明与
+这些原因；不在UI根据诊断代码再做一套判定。正常已知0实例与无法确定全部实例有
+明确不同文案。普通已知实例SCH004–SCH008违规和与schema覆盖无关的故事语义错误
+不会仅因存在error就将覆盖改成未知；仍遵守既有执行/发布阻断。
+
+`incomplete_reasons`是字符串数组，按`source_loading`、`syntax`、
+`ambiguous_declaration`、`schema_definition`固定顺序去重；完整时为`[]`。
+`source_loading`包括A105的缺失、读取失败、非活动/已删除源码、include环路/过深，
+以及编译器来源加载阶段的A109越界；附件自身的A109不等于源码缺失。
+`syntax`对应P/L词法或解析失败；`ambiguous_declaration`对应既有
+A104/A211/A212/A220身份、属性或声明歧义；`schema_definition`对应SCH001–SCH003
+schema声明或绑定错误。同一类别在前后两侧或多个文件出现也只列一次；
+具体文件、位置和错误详情仍由`before_diagnostics`与`after_diagnostics`提供。
+
+修复缺失include、非法路径或解析/身份问题后，重新预览可恢复完整性；多个include
+中一个失效也不得丢掉其它已知影响。preview仍零修改，apply/save错误草稿和运行门禁
+保持既有契约，不自动补载越界文件、不自动迁移实例、不自动保存或修复。

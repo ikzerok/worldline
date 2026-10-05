@@ -3,7 +3,9 @@ mod edit;
 mod model;
 pub(crate) mod parse;
 mod validate;
-pub use edit::{SchemaEditPreview, SchemaFieldChange, SchemaInstanceImpact};
+pub use edit::{
+    SchemaEditPreview, SchemaFieldChange, SchemaIncompleteReason, SchemaInstanceImpact,
+};
 pub use model::{SchemaBinding, SchemaDecl, SchemaField, SchemaIndex, SchemaInstance, SchemaType};
 pub(crate) use validate::add_binding_references;
 pub use validate::validate;

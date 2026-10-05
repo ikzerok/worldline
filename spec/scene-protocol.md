@@ -31,3 +31,9 @@ wl scene export <工程目录或入口> --map-id ID [--json]
 ## 验收
 
 CLI/RPC的plan与core相同；typed曲线及导出重导入保真；合法选择/多层引用不变；陈旧基线/摘要/修订、未知feature、nested svg、恶意外链、歧义寻址、JSON重复字段、错误DTO、外部冲突和重复apply均拒绝且零额外写入。core、CLI、RPC的完整错误路径和成功保存重开需分别测试。静态世界站v3继续使用现有reader-export/reader.export方法，不增第二套站点生成逻辑。
+
+### 工具0.27的地图目录数量
+
+`wl maps list`人类输出分别报告旧版placements标记数与原生scene节点数；没有scene
+时原生数为0。两者都按core MapIndex实际登记项计数，包含隐藏图元与组节点，不表示
+当前可见形状数或绑定对象数。旧JSON地图/引用结构、显隐、绑定与公开选择语义不变。

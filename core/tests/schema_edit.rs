@@ -5,6 +5,9 @@ use std::{
 };
 use worldline_core::{project::Project, source_edit::SourceEditRequest, TargetRef};
 
+#[path = "schema_edit/completeness.rs"]
+mod completeness;
+
 const SCHEMA: &str = "schema city for entity entity_type place closed\n  field people_id population number required\n";
 const FACTS: &str = "entity harbor kind place as \"港城\"\n  property population = 0\nbind entity harbor to city\nevent start\n  你好。\n  -> END\n";
 struct Fixture {

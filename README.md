@@ -1,12 +1,15 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 工具链。0.27 的真实变量写入证据支持：对照两条实际路线，查看全局变量每次成功写入的前后值与来源，再返回原变量和动作继续审阅。类型、执行事实与来源保护由 core/runtime 定义，界面消费同一份当前源码。
+面向世界设定与分支叙事创作的 Rust 工具链。0.27 围绕可信路线审阅与资料维护：查看真实变量写入与来源，连续用键盘试玩，准确识别缺源码时的schema影响范围，并区分地图旧标记与原生图元。语言源码仍是唯一真源，语义和可信证据由 core/runtime 提供。
 
 工作分支不表示已交付或正式发行；实际范围持续记录在[0.27版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.27.0.md)。本轮不新增 DSL，默认语言1.9、最高既有显式版本1.13保持；已交付的本文件结构、实体移源、逐处改稿、书稿审阅、试玩与读者公开选择继续保留。
 
 升级边界：0.26运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.27重放或比较，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
 
 ## 使用入口
+
+- [连续键盘试玩](https://github.com/ikzerok/worldedit/blob/main/docs/keyboard-play.md)：成功推进后的可选项与结束动作焦点，不替作者继续选择
+- [资料约束影响完整性](https://github.com/ikzerok/worldline/blob/main/spec/schemas.md)：缺失源码、已知影响与实例违规分别说明
 
 - [真实变量写入与回源](https://github.com/ikzerok/worldline/blob/main/docs/variable-write-evidence.md)：两条路线的前后值、实际动作与来源返回
 
