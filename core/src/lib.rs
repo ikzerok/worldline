@@ -50,6 +50,7 @@ pub mod scene_protocol;
 pub mod schemas;
 pub mod search_replace;
 pub mod source_config;
+pub mod source_coordinates;
 pub mod source_lifecycle;
 pub mod source_outline;
 pub mod states;

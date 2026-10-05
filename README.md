@@ -1,12 +1,14 @@
 # worldline（世界线）
 
-面向世界设定与分支叙事创作的 Rust 工具链。0.25 新增的当前源码结构闭环让作者在同一份语言文件内辨认声明、核对真实身份与位置、准确跳转并返回原稿。结构与来源范围由 core 的正式语言解析产生，界面只读取，不保存第二份正文或更改运行状态。
+面向世界设定与分支叙事创作的 Rust 工具链。0.26 的当前源码行列定位支持：核对当前光标位置，输入物理行与字符列，预览后准确跳转并返回原稿。坐标、文本范围与来源保护由 core 定义，界面只消费同一份当前源码。
 
-工作分支不表示已交付或正式发行；已验范围持续记录在[0.25版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.25.0.md)。本轮不新增 DSL，默认语言1.9、最高既有显式版本1.13保持。既有实体移源、逐处改稿、书稿审阅、试玩与读者公开选择继续保留。
+工作分支不表示已交付或正式发行；实际范围持续记录在[0.26版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.26.0.md)。本轮不新增 DSL，默认语言1.9、最高既有显式版本1.13保持；已交付的本文件结构、实体移源、逐处改稿、书稿审阅、试玩与读者公开选择继续保留。
 
-升级边界：0.24运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint） 按既有 runtime_version 守卫拒绝在0.25重放或比较，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
+升级边界：0.25运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.26重放或比较，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
 
 ## 使用入口
+
+- [当前源码行列定位](https://github.com/ikzerok/worldline/blob/main/docs/source-coordinates.md)：物理位置、当前稿预览、准确跳转与返回
 
 - [当前源码结构与可信定位](https://github.com/ikzerok/worldline/blob/main/docs/source-outline.md)：当前文件声明、精确范围、键盘跳转与作者位置返回
 
