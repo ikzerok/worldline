@@ -365,6 +365,7 @@ impl<'a> Parser<'a> {
                     self.next();
                 }
             }
+            self.record_outline_end(&line);
         }
         self.sources.resolve_diagnostics(self.diags);
         program.source_provenance = std::mem::take(&mut self.sources);
@@ -422,6 +423,7 @@ impl<'a> Parser<'a> {
             }
             _ => {}
         }
+        self.record_outline_end(&line);
     }
 
     /// 解析一个事件声明(下一行为 event 头)。
@@ -502,5 +504,6 @@ impl<'a> Parser<'a> {
             effects,
         });
         program.event_files.push(file);
+        self.record_outline_end(&line);
     }
 }

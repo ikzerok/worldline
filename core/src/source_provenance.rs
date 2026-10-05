@@ -95,6 +95,8 @@ pub(crate) struct StatementSource {
 
 #[derive(Debug, Clone, Default)]
 pub struct SourceProvenance {
+    /// 最后消费的物理语句行；只用于声明结构范围，不参与语义。
+    pub(crate) block_ends: BTreeMap<(String, u32), u32>,
     pub(crate) statement_origins: BTreeMap<origin::StatementOriginKey, Option<String>>,
     pub(crate) statements: BTreeMap<(String, u32), StatementSource>,
     /// 正式 parser 消费的 if/else if/else 头，键为首 if 文件/行及分支序号。

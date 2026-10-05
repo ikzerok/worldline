@@ -497,6 +497,7 @@ impl<'a> Parser<'a> {
                 &actual_file,
             );
         }
+        self.record_outline_end(&line);
         statement
     }
 }

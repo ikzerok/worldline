@@ -51,6 +51,7 @@ pub mod schemas;
 pub mod search_replace;
 pub mod source_config;
 pub mod source_lifecycle;
+pub mod source_outline;
 pub mod states;
 mod storage;
 pub mod svg_import;
