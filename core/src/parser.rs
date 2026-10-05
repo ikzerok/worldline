@@ -174,6 +174,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn record_outline_end(&mut self, line: &Line) {
+        if let Some(last) = self.lines.get(self.pos.saturating_sub(1)) {
+            if last.file == line.file && last.no >= line.no {
+                self.sources
+                    .block_ends
+                    .insert((line.file.clone(), line.no), last.no);
+            }
+        }
+    }
+
     fn peek(&self) -> Option<Line> {
         self.lines.get(self.pos).map(Line::physical)
     }

@@ -4,6 +4,7 @@ use crate::ast::*;
 use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
 use crate::lexer;
 use crate::source_provenance::ExpressionSource;
+pub(crate) mod outline_budget;
 mod quoted;
 mod reference;
 pub(crate) use reference::static_ref_id_range;
@@ -488,6 +489,9 @@ pub(crate) fn parse_expr_with_source(
     diags: &mut Vec<Diagnostic>,
 ) -> (Expr, ExpressionSource) {
     let toks = lex_expr(src, file, line, base_col, diags);
+    if !outline_budget::allow(&toks) {
+        return (Expr::Num(0.0), ExpressionSource::default());
+    }
     let mut p = ExprParser {
         toks: &toks,
         pos: 0,

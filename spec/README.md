@@ -1,9 +1,10 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.24.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.25.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
+| [source-outline.md](https://github.com/ikzerok/worldline/blob/main/spec/source-outline.md) | 当前单文件声明结构、精确源码范围、预算与过期定位保护 |
 | [workspace.md](workspace.md) | 工作区目录边界、递归索引、外部刷新与完整导出 |
 | [source-lifecycle.md](source-lifecycle.md) | 源码新建、引用、文件移动与统一事务 |
 | [entity-source-move.md](entity-source-move.md) | 单实体声明精确移源、完整静态/运行证明与零修改守卫 |
