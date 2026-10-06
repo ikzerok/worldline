@@ -30,6 +30,7 @@ struct FileArgs {
     save: Option<PathBuf>,
     seed: Option<u64>,
     trace_output: Option<PathBuf>,
+    trace_exchange: bool,
     choice_presentation: bool,
     bounded_continue: bool,
     continuation_budget: ReplayBudget,

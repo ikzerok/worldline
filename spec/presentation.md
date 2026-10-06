@@ -79,7 +79,7 @@ M1支持现有kind；M2增加`entity`，实体的place/organization/culture等�
 
 ## 4. MapDocument
 
-详细机器约束见`schemas/map.schema.json`；样例见`examples/map_harbor.json`。schema 检查结构形状，不能代替 core 的能力、引用、数值和工作区边界校验。
+详细机器约束见 [`schemas/map.schema.json`](schemas/map.schema.json)。schema 检查结构形状，不能代替 core 的能力、引用、数值和工作区边界校验。
 
 M1 的 `worldline-core` 从 Project 已注册的地图文档生成 `MapDocument` 与
 `MapIndex`：地图 JSON 的格式、ID、坐标、图层、TargetRef、素材声明和导航
@@ -183,7 +183,7 @@ properties 与源位置。创建、修改、改名（显示名或分类）和删
 
 ### 5.1.1 可选内容模板（M3）
 
-内置模板目录的机器单源为 `spec/examples/templates.catalog.json`，schema 为
+内置模板目录的机器单源为 `spec/templates.catalog.json`，schema 为
 `spec/schemas/templates.schema.json`。core 公开只读模板目录与按
 `kind/entity_type` 匹配接口；首版共 16 类（world 1、character 1、entity 14）。
 

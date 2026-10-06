@@ -50,13 +50,23 @@ pub(super) fn cmd_play(
         play_human(&mut story, f.save.as_deref(), out, input)
     }?;
     if let Some(path) = &f.trace_output {
-        let trace = serde_json::to_string_pretty(&story.replay_trace())
-            .map_err(|error| format!("trace 生成失败:{error}"))?;
-        std::fs::write(path, trace)
-            .map_err(|error| format!("无法写入 trace {}: {error}", path.display()))?;
+        let captured = story.replay_trace();
+        if f.trace_exchange {
+            let trace = worldline_runtime::encode_replay_trace(&captured)
+                .map_err(|error| format!("路径交换失败:{error}"))?;
+            exchange_output::write(path, trace.as_bytes())?;
+        } else {
+            let trace = serde_json::to_string_pretty(&captured)
+                .map_err(|error| format!("trace 生成失败:{error}"))?;
+            std::fs::write(path, trace)
+                .map_err(|error| format!("无法写入 trace {}: {error}", path.display()))?;
+        }
     }
     Ok(code)
 }
+
+#[path = "play/exchange_output.rs"]
+mod exchange_output;
 
 pub(super) fn cmd_replay(args: &ReplayArgs, out: &mut impl Write) -> Result<i32, String> {
     let Some(snapshot) = compile_or_fail(&args.path, args.language_version, out) else {

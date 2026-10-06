@@ -134,14 +134,28 @@ fn exported_world_preserves_state_ids_and_relocates_file_targets() {
             .as_nanos()
     ));
     let mut project = Project::new(&root.join("source"));
-    let source_file = project.root.join("events/harbor.wl");
+    project
+        .set_text(
+            &project.entry.clone(),
+            "world test\ntag ready\ntag stale\ncharacter actor\nstate mood on character actor with stale\nstate quality on world test with []\nstate schedule on world test with ready\n".into(),
+        )
+        .unwrap();
+    let source_file = project
+        .add_file(std::path::Path::new("events/check.wl"))
+        .unwrap();
+    project
+        .set_text(
+            &source_file,
+            "event start\n  become mood with ready\n  become mood with stale\n  -> END\n".into(),
+        )
+        .unwrap();
     project
         .edit(|p| {
             p.write_state(
                 None,
                 &StateDraft {
                     id: "file_status".into(),
-                    display: "港口稿件进度".into(),
+                    display: "稿件进度".into(),
                     target: TargetRef::new("file", &source_file.to_string_lossy()),
                     tags: vec!["ready".into()],
                 },
@@ -149,21 +163,22 @@ fn exported_world_preserves_state_ids_and_relocates_file_targets() {
         })
         .unwrap();
     let before = project.compile();
+    assert!(!before.has_errors(), "{:?}", before.diagnostics);
     let output = root.join("export");
     project.export(&output).unwrap();
     let reopened = worldline_core::compile_path(&output).unwrap();
     assert!(!reopened.has_errors(), "{:?}", reopened.diagnostics);
     assert_eq!(before.analysis.fingerprint, reopened.analysis.fingerprint);
     assert_eq!(reopened.analysis.catalog.states.len(), 4);
-    assert_eq!(
-        reopened.analysis.catalog.states["lin_mood"].changes.len(),
-        2
-    );
+    assert_eq!(reopened.analysis.catalog.states["mood"].changes.len(), 2);
+    assert_eq!(reopened.analysis.catalog.states["mood"].tags, ["stale"]);
+    assert!(reopened.analysis.catalog.states["quality"].tags.is_empty());
+    assert_eq!(reopened.analysis.catalog.states["schedule"].tags, ["ready"]);
     assert_eq!(
         std::path::Path::new(&reopened.analysis.catalog.states["file_status"].target.id)
             .canonicalize()
             .unwrap(),
-        output.join("events/harbor.wl").canonicalize().unwrap()
+        output.join("events/check.wl").canonicalize().unwrap()
     );
     assert!(output.join("world.wl").is_file());
     assert!(!output.join("spec/README.md").exists());

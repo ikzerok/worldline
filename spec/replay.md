@@ -124,3 +124,9 @@ DSL、replay schema 或解释器语义。节点来源文本计入已有证据预
 ## 工具 0.20 双路线作者对照
 
 [route-comparison.md](route-comparison.md) 定义同一当前快照的独立双重放、真实可比前缀、状态/变量结果差异与瞬态动作证据。它不更改本页trace、Save或观察的持久格式；0.19 trace/checkpoint仍不得跨runtime版本载入0.20。
+
+## 工具 0.29：路径交换与拥有型会话
+
+[replay-exchange.md](replay-exchange.md) 定义同版可往返的有界紧凑JSON交换，保留旧runtime
+路径的只读导入，不放宽执行兼容或报告/比较业务额度。[owned-story.md](owned-story.md)
+定义安全拥有编译快照的试玩会话；原借用Story与本页运行语义、指纹和持久字段不变。

@@ -445,7 +445,7 @@ fn project_template_ids_are_namespaced_and_builtin_replacement_is_rejected() {
 }
 
 #[test]
-fn schema_examples_are_json_and_template_contract_accepts_only_the_valid_example() {
+fn schema_contract_accepts_valid_fields_and_rejects_invalid_target_and_group_key() {
     let schema: serde_json::Value = serde_json::from_slice(include_bytes!(
         "../../../spec/schemas/project-template.schema.json"
     ))
@@ -455,21 +455,49 @@ fn schema_examples_are_json_and_template_contract_accepts_only_the_valid_example
         "https://json-schema.org/draft/2020-12/schema"
     );
 
-    let project = project("schema-examples");
-    let valid = include_bytes!("../../../spec/examples/project-template.valid.json").to_vec();
+    let project = project("schema-contract");
+    let valid = serde_json::json!({
+        "schema_version": 1,
+        "id": "project:contract",
+        "title": "契约校验",
+        "applies_to": {"kind": "entity", "entity_type": "place"},
+        "fields": [{
+            "id": "group", "label": "分组", "type": "group",
+            "fields": [
+                {"id": "text", "key": "text", "label": "文本", "type": "text",
+                 "required": false, "default": ""},
+                {"id": "status", "key": "selection", "label": "状态", "type": "enum",
+                 "required": false, "choices": ["a", "b"], "default": "a"}
+            ]
+        }],
+        "extensions": {"vendor": "preserved"}
+    });
     let revision = Revision::default();
-    let request = command(&project, revision, import("project:guide", valid));
+    let request = command(
+        &project,
+        revision,
+        import("project:contract", serde_json::to_vec(&valid).unwrap()),
+    );
     let preview = project
         .preview_template_mutation(revision, &request)
         .unwrap();
     assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
 
-    let invalid = include_bytes!("../../../spec/examples/project-template.invalid.json").to_vec();
-    let request = command(&project, revision, import("project:invalid", invalid));
-    let error = project
-        .preview_template_mutation(revision, &request)
-        .unwrap_err();
-    assert!(error.contains("TPL004"), "{error}");
+    let mut invalid_target = valid.clone();
+    invalid_target["applies_to"] = serde_json::json!({"kind": "asset"});
+    let mut invalid_group = valid;
+    invalid_group["fields"][0]["key"] = serde_json::json!("forbidden");
+    for invalid in [invalid_target, invalid_group] {
+        let request = command(
+            &project,
+            revision,
+            import("project:contract", serde_json::to_vec(&invalid).unwrap()),
+        );
+        let error = project
+            .preview_template_mutation(revision, &request)
+            .unwrap_err();
+        assert!(error.contains("TPL004"), "{error}");
+    }
 }
 
 #[test]

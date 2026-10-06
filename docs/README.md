@@ -22,7 +22,7 @@
 ## 作者入门
 
 - [创作手册](handbook.md)：工作区、资料、叙事、状态、协作与交付
-- [从资料到可信重放](author-route.md)：结合[栖雪山站示例](../examples/snowline-seeds/README.md)完成双路线与安全改稿
+- [从资料到可信重放](author-route.md)：检查双路线与安全改稿
 - [显式能力启用](explicit-capabilities.md)：预览已有语言/资料能力，核对变化后确认
 - [工作区契约](../spec/workspace.md)：递归源码、引用边界、原字节、保存冲突与完整备份
 

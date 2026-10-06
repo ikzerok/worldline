@@ -199,3 +199,20 @@ property 只匹配目录可取得的字面量属性（character、entity、relat
 ### 7.2 独立未解决修订入口（0.11）
 
 既有 `todo_projection()` schema 1 与四类枚举不变；其中 DetachedComment 仍只表示未解决且失锚的批注。完整未解决清单从 `CommentIndex::review_projection` 读取，含正常附着和失锚的对象、正文与地图批注。编辑器在统一待办提供明确的未解决批注总数和进入修订清单的入口，不能将合法附着批注伪标为失锚，也不能以旧待办为空宣称没有未解决修订。
+
+
+### 7.3 显式对象引用属性值查询（工具 0.29）
+
+查询 v3 显式允许属性条件 `equals:{"type":"reference","value":{"kind":"entity","id":"harbor"}}`。必须至少含一个 reference 值，sort 可省略或使用既有单字段排序。v1（无sort）/v2（有sort）的默认、序列化与拒绝边界不变；在旧版本中使用 reference 报 INVALID_QUERY，不能将普通字符串解释成引用。对象属性继续使用既有语言及能力，本查询不升级语言、不生成关系、不进入运行指纹。
+
+reference 按完整 TargetRef 的 kind 与 id 精确相等，仅支持既有属性目标 entity/relation/character；空身份、非法身份和未知类型拒绝。ID验证采用既有静态词法规则，`END`作为已声明entity/character/relation的稳定ID可以查询，不套用创作写入API的额外禁令。合法但不存在的目标条件匹配零项；显示名称、别名、相似ID和字符串 `entity:harbor` 不相等。人物属性仍须由源码原有1.13双能力门允许。属性条件仍同维度OR、跨维度AND，negate否定整个集合；不存在该属性的对象也属于“不等于某值”，只查已存在属性须结合 missing 的否定。
+
+空字符串、一个或多个空格、0、false、ref及属性不存在彼此区分。字符串不trim；missing只检查键不存在。UI允许显式添加空字符串，使用“空字符串”标识；数字空输入不可提交。
+
+`CatalogQuery::has_reference_values` 可读检测新值；`sync_edited_version` 仅供调用方完成显式条件编辑后调用：含ref设v3，否则根据sort恢复v1/v2，未知版本不转换。set_sort保持同一规则，不把仍含ref的查询降为旧版。载入、浏览、查询旧文档不得自动升级。UI选择“对象引用（需查询v3）”并添加条件即为显式启用，删除最后一个ref条件可恢复旧版。
+
+保存文档仍用外层schema1；含ref的query v3须声明文档级 `catalog.query_reference_values.v1`，有sort另外保留 `catalog.query_sort.v1`，工程清单仍只需 `catalog.saved_queries.v1`。未知必需能力/版本只读保留原始字节；缺少新能力的新格式文档拒绝编辑/执行，不通过默认降级修复。显式移除ref并保存只清除本功能能力，未知可选字段与其他能力继续保留；未知必需能力阻止写入。
+
+保存查询的reference条件参加core安全重命名，只修改正式 `property.values[*].equals.type=reference` 的 value.id；相同普通字符串、扩展字段与JSON排版不改。查询条件不成为内容事实边，不因条件存在而额外阻止资料删除；删除后条件保留并匹配零项。改名、保存及分页继续受内容基线、只读文档、外改冲突和陈旧计划守卫保护。
+
+page/cursor schema仍为1，query指纹包含版本和完整typed值；切换值、kind、排序或源稿使旧游标失效。已有候选/页大小/OR预算、取消和逐维度原因保留，CLI/RPC直接消费同一core DTO。

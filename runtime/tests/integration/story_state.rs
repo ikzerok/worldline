@@ -112,49 +112,92 @@ fn anchor_statement_records_manual() {
 }
 
 #[test]
-fn chronicle_example_full_walkthrough() {
-    let result = compile_path(&example("chronicle.wl")).unwrap();
+fn gated_round_trip_preserves_effects_presence_and_anchors() {
+    let result = compile_source(
+        "round-trip.wl",
+        r#"character local
+character remote
+let enabled = false
+storyline primary
+  event start
+    choice "进入"
+      set enabled = true
+      -> checkpoint
+    choice "跳过"
+      -> transfer
+  event checkpoint with local
+    effect on enter
+      meet local
+    choice "授权"
+      anchor "已授权"
+      grant access
+      -> transfer
+    choice "结束"
+      -> END
+  event transfer perm access
+    effect on enter
+      part local
+    ->> secondary.entry
+  event finish
+    往返完成
+    -> END
+storyline secondary
+  event secondary.entry with remote
+    effect on enter
+      meet remote
+    choice "继续" if enabled
+      -> secondary.return
+    choice "结束"
+      -> END
+  event secondary.return after seen(checkpoint)
+    choice "返回"
+      ->> finish
+    choice "结束"
+      -> END
+"#,
+    );
     assert!(!result.has_errors(), "{:#?}", result.diagnostics);
     let mut s = Story::new(&result.program, &result.analysis).unwrap();
-    let mut log = String::new();
-    log.push_str(&transcript(&mut s)); // start 暂停
+    let mut log = transcript(&mut s);
     assert_eq!(
         s.choices()
             .iter()
             .map(|c| c.label.clone())
             .collect::<Vec<_>>(),
-        vec!["敲门", "在门廊睡下"]
+        vec!["进入", "跳过"]
     );
-    s.choose(0).unwrap(); // 敲门 → hall
-    log.push_str(&transcript(&mut s)); // hall 暂停
-    assert_eq!(
-        s.choices()
-            .iter()
-            .map(|c| c.label.clone())
-            .collect::<Vec<_>>(),
-        vec!["询问宅子的历史", "告辞"]
-    );
-    s.choose(0).unwrap(); // 询问 → stair → sleep → 漂流入梦
-    log.push_str(&transcript(&mut s)); // dream.entry 暂停
-    assert_eq!(s.storyline(), "dream");
-    assert_eq!(
-        s.choices()
-            .iter()
-            .map(|c| c.label.clone())
-            .collect::<Vec<_>>(),
-        vec!["追问密室", "随雾漂流"]
-    );
-    s.choose(0).unwrap(); // 追问 → dream.door
-    log.push_str(&transcript(&mut s)); // dream.door 暂停
-    s.choose(0).unwrap(); // 推门而归 → 漂流回清醒世界
+    s.choose(0).unwrap();
     log.push_str(&transcript(&mut s));
-    assert!(log.contains("雾凝成的钥匙"), "{log}");
-    assert_eq!(s.storyline(), "awake");
-    assert!(s.perm_list().contains(&"brave".to_string()));
-    assert!(s.met_list().contains(&"keeper".to_string()));
+    assert!(s.met_list().contains(&"local".to_string()));
+    assert_eq!(
+        s.choices()
+            .iter()
+            .map(|c| c.label.clone())
+            .collect::<Vec<_>>(),
+        vec!["授权", "结束"]
+    );
+    s.choose(0).unwrap(); // 授权后通过准入，离场并漂流
+    log.push_str(&transcript(&mut s));
+    assert_eq!(s.storyline(), "secondary");
+    assert_eq!(
+        s.choices()
+            .iter()
+            .map(|c| c.label.clone())
+            .collect::<Vec<_>>(),
+        vec!["继续", "结束"]
+    );
+    s.choose(0).unwrap(); // seen(checkpoint) 准入
+    log.push_str(&transcript(&mut s));
+    s.choose(0).unwrap(); // 漂流回原故事线
+    log.push_str(&transcript(&mut s));
+    assert!(log.contains("往返完成"), "{log}");
+    assert!(s.is_ended());
+    assert_eq!(s.storyline(), "primary");
+    assert!(s.perm_list().contains(&"access".to_string()));
+    assert!(s.met_list().contains(&"remote".to_string()));
     assert!(
-        !s.met_list().contains(&"servant".to_string()),
-        "入梦时女仆应离场"
+        !s.met_list().contains(&"local".to_string()),
+        "跨线前的离场效果应保留"
     );
     let manuals: Vec<_> = s
         .anchors()
@@ -162,7 +205,7 @@ fn chronicle_example_full_walkthrough() {
         .filter(|a| a.kind == AnchorKind::Manual)
         .collect();
     assert_eq!(manuals.len(), 1);
-    assert_eq!(manuals[0].name, "听闻密室");
+    assert_eq!(manuals[0].name, "已授权");
     assert_eq!(
         s.anchors()
             .iter()

@@ -12,6 +12,7 @@ pub(super) fn parse_file_args(
     let mut save = None;
     let mut seed = None;
     let mut trace_output = None;
+    let mut trace_exchange = false;
     let mut choice_presentation = false;
     let mut bounded_continue = false;
     let mut continuation_budget = worldline_runtime::DEFAULT_CONTINUATION_BUDGET;
@@ -20,6 +21,12 @@ pub(super) fn parse_file_args(
     while let Some(a) = iter.next() {
         match a.as_str() {
             "--json" => json = true,
+            "--trace-exchange" if session_flags => {
+                if trace_exchange {
+                    return Err("参数 `--trace-exchange` 不能重复".into());
+                }
+                trace_exchange = true;
+            }
             "--bounded-continue" if session_flags => bounded_continue = true,
             other
                 if session_flags
@@ -90,6 +97,9 @@ pub(super) fn parse_file_args(
     if load.is_some() && seed.is_some() {
         return Err("`--seed` 只能用于新故事，不能与 `--load` 同时使用".into());
     }
+    if trace_exchange && trace_output.is_none() {
+        return Err("`--trace-exchange` 必须搭配 `--trace-output`".into());
+    }
     Ok(FileArgs {
         path,
         json,
@@ -97,6 +107,7 @@ pub(super) fn parse_file_args(
         save,
         seed,
         trace_output,
+        trace_exchange,
         choice_presentation,
         bounded_continue,
         continuation_budget,

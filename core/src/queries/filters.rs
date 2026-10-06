@@ -1,8 +1,8 @@
 use super::{
     CatalogQuerySort, CATALOG_QUERY_SCHEMA_VERSION, MAX_CATALOG_QUERY_VALUES,
-    SORTED_CATALOG_QUERY_SCHEMA_VERSION,
+    REFERENCE_CATALOG_QUERY_SCHEMA_VERSION, SORTED_CATALOG_QUERY_SCHEMA_VERSION,
 };
-use crate::catalog::{TargetRef, TARGET_KINDS};
+use crate::catalog::{TargetRef, OBJECT_REFERENCE_TARGET_KINDS, TARGET_KINDS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -12,6 +12,7 @@ pub enum PropertyScalar {
     String(String),
     Number(f64),
     Boolean(bool),
+    Reference(TargetRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,22 +109,45 @@ impl Default for CatalogQuery {
 }
 
 impl CatalogQuery {
-    pub fn set_sort(&mut self, sort: Option<CatalogQuerySort>) {
-        self.schema_version = if sort.is_some() {
+    pub fn has_reference_values(&self) -> bool {
+        self.filters.iter().any(|filter| match filter {
+            CatalogQueryFilter::Property { values, .. } => values
+                .iter()
+                .any(|condition| matches!(condition.equals, PropertyScalar::Reference(_))),
+            _ => false,
+        })
+    }
+
+    /// 只在调用方显式编辑条件后选择最小已知版本；载入和查询不会调用此方法。
+    pub fn sync_edited_version(&mut self) {
+        if !matches!(self.schema_version, 1..=3) {
+            return;
+        }
+        self.schema_version = if self.has_reference_values() {
+            REFERENCE_CATALOG_QUERY_SCHEMA_VERSION
+        } else if self.sort.is_some() {
             SORTED_CATALOG_QUERY_SCHEMA_VERSION
         } else {
             CATALOG_QUERY_SCHEMA_VERSION
         };
+    }
+
+    pub fn set_sort(&mut self, sort: Option<CatalogQuerySort>) {
         self.sort = sort;
+        self.sync_edited_version();
     }
 
     pub fn validate(&self, root: &Path) -> Result<(), QueryError> {
-        if !matches!(
-            (self.schema_version, self.sort),
-            (CATALOG_QUERY_SCHEMA_VERSION, None) | (SORTED_CATALOG_QUERY_SCHEMA_VERSION, Some(_))
-        ) {
+        let reference_values = self.has_reference_values();
+        let version_valid = match (self.schema_version, self.sort) {
+            (CATALOG_QUERY_SCHEMA_VERSION, None)
+            | (SORTED_CATALOG_QUERY_SCHEMA_VERSION, Some(_)) => !reference_values,
+            (REFERENCE_CATALOG_QUERY_SCHEMA_VERSION, _) => reference_values,
+            _ => false,
+        };
+        if !version_valid {
             return Err(QueryError::InvalidQuery(format!(
-                "不支持的查询版本或排序组合 schema_version:{}；默认查询使用 v1，显式排序使用 v2",
+                "不支持的查询版本、排序或属性值组合 schema_version:{}；默认查询使用 v1，排序使用 v2，对象引用值须显式使用 v3",
                 self.schema_version
             )));
         }
@@ -156,6 +180,21 @@ impl CatalogQuery {
                     }
                 }
                 CatalogQueryFilter::Property { values, .. } => {
+                    for condition in values {
+                        if let PropertyScalar::Reference(target) = &condition.equals {
+                            if !OBJECT_REFERENCE_TARGET_KINDS.contains(&target.kind.as_str()) {
+                                return Err(QueryError::InvalidQuery(
+                                    "引用属性查询仅支持 entity/relation/character 目标".into(),
+                                ));
+                            }
+                            // 查询既有静态身份，不套用创作写入 API 对 END 的额外限制。
+                            if !crate::lexer::valid_identifier(&target.id) {
+                                return Err(QueryError::InvalidQuery(
+                                    "引用属性目标 ID 无效：须以英文字母或下划线开头，仅含英文字母、数字及下划线".into(),
+                                ));
+                            }
+                        }
+                    }
                     if values
                         .iter()
                         .any(|condition| condition.key.trim().is_empty())
@@ -385,6 +424,9 @@ pub(super) fn property_list(values: &[PropertyCondition]) -> String {
                 PropertyScalar::Number(value) => value.to_string(),
                 PropertyScalar::Boolean(value) if *value => "是".into(),
                 PropertyScalar::Boolean(_) => "否".into(),
+                PropertyScalar::Reference(target) => {
+                    format!("对象引用 {}:{}", target.kind, target.id)
+                }
             };
             format!("{} = {value}", condition.key)
         })

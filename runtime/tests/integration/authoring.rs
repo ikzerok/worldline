@@ -1,24 +1,90 @@
 use super::*;
 
+fn authoring_project(root: &std::path::Path) -> Project {
+    let mut project = Project::new(root);
+    project
+        .set_text(&project.entry.clone(), "period phase\ntag marker\n".into())
+        .unwrap();
+    for (relative, source) in [
+        (
+            "characters.wl",
+            "character actor as \"甲\"\n  property age = 28\ncharacter peer\n",
+        ),
+        (
+            "events/first.wl",
+            concat!(
+                "storyline lane_a\n",
+                "  event first with actor at 10 during phase\n",
+                "    choice \"继续\"\n      ->> other\n",
+                "    choice \"结束\"\n      -> last\n",
+                "  event last with actor at 20 during phase follows first, other\n",
+                "    LAST\n    -> END\n",
+            ),
+        ),
+        (
+            "events/other.wl",
+            "storyline lane_b\n  event other with actor, peer at 10 during phase\n    OTHER\n    -> END\n",
+        ),
+    ] {
+        let path = project.add_file(std::path::Path::new(relative)).unwrap();
+        project.set_text(&path, source.into()).unwrap();
+    }
+    project
+}
+
+#[test]
+fn blank_project_save_reopen_and_play_supports_author_edits() {
+    let dir = ProjectDir::new();
+    let root = dir.0.join("blank");
+    let mut project = Project::new(&root);
+    assert_eq!(project.documents.len(), 1);
+    assert_eq!(
+        project.document(&project.entry).unwrap(),
+        "event start\n  -> END\n"
+    );
+    project.save().unwrap();
+
+    let mut reopened = Project::open(&root).unwrap();
+    assert!(!reopened.is_dirty());
+    let compiled = reopened.compile();
+    assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
+    let mut story = Story::new(&compiled.program, &compiled.analysis).unwrap();
+    assert_eq!(transcript(&mut story), "[END]");
+    assert!(story.is_ended());
+
+    reopened
+        .set_text(
+            &reopened.entry.clone(),
+            "event start\n  新稿\n  -> END\n".into(),
+        )
+        .unwrap();
+    reopened.save().unwrap();
+    let mut edited = Project::open(&root).unwrap();
+    assert!(!edited.is_dirty());
+    assert_eq!(edited.documents.len(), 1);
+    let compiled = edited.compile();
+    assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
+    let mut story = Story::new(&compiled.program, &compiled.analysis).unwrap();
+    assert_eq!(transcript(&mut story), "新稿[END]");
+    assert!(story.is_ended());
+}
+
 #[test]
 fn project_visual_authoring_export_reopen_and_play() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("draft"));
+    let mut project = authoring_project(&dir.0.join("draft"));
     let original = project.compile();
     assert!(!original.has_errors(), "{:?}", original.diagnostics);
     assert_eq!(original.program.files.len(), 4);
-    assert_eq!(
-        original.analysis.world.as_ref().unwrap().display,
-        "雾港纪事"
-    );
+    assert!(original.analysis.world.is_none());
     let path = project
         .add_file(std::path::Path::new("events/return.wl"))
         .unwrap();
     let draft = EventDraft {
-        id: "return_home".into(),
+        id: "added".into(),
         summary: "重返雾港".into(),
-        storyline: "harbor".into(),
-        characters: vec!["lin".into()],
+        storyline: "lane_a".into(),
+        characters: vec!["actor".into()],
         body: "你终于回到了家。\n-> END".into(),
         ..Default::default()
     };
@@ -26,10 +92,10 @@ fn project_visual_authoring_export_reopen_and_play() {
         .edit(|p| p.write_event(&path, None, &draft))
         .unwrap();
     project
-        .edit(|p| p.connect_events("beacon", "return_home", "回家", true))
+        .edit(|p| p.connect_events("other", "added", "回家", true))
         .unwrap();
     project
-        .edit(|p| p.move_event("return_home", "harbor", 1))
+        .edit(|p| p.move_event("added", "lane_a", 1))
         .unwrap();
     let result = project.compile();
     let order: Vec<_> = result
@@ -37,13 +103,13 @@ fn project_visual_authoring_export_reopen_and_play() {
         .graph
         .nodes
         .iter()
-        .filter(|n| n.storyline == "harbor")
+        .filter(|n| n.storyline == "lane_a")
         .map(|n| (&n.name, n.seq))
         .collect();
-    assert!(order.contains(&(&"return_home".into(), 10)));
-    assert!(result.analysis.symbols.characters["lin"]
+    assert!(order.contains(&(&"added".into(), 10)));
+    assert!(result.analysis.symbols.characters["actor"]
         .events
-        .contains(&"return_home".into()));
+        .contains(&"added".into()));
     let output = dir.0.join("delivery");
     project.export(&output).unwrap();
     assert!(output.join("world.wl").is_file());
@@ -65,10 +131,10 @@ fn project_visual_authoring_export_reopen_and_play() {
 #[test]
 fn character_metadata_roundtrip_rename_and_reverse_index() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("draft"));
+    let mut project = authoring_project(&dir.0.join("draft"));
     let path = project.root.join("characters.wl");
     let draft = CharacterDraft {
-        id: "lin_new".into(),
+        id: "actor_new".into(),
         display: "林\"舟".into(),
         properties: vec![
             (
@@ -77,25 +143,25 @@ fn character_metadata_roundtrip_rename_and_reverse_index() {
             ),
             ("age".into(), PropertyValue::Num(-2.5)),
         ],
-        relations: vec![("mei".into(), "同伴".into())],
+        relations: vec![("peer".into(), "同伴".into())],
     };
     project
-        .edit(|p| p.write_character(&path, Some("lin"), &draft))
+        .edit(|p| p.write_character(&path, Some("actor"), &draft))
         .unwrap();
     let result = project.compile();
     assert!(!result.has_errors(), "{:?}", result.diagnostics);
-    assert!(!result.analysis.symbols.characters.contains_key("lin"));
-    let info = &result.analysis.symbols.characters["lin_new"];
+    assert!(!result.analysis.symbols.characters.contains_key("actor"));
+    let info = &result.analysis.symbols.characters["actor_new"];
     assert_eq!(info.display, "林\"舟");
     assert_eq!(info.properties["quote"], draft.properties[0].1);
     assert_eq!(info.events.len(), 3);
-    assert_eq!(info.relations[0].target, "mei");
+    assert_eq!(info.relations[0].target, "peer");
 }
 
 #[test]
 fn partial_order_across_files_keeps_independent_events_and_control_flow() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("world"));
+    let mut project = authoring_project(&dir.0.join("world"));
     let initial = project.compile();
     assert!(initial.diagnostics.is_empty(), "{:?}", initial.diagnostics);
     let timeline = &initial.analysis.timeline;
@@ -108,15 +174,10 @@ fn partial_order_across_files_keeps_independent_events_and_control_flow() {
             .unwrap()
             .rank
     };
-    assert_eq!(
-        (rank("arrival"), rank("beacon"), rank("farewell")),
-        (0, 0, 1)
-    );
+    assert_eq!((rank("first"), rank("other"), rank("last")), (0, 0, 1));
     assert_eq!(timeline.edges.len(), 2);
     let before = initial.analysis.fingerprint;
-    project
-        .edit(|p| p.order_events("arrival", "beacon"))
-        .unwrap();
+    project.edit(|p| p.order_events("first", "other")).unwrap();
     let ordered = project.compile();
     assert_eq!(ordered.analysis.fingerprint, before);
     assert_eq!(
@@ -125,7 +186,7 @@ fn partial_order_across_files_keeps_independent_events_and_control_flow() {
             .timeline
             .events
             .iter()
-            .find(|e| e.event == "farewell")
+            .find(|e| e.event == "last")
             .unwrap()
             .rank,
         2
@@ -133,18 +194,16 @@ fn partial_order_across_files_keeps_independent_events_and_control_flow() {
     assert!(project
         .sources()
         .values()
-        .any(|text| text.contains("during storm_night follows arrival")));
+        .any(|text| text.contains("during phase follows first")));
     // 时间顺序约束不充当播放调度器,保持原有分支与准入行为。
     let mut story = Story::new(&ordered.program, &ordered.analysis).unwrap();
     transcript(&mut story);
     story.choose(1).unwrap();
     let ending = transcript(&mut story);
-    assert!(ending.contains("林舟将信收好"));
-    assert!(!ending.contains("重新点亮灯塔"));
+    assert!(ending.contains("LAST"));
+    assert!(!ending.contains("OTHER"));
     let saved = project.sources();
-    assert!(project
-        .edit(|p| p.order_events("farewell", "arrival"))
-        .is_err());
+    assert!(project.edit(|p| p.order_events("last", "first")).is_err());
     assert_eq!(project.sources(), saved);
     let export = dir.0.join("export");
     project.export(&export).unwrap();
@@ -279,9 +338,9 @@ fn attachments_export_and_save_as_are_portable_and_preserve_sources() {
     std::fs::write(&picture, b"image fixture").unwrap();
     std::fs::write(&voice, b"audio fixture").unwrap();
     std::fs::write(&reference, "其他格式资料").unwrap();
-    let mut project = Project::new(&dir.0.join("draft"));
-    let event = TargetRef::new("event", "arrival");
-    let person = TargetRef::new("character", "lin");
+    let mut project = authoring_project(&dir.0.join("draft"));
+    let event = TargetRef::new("event", "first");
+    let person = TargetRef::new("character", "actor");
     project
         .edit(|p| {
             p.add_asset_reference(&event, &picture)?;
@@ -342,10 +401,10 @@ fn attachments_export_and_save_as_are_portable_and_preserve_sources() {
 #[test]
 fn character_rename_preserves_tag_and_asset_references() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("draft"));
-    let target = worldline_core::catalog::TargetRef::new("character", "lin");
+    let mut project = authoring_project(&dir.0.join("draft"));
+    let target = worldline_core::catalog::TargetRef::new("character", "actor");
     project
-        .edit(|p| p.set_catalog_links(&target, &["harbor_place".into()], false))
+        .edit(|p| p.set_catalog_links(&target, &["marker".into()], false))
         .unwrap();
     std::fs::create_dir_all(&project.root).unwrap();
     let external = project.root.join("声音参考.txt");
@@ -357,19 +416,19 @@ fn character_rename_preserves_tag_and_asset_references() {
         })
         .unwrap();
     let path = project.root.join("characters.wl");
-    let info = project.compile().analysis.symbols.characters["lin"].clone();
+    let info = project.compile().analysis.symbols.characters["actor"].clone();
     let draft = CharacterDraft {
-        id: "lin_updated".into(),
+        id: "actor_updated".into(),
         display: "林舟".into(),
         properties: info.properties.into_iter().collect(),
-        relations: vec![("mei".into(), "同行者".into())],
+        relations: vec![("peer".into(), "同行者".into())],
     };
     project
-        .edit(|p| p.write_character(&path, Some("lin"), &draft))
+        .edit(|p| p.write_character(&path, Some("actor"), &draft))
         .unwrap();
     let catalog = project.compile().analysis.catalog;
-    let renamed = worldline_core::catalog::TargetRef::new("character", "lin_updated");
-    assert_eq!(catalog.tags_for(&renamed), ["harbor_place"]);
+    let renamed = worldline_core::catalog::TargetRef::new("character", "actor_updated");
+    assert_eq!(catalog.tags_for(&renamed), ["marker"]);
     assert_eq!(catalog.assets_for(&renamed).len(), 1);
     assert!(catalog.assets_for(&target).is_empty());
 }
@@ -377,39 +436,39 @@ fn character_rename_preserves_tag_and_asset_references() {
 #[test]
 fn authoring_preserves_comments_and_searches_unsaved_unicode_text() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("world"));
+    let mut project = authoring_project(&dir.0.join("world"));
     let path = project.root.join("characters.wl");
     let text = project
         .document(&path)
         .unwrap()
         .replace(
-            "character lin as \"林舟\"",
-            "character lin as \"林舟\" // 港口作者的注释",
+            "character actor as \"甲\"",
+            "character actor as \"甲\" // 港口作者的注释",
         )
         .replace("property age = 28", "property age = 28 /* 待核对年龄 */");
     project.set_text(&path, text).unwrap();
-    let info = project.compile().analysis.symbols.characters["lin"].clone();
+    let info = project.compile().analysis.symbols.characters["actor"].clone();
     let draft = CharacterDraft {
-        id: "lin".into(),
+        id: "actor".into(),
         display: "林舟新名".into(),
         properties: info.properties.into_iter().collect(),
-        relations: vec![("mei".into(), "同伴".into())],
+        relations: vec![("peer".into(), "同伴".into())],
     };
     project
-        .edit(|p| p.write_character(&path, Some("lin"), &draft))
+        .edit(|p| p.write_character(&path, Some("actor"), &draft))
         .unwrap();
     let text = project.document(&path).unwrap();
     assert!(text.contains("// 港口作者的注释"));
     assert!(text.contains("/* 待核对年龄 */"));
-    let (path, mut event) = project.event_draft("arrival").unwrap();
-    let text = project.document(&path).unwrap().replace(
-        "at 10 during storm_night",
-        "at 10 during storm_night // 保留事件注释",
-    );
+    let (path, mut event) = project.event_draft("first").unwrap();
+    let text = project
+        .document(&path)
+        .unwrap()
+        .replace("at 10 during phase", "at 10 during phase // 保留事件注释");
     project.set_text(&path, text).unwrap();
     event.summary = "港口新记录".into();
     project
-        .edit(|p| p.write_event(&path, Some("arrival"), &event))
+        .edit(|p| p.write_event(&path, Some("first"), &event))
         .unwrap();
     assert!(project.document(&path).unwrap().contains("// 保留事件注释"));
     let results = project.search("新记录");
@@ -462,14 +521,14 @@ fn metadata_errors_and_transaction_rollback_preserve_source() {
         );
     }
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("draft"));
+    let mut project = authoring_project(&dir.0.join("draft"));
     let before = project.sources();
-    assert!(project.edit(|p| p.remove_event("beacon")).is_err());
+    assert!(project.edit(|p| p.remove_event("other")).is_err());
     assert_eq!(project.sources(), before);
-    let (path, mut draft) = project.event_draft("arrival").unwrap();
+    let (path, mut draft) = project.event_draft("first").unwrap();
     draft.characters.push("missing".into());
     assert!(project
-        .edit(|p| p.write_event(&path, Some("arrival"), &draft))
+        .edit(|p| p.write_event(&path, Some("first"), &draft))
         .is_err());
     assert_eq!(project.sources(), before);
 }
@@ -477,13 +536,13 @@ fn metadata_errors_and_transaction_rollback_preserve_source() {
 #[test]
 fn project_save_detects_collaborator_changes_and_undo_after_save_is_dirty() {
     let dir = ProjectDir::new();
-    let mut project = Project::new(&dir.0.join("draft"));
+    let mut project = authoring_project(&dir.0.join("draft"));
     project.save_as(&dir.0.join("saved")).unwrap();
     let previous = project.clone();
-    let (path, mut draft) = project.event_draft("arrival").unwrap();
+    let (path, mut draft) = project.event_draft("first").unwrap();
     draft.summary = "已修改".into();
     project
-        .edit(|p| p.write_event(&path, Some("arrival"), &draft))
+        .edit(|p| p.write_event(&path, Some("first"), &draft))
         .unwrap();
     project.save().unwrap();
     assert!(!project.is_dirty());

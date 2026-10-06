@@ -786,3 +786,6 @@ CLI默认写出同一Markdown，JSON与RPC结果为 `{ok,report}`；调用错误
 巨大id不能保证有界响应时返回null id的 `-32600`，不反射超额id。诊断及错误文本先流式
 计量再投影；超额返回小型 `output_limit`。通知不输出响应。CLI只读打开当前磁盘稿，RPC
 只读编译已打开工程的已应用缓冲，不刷新磁盘、不恢复事务、不修改live session。
+
+
+资料查询 `catalog.query` 的显式 query v3 支持既有对象引用属性的精确条件 `equals:{"type":"reference","value":{"kind":"entity","id":"harbor"}}`，并沿用原分页协议；v1/v2不接受此值。合法缺失目标返回零命中，非法类型/身份返回INVALID_QUERY。默认不升级，详细兼容与保存文档能力见 [catalog.md](catalog.md) §7.3。

@@ -2,3 +2,7 @@
 
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# 正式归档不分发演示工程/样例文件；测试输入及产品字段模板保留。
+/examples/ export-ignore
+/spec/examples/ export-ignore

@@ -4,6 +4,8 @@ use std::path::Path;
 
 pub const CATALOG_QUERY_SCHEMA_VERSION: u32 = 1;
 pub const SORTED_CATALOG_QUERY_SCHEMA_VERSION: u32 = 2;
+pub const REFERENCE_CATALOG_QUERY_SCHEMA_VERSION: u32 = 3;
+pub const CATALOG_QUERY_REFERENCE_REQUIRED_FEATURE: &str = "catalog.query_reference_values.v1";
 pub const CATALOG_QUERY_SORT_REQUIRED_FEATURE: &str = "catalog.query_sort.v1";
 pub const MAX_CATALOG_QUERY_PAGE_SIZE: usize = 100;
 pub const MAX_CATALOG_QUERY_CANDIDATES: usize = 100_000;

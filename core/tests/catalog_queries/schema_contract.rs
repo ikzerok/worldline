@@ -9,7 +9,10 @@ fn published_query_schema_tracks_versions_sort_values_and_document_capability() 
     .unwrap();
     let query = &schema["properties"]["query"];
     assert_eq!(schema["properties"]["schema_version"]["const"], 1);
-    assert_eq!(query["properties"]["schema_version"]["enum"], json!([1, 2]));
+    assert_eq!(
+        query["properties"]["schema_version"]["enum"],
+        json!([1, 2, 3])
+    );
     assert_eq!(
         query["oneOf"][0]["properties"]["schema_version"]["const"],
         1
@@ -43,4 +46,28 @@ fn published_query_schema_tracks_versions_sort_values_and_document_capability() 
             }
         }
     }
+}
+
+#[test]
+fn published_query_schema_covers_reference_value_identity_and_v3_capability() {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../spec/schemas/saved_query.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["referenceTarget"]["properties"]["kind"]["enum"],
+        json!(["entity", "relation", "character"])
+    );
+    assert_eq!(
+        schema["$defs"]["propertyValue"]["oneOf"][3]["properties"]["type"]["const"],
+        "reference"
+    );
+    assert_eq!(
+        schema["properties"]["query"]["oneOf"][2]["properties"]["schema_version"]["const"],
+        3
+    );
+    assert_eq!(
+        schema["allOf"][1]["then"]["properties"]["required_features"]["contains"]["const"],
+        "catalog.query_reference_values.v1"
+    );
 }

@@ -1,7 +1,7 @@
 # 工程模板 v1
 
 工程模板是作者资料表单的描述，不是实例的语义来源。内置目录仍由
-[`examples/templates.catalog.json`](examples/templates.catalog.json) 定义；已有
+[`templates.catalog.json`](templates.catalog.json) 定义；已有
 16 个内置模板 ID（如 `template_place`）保持不变，工程模板使用
 `project:<ID>` 命名空间，不能覆盖或改写内置项。工程清单 `.world/project.json`
 的 `templates` 对象把稳定模板 ID 映射到工作区内相对 `.json` 路径。非空注册必须

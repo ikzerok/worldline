@@ -19,7 +19,8 @@ fn main() -> ExitCode {
             eprintln!("wl: {msg}");
             eprintln!("      wl problems <目录或入口> [--query-json JSON] [--cursor-json JSON] [--limit N] [--options-json JSON] [--related ID] [--json]");
             eprintln!("用法: wl check <文件.wl> [--json]");
-            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json] [--choice-presentation] [--json]");
+            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json [--trace-exchange]] [--choice-presentation] [--json]");
+            eprintln!("      --trace-exchange显式生成4MiB/20,000步内可重新导入的紧凑JSON，目标必须不存在；普通trace-output保持原pretty输出/覆盖");
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl route-compare <目录或入口> --left-trace-json DTO --right-trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl playthrough-report <目录或入口> --trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");

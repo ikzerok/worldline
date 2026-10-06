@@ -117,9 +117,14 @@ fn errors_cancel_and_stale_plans_never_mutate() {
 fn broken_story_does_not_block_unrelated_geometry() {
     let (mut p, mut r) = project("broken");
     let entry = p.entry.clone();
-    p.set_text(&entry, "event broken\n  goto absent\n".into())
+    p.set_text(&entry, "event broken\n  -> absent\n".into())
         .unwrap();
-    assert!(compile_snapshot(&p).has_errors());
+    let compiled = compile_snapshot(&p);
+    assert!(compiled.has_errors());
+    assert!(compiled
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.code == "A101" && diagnostic.message.contains("absent") }));
     apply(
         &mut p,
         &mut r,
