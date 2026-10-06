@@ -4,7 +4,7 @@
 
 ## 阅读路线
 
-想先完成一篇小作品，可从[资料到可信重放](author-route.md)和[栖雪山站示例](../examples/snowline-seeds/README.md)开始。按主题系统阅读时沿本页顺序，较完整的世界工程见 `examples/harbor-world`。修复语法看 syntax 与 diagnostics；设计状态看 states；查询人物、分类、附件或锚点看 catalog；接入其他程序看 API 指南与 agent-protocol。完整规范索引位于 [spec/README.md](../spec/README.md)。
+想先完成一篇小作品，可从[资料到可信重放](author-route.md)开始。按主题系统阅读时沿本页顺序，新建作品从空白骨架开始，逐项加入自己的资料。修复语法看 syntax 与 diagnostics；设计状态看 states；查询人物、分类、附件或锚点看 catalog；接入其他程序看 API 指南与 agent-protocol。完整规范索引位于 [spec/README.md](../spec/README.md)。
 
 ## 1. 建立工程
 
@@ -84,7 +84,7 @@ wl relation delete "D:/作品/我的世界" --id lin_knows_mei --json
 `--clear-to-kind` 清空可选字段；更新关系实例时用 `--clear-source-note`、
 `--clear-scope` 或 `--clear-properties` 清空来源、作用域或属性。清空标记只用于
 `update`，不能和同一字段的设置参数并用，create 会明确报错。关系资料的完整可运行
-示例见 [examples/relations-world/README.md](../examples/relations-world/README.md)。
+持久关系的语义以[关系规范](../spec/relations.md)为准。
 
 ```powershell
 wl relations promote preview "D:/作品/我的世界" --source character:lin --target character:mei --label 同伴 --id lin_mei --type knows --scope character:mei --property strength=3 --json
@@ -378,7 +378,7 @@ worldedit 试玩到选择组后，点击“解释当前条件（只读）”。�
 
 ## 15. 用1.11复用规则、段落与台词
 
-新建作品清单显式设为`"language_version":"1.11"`，或给CLI传`--language-version=1.11`。完整示例在[潮岸救援](../examples/tide-rescue/README.md)。旧1.9/1.10正文中写过的call、return、say不会突然变成命令。
+新建作品清单显式设为`"language_version":"1.11"`，或给CLI传`--language-version=1.11`。语法与运行边界见[语言1.11](../spec/language-1.11.md)。旧1.9/1.10正文中写过的call、return、say不会突然变成命令。
 
 ```wl
 rule fare(people: num) -> num = people * 2
@@ -456,7 +456,7 @@ bind entity harbor to harbor_record
 
 结果跳转只使用本次当前程序的真实位置，旧轨迹行号仅作对比；结果过期须重新重放。执行结束或目标缺失且没有实际位置时不可跳转，不猜活动文件。
 
-可运行的双路线、片段暂停续档命令见[栖雪山站](../examples/snowline-seeds/README.md)；显示名与稳定ID、安全改名范围、应用/保存两阶段见[作者路线](author-route.md)。精确语义以[重放规范](../spec/replay.md)为准。
+在自己的工程分别录制双路线并验证片段暂停续档；显示名与稳定ID、安全改名范围、应用/保存两阶段见[作者路线](author-route.md)。精确语义以[重放规范](../spec/replay.md)为准。
 
 ## 19. 审阅安全改名并继续写作
 

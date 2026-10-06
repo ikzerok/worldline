@@ -80,6 +80,18 @@ pub(crate) fn rewrite_registered(
                     Some("tag") if target.kind == "tag" => {
                         count += ids(filter.get_mut("values"), &target.id, new_id)
                     }
+                    Some("property") => {
+                        if let Some(values) = filter.get_mut("values").and_then(Value::as_array_mut)
+                        {
+                            for condition in values {
+                                if let Some(equals) = condition.get_mut("equals").filter(|value| {
+                                    value.get("type").and_then(Value::as_str) == Some("reference")
+                                }) {
+                                    count += reference(equals.get_mut("value"), target, new_id);
+                                }
+                            }
+                        }
+                    }
                     Some("relation") => {
                         if let Some(values) = filter.get_mut("values").and_then(Value::as_array_mut)
                         {

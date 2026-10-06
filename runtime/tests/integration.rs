@@ -1,4 +1,4 @@
-//! 集成测试:示例故事编译、试玩走查、诊断、存读档。
+//! 集成测试:最小合成输入编译、试玩走查、诊断、存读档。
 //! 位于 runtime 包(core + runtime 均可用)。
 
 use worldline_core::ast::PropertyValue;
@@ -63,12 +63,6 @@ fn play_all(source: &str, script: &[usize]) -> (String, Vec<String>) {
         story.choose(n).unwrap();
         log.push_str(&format!(" <<{}>> ", choices[n]));
     }
-}
-
-fn example(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../examples")
-        .join(name)
 }
 
 struct ProjectDir(std::path::PathBuf);

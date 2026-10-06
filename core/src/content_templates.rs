@@ -1,4 +1,4 @@
-//! 内置作者模板目录；规范单源为 spec/examples/templates.catalog.json。
+//! 内置作者模板目录；规范单源为 spec/templates.catalog.json。
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -34,13 +34,13 @@ pub struct TemplateField {
     pub required: bool,
 }
 
-const BUILTIN_JSON: &str = include_str!("../../spec/examples/templates.catalog.json");
+const BUILTIN_JSON: &str = include_str!("../../spec/templates.catalog.json");
 static BUILTIN: OnceLock<TemplateCatalog> = OnceLock::new();
 
 pub fn builtin_templates() -> &'static TemplateCatalog {
     BUILTIN.get_or_init(|| {
         let catalog: TemplateCatalog =
-            serde_json::from_str(BUILTIN_JSON).expect("内置模板目录必须符合规范样例");
+            serde_json::from_str(BUILTIN_JSON).expect("内置模板目录必须符合规范契约");
         validate_catalog(&catalog).expect("内置模板目录必须通过核心校验");
         catalog
     })

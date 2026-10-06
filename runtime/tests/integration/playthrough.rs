@@ -156,46 +156,90 @@ event market.exit
 }
 
 #[test]
-fn mansion_full_walkthrough() {
-    // 敲门 → 去书房 → 翻开日记(得钥匙) → 去地窖 → 勇气不足退回
-    let result = compile_path(&example("mansion.wl")).unwrap();
+fn variable_gate_once_choice_and_gather_walkthrough() {
+    let result = compile_source(
+        "walkthrough.wl",
+        r#"let score = 0
+let unlocked = false
+event start
+  choice "进入"
+    set score = score + 1
+    -> hub
+  choice "跳过"
+    -> END
+  choice "等待" if visits(start) < 3
+    -> start
+event hub
+  choice "领取标记"
+    -> item
+  choice "受限分支" if unlocked
+    -> gated
+  choice "返回"
+    -> start
+event item
+  choice once "取得标记"
+    set unlocked = true
+    已解锁
+  choice "返回"
+    -> hub
+  汇聚完成
+  -> hub
+event gated
+  if score >= 3
+    条件通过
+    -> END
+  else
+    条件不足
+    -> hub
+"#,
+    );
+    assert!(!result.has_errors(), "{:#?}", result.diagnostics);
     let mut s = Story::new(&result.program, &result.analysis).unwrap();
-    let mut log = String::new();
-    log.push_str(&transcript(&mut s)); // start 暂停
+    let mut log = transcript(&mut s);
     assert_eq!(
         s.choices()
             .iter()
             .map(|c| c.label.clone())
             .collect::<Vec<_>>(),
-        vec!["敲门", "绕到后院", "多等一会儿"]
+        vec!["进入", "跳过", "等待"]
     );
-    s.choose(0).unwrap(); // 敲门 courage=1
-    log.push_str(&transcript(&mut s)); // hall → hall.choice 暂停
+    s.choose(0).unwrap(); // score=1
+    log.push_str(&transcript(&mut s));
     assert_eq!(
         s.choices()
             .iter()
             .map(|c| c.label.clone())
             .collect::<Vec<_>>(),
-        vec!["去书房", "回门口"],
-        "无钥匙时地窖不应出现"
+        vec!["领取标记", "返回"],
+        "变量解锁前不应出现受限选择"
     );
-    s.choose(0).unwrap(); // 去书房
-    log.push_str(&transcript(&mut s)); // study 暂停
-    s.choose(0).unwrap(); // 翻开日记(once,得钥匙)
-    log.push_str(&transcript(&mut s)); // 汇聚 → hall.choice 暂停
+    s.choose(0).unwrap(); // item
+    log.push_str(&transcript(&mut s));
+    s.choose(0).unwrap(); // once 选择后执行汇聚
+    log.push_str(&transcript(&mut s));
     assert_eq!(
         s.choices()
             .iter()
             .map(|c| c.label.clone())
             .collect::<Vec<_>>(),
-        vec!["去书房", "去地窖", "回门口"],
-        "有钥匙后地窖应出现"
+        vec!["领取标记", "受限分支", "返回"],
+        "变量解锁后应出现受限选择"
     );
-    s.choose(1).unwrap(); // 去地窖(courage=1 < 3)
-    log.push_str(&transcript(&mut s)); // cellar else 分支 → hall.choice
-    assert!(log.contains("日记的最后一页夹着一把小钥匙。"), "{log}");
-    assert!(log.contains("你合上了门。"), "{log}");
-    assert!(log.contains("黑暗浓得化不开"), "{log}");
+    s.choose(1).unwrap(); // score=1，执行 else 后回到 hub
+    log.push_str(&transcript(&mut s));
+    assert!(log.contains("已解锁"), "{log}");
+    assert!(log.contains("汇聚完成"), "{log}");
+    assert!(log.contains("条件不足"), "{log}");
+    assert!(!log.contains("条件通过"), "{log}");
+    s.choose(0).unwrap(); // 再次进入 item，once 选择已消费
+    transcript(&mut s);
+    assert_eq!(
+        s.choices()
+            .iter()
+            .map(|c| c.label.clone())
+            .collect::<Vec<_>>(),
+        vec!["返回"]
+    );
 }
 
 #[test]

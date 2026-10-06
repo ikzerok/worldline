@@ -550,6 +550,7 @@ fn supported_feature(feature: &str) -> bool {
             | "collaboration.proposals.v1"
             | "catalog.saved_queries.v1"
             | "catalog.query_sort.v1"
+            | "catalog.query_reference_values.v1"
             | "workspace.source_sets.v1"
             | "content.localization.v1"
     )

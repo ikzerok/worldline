@@ -43,6 +43,7 @@ impl Project {
         new_id: &str,
     ) -> Result<RenamePlan, String> {
         self.ensure_workspace_writable()?;
+        ensure_saved_queries_understood(self)?;
         ensure_source_inventory(self)?;
         if !matches!(
             target.kind.as_str(),
@@ -272,11 +273,33 @@ fn apply_plan_bytes(project: &mut Project, plan: &RenamePlan) -> Result<(), Stri
     }
     Ok(())
 }
+fn ensure_saved_queries_understood(project: &Project) -> Result<(), String> {
+    let index = project.saved_query_index();
+    if let Some(error) = index
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.severity == Severity::Error)
+    {
+        return Err(format!(
+            "查询定义不可解释，无法证明重命名完整：{}：{}",
+            error.file, error.message
+        ));
+    }
+    if let Some(document) = index.queries.values().find(|document| document.read_only) {
+        return Err(format!(
+            "查询定义为只读，无法证明重命名完整：{}",
+            document.path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn validate_candidate(
     project: &Project,
     before: &CompileResult,
     old_target: &TargetRef,
 ) -> Result<u64, String> {
+    ensure_saved_queries_understood(project)?;
     let compiled = project.compile_current();
     if let Some(error) = compiled
         .diagnostics

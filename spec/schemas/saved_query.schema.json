@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Saved catalog query document v1 (query v1/v2)",
+  "title": "Saved catalog query document v1 (query v1/v2/v3)",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -32,7 +32,8 @@
         "schema_version": {
           "enum": [
             1,
-            2
+            2,
+            3
           ]
         },
         "filters": {
@@ -58,7 +59,32 @@
               "negate": {
                 "type": "boolean"
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "dimension": {
+                      "const": "property"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "values"
+                  ],
+                  "properties": {
+                    "values": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "$ref": "#/$defs/propertyCondition"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -85,6 +111,57 @@
           "required": [
             "sort"
           ]
+        },
+        {
+          "properties": {
+            "schema_version": {
+              "const": 3
+            },
+            "sort": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sort"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "filters"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "schema_version": {
+                "const": 3
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "filters": {
+                "contains": {
+                  "$ref": "#/$defs/referenceFilter"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "filters": {
+                "not": {
+                  "contains": {
+                    "$ref": "#/$defs/referenceFilter"
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -117,6 +194,140 @@
           ]
         }
       }
+    },
+    "referenceTarget": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "entity",
+            "relation",
+            "character"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      }
+    },
+    "propertyValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "number"
+            },
+            "value": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "reference"
+            },
+            "value": {
+              "$ref": "#/$defs/referenceTarget"
+            }
+          }
+        }
+      ]
+    },
+    "propertyCondition": {
+      "type": "object",
+      "required": [
+        "key",
+        "equals"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "equals": {
+          "$ref": "#/$defs/propertyValue"
+        }
+      }
+    },
+    "referenceFilter": {
+      "type": "object",
+      "required": [
+        "dimension",
+        "values"
+      ],
+      "properties": {
+        "dimension": {
+          "const": "property"
+        },
+        "values": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "equals"
+            ],
+            "properties": {
+              "equals": {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "reference"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -125,8 +336,36 @@
         "properties": {
           "query": {
             "properties": {
+              "sort": {
+                "$ref": "#/$defs/sort"
+              }
+            },
+            "required": [
+              "sort"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "required_features"
+        ],
+        "properties": {
+          "required_features": {
+            "contains": {
+              "const": "catalog.query_sort.v1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "query": {
+            "properties": {
               "schema_version": {
-                "const": 2
+                "const": 3
               }
             },
             "required": [
@@ -142,7 +381,7 @@
         "properties": {
           "required_features": {
             "contains": {
-              "const": "catalog.query_sort.v1"
+              "const": "catalog.query_reference_values.v1"
             }
           }
         }

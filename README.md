@@ -1,14 +1,22 @@
 # worldline（世界线）
 
-世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.29正在完善资料查询、地图检索、路径交换、可释放试玩会话与读者页审阅。语义、来源与保护由core/runtime统一提供。
+世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.29完善资料查询、地图检索、路径交换、可释放试玩会话与读者页审阅。语义、来源与保护由core/runtime统一提供。
 
-工作分支不表示已交付或正式发行；0.29仍在实现与验收，范围见[0.29版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.29.0.md)。本轮不新增DSL，默认语言1.9、最高既有显式版本1.13保持；新查询格式须显式选择。
+工作分支不表示已交付或正式发行；实现范围和验证边界见[0.29版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.29.0.md)。本轮不新增DSL，默认语言1.9、最高既有显式版本1.13保持；新查询格式须显式选择。
 
-升级边界：0.27运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.28重放、比较或生成已验证审阅，应重新录制；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
+升级边界：0.28运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在0.29重放、比较或生成已验证审阅，应重新录制。路径JSON只读导入成功不表示可在当前版本重放；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。Linux合成输入、Node/WASM构建不替代物理输入法、读屏或各平台真实GUI验收。
+
+0.29 的 Windows、Web 和源码发布包不附带样例工程或规范演示文件。新建作品从仅含起点与结束的空白骨架开始；既有作品、可选字段模板及测试能力保持。
+
+## 0.29 作者工作流
+
+- [对象分页检索](https://github.com/ikzerok/worldline/blob/main/spec/object-search.md)：名称、ID、别名和类型使用同一个core结果
+- [原始路径交换](https://github.com/ikzerok/worldline/blob/main/spec/replay-exchange.md)：实际字节预算、重复键拒绝、只读导入与运行验证区分
+- [安全拥有型会话](https://github.com/ikzerok/worldline/blob/main/spec/owned-story.md)：程序快照随试玩会话释放
+- [读者公开页目录](https://github.com/ikzerok/worldedit/blob/main/docs/reader-page-directory.md)：在已公开内容里直接查找与定位
 
 ## 0.28 作者工作流
 
-- [蓝时水库原创演练](https://github.com/ikzerok/worldline/tree/main/examples/blue-hour-reservoir)：直接打开两地图与两条路线，验证本轮作者流程
 
 - [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：查看调用、读写和语境，回到真实源码
 - [可读试玩审阅](https://github.com/ikzerok/worldedit/blob/main/docs/playthrough-report.md)：重新验证单条路径，预览后明确复制或导出作者报告
@@ -52,21 +60,20 @@
 
 ```powershell
 cargo build --workspace --release --locked
-./target/release/wl check examples/harbor-world --json
-./target/release/wl catalog examples/harbor-world --json
-./target/release/wl play examples/harbor-world
+./target/release/wl check "D:/作品/我的世界" --json
+./target/release/wl catalog "D:/作品/我的世界" --json
+./target/release/wl play "D:/作品/我的世界"
 ```
 
-将整个作品目录作为参数，会递归分析全部 `.wl`，以根目录 world.wl 为入口。单文件参数适合独立示例，只读取入口及 include。所有引用都必须留在入口工作区中。
+先在 worldedit 新建并保存自己的作品，或按[语法规范](spec/syntax.md)创建根目录 `world.wl`。将整个作品目录作为参数，会递归分析全部 `.wl`，以根目录 world.wl 为入口。单文件参数适合独立示例，只读取入口及 include。所有引用都必须留在入口工作区中。
 
 ## 文档
 
 完整入口见 [按任务阅读](docs/README.md)；版本变化见 [CHANGELOG](CHANGELOG.md)。
 
-- [从资料到可信重放](docs/author-route.md)：用[栖雪山站最小示例](examples/snowline-seeds/README.md)串起来源资料、偏序与倒叙、双路线、共享片段和安全改稿。
+- [从资料到可信重放](docs/author-route.md)：串起来源资料、偏序与倒叙、双路线、共享片段和安全改稿。
 
 - [语言1.11规范](spec/language-1.11.md)：新语法、返回帧、纯性、类型和兼容边界。
-- [组合示例](examples/tide-rescue/README.md)：两次调用、嵌套暂停、动态证物和角色台词。
 - [创作手册](docs/handbook.md)：从目录、语法、人物、事件到状态、锚点、协作与交付的完整教程。
 - [语言规范索引](spec/README.md)：语法、语义、诊断、关系、状态、目录与协议的唯一真源。
 - [API 与工具接入](docs/api.md)：CLI、JSON-RPC、Rust Project 与运行时入口。
@@ -90,7 +97,6 @@ cargo build --workspace --release --locked
 | agent | wl-agent：stdio JSON-RPC 机器会话 |
 | spec | 完整语言与机器契约 |
 | docs | 教程与接入文档 |
-| examples | 独立故事与多文件示例；harbor-world 是完整世界工程 |
 
 ## 开发
 
@@ -126,8 +132,6 @@ cargo doc --workspace --no-deps --locked
 参阅[语言1.13](spec/language-1.13.md)、[静态人物引用](spec/character-refs.md)、[支持版本契约](spec/language-versions.md)。
 
 ## 0.9.0 持续资料约束与锁定选择
-
-可运行的[镜海孤岛示例](examples/lantern_archive_112/README.md)串起资料、锁定分支、书稿与静态公开边界。
 
 显式语言1.12支持[持续schema与bind](spec/schemas.md)及[读者可见禁用choice](spec/choices.md)。默认1.9和显式1.10/1.11不自动升级。资料违规通过统一compiler/CLI/RPC/发布检查；schema字段变更先查看实例影响，不填值、不强转、静态约束不改变运行指纹。锁定选择采用独立presentation能力协商，旧choices仍只含可选项；禁用拒选零推进，全锁落穿，片段/once/存档/重放闭环。
 

@@ -19,10 +19,12 @@ mod language;
 mod language_expression;
 mod language_persistence;
 mod model;
+mod owned_story;
 mod persistence;
 mod playthrough_report;
 mod random;
 mod replay;
+mod replay_exchange;
 mod replay_runner;
 mod route_comparison;
 mod state_actions;
@@ -40,11 +42,16 @@ use model::FrameSrc;
 pub use model::{
     AnchorKind, AnchorRecord, ChoicePresentation, ChoiceView, Output, RunError, StateRecord, Value,
 };
+pub use owned_story::OwnedStory;
 pub use playthrough_report::*;
 pub use replay::{
     AccessCoverage, ChoiceCoverage, ChoiceExplanation, ChoiceIdentity, ConditionExplanation,
     ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
     ReplayResult, ReplayStatus, ReplayStep, ReplayTrace, REPLAY_SCHEMA_VERSION,
+};
+pub use replay_exchange::{
+    decode_replay_trace, encode_replay_trace, ReplayExchangeError, MAX_REPLAY_EXCHANGE_BYTES,
+    MAX_REPLAY_EXCHANGE_STEPS,
 };
 pub use replay_runner::ReplaySession;
 pub use route_comparison::*;

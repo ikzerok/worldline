@@ -33,9 +33,9 @@
 | [localization.md](localization.md) | 显式本地化交换与原稿保护 |
 
 地图与展示文档以 `presentation.md`、`vector-scene.md` 及其 [schemas](schemas/README.md) 为共同契约；[矢量场景 Schema](schemas/vector-scene.schema.json) 的形状检查不能替代引用、锁定、资源或事务验证。
-验证夹具位于 [examples](examples/README.md)，仅用于设计级 Schema/引用检查，不是可运行工程或产品资源。
+结构以各机器 Schema 为准，行为回归位于源码测试中；字段模板的产品单源为 [templates.catalog.json](templates.catalog.json)，其中没有故事实例值。
 
-规范随工具发行包提供，无需在线文档；作品导出只保留工作区自身内容，不自动插入规范。语言运行示例位于仓库根 `examples/`，共同契约验证夹具位于本目录 `examples/`，集成测试位于 `runtime/tests/`。
+规范随工具发行包提供，无需在线文档；作品导出只保留工作区自身内容，不自动插入规范。0.29 起发布归档不附带仓库历史演示工程或规范样例；集成测试及必要历史兼容夹具位于 `runtime/tests/`。
 
 [v1.9 创作模型补全](authoring-v19.md)：权限统一为状态、独立锚点、条件关系与正文概览。
 

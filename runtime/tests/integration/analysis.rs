@@ -59,9 +59,18 @@ fn layout_order_does_not_change_save_fingerprint() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn examples_compile_clean() {
-    for name in ["minimal.wl", "mansion.wl"] {
-        let result = compile_path(&example(name)).expect("读取示例失败");
+fn generated_sources_compile_clean() {
+    let dir = ProjectDir::new();
+    for (name, source) in [
+        ("empty.wl", "event start\n  -> END\n"),
+        (
+            "choices.wl",
+            "let n = 0\nevent start\n  choice once \"增量\" if n == 0\n    set n = n + 1\n  if n == 1\n    数值:{n}\n  else\n    空值\n  -> END\n",
+        ),
+    ] {
+        let path = dir.0.join(name);
+        std::fs::write(&path, source).unwrap();
+        let result = compile_path(&path).expect("读取测试输入失败");
         let errors: Vec<_> = result
             .diagnostics
             .iter()
@@ -72,14 +81,19 @@ fn examples_compile_clean() {
 }
 
 #[test]
-fn include_example_entry_is_main_file() {
-    let result = compile_path(&example("include-main.wl")).unwrap();
+fn included_source_keeps_main_file_entry() {
+    let dir = ProjectDir::new();
+    let main = dir.0.join("main.wl");
+    std::fs::write(&main, "include \"child.wl\"\nevent start\n  -> child\n").unwrap();
+    std::fs::write(dir.0.join("child.wl"), "event child\n  -> END\n").unwrap();
+    let result = compile_path(&main).unwrap();
+    assert!(!result.has_errors(), "{:#?}", result.diagnostics);
     assert_eq!(
         result.program.entry, "start",
         "入口必须是主文件的第一个事件"
     );
     assert!(
-        result.program.events.iter().any(|e| e.name == "chapter2"),
+        result.program.events.iter().any(|e| e.name == "child"),
         "include 的事件应被合并"
     );
 }

@@ -155,3 +155,34 @@ fn catalog_query_cli_sorts_globally_and_rejects_v1_sort_and_changed_cursor() {
     assert_eq!(code, 2);
     assert_eq!(invalid["error"]["code"], "INVALID_QUERY");
 }
+
+#[test]
+fn reference_property_query_cli_matches_only_typed_identity_and_requires_v3() {
+    let root = temp_workspace(
+        "catalog-reference-cli",
+        r#"{"schema_version":1,"language_version":"1.13","entry":"world.wl","required_features":["content.object_refs.v1","content.character_refs.v1"]}"#,
+        "character keeper as \"保管人\"\nentity ledger kind document\n  property custodian = ref(\"character\", \"keeper\")\nevent start\n  -> END\n",
+    );
+    let mut query = json!({"schema_version":3,"filters":[{"dimension":"property","values":[{"key":"custodian","equals":{"type":"reference","value":{"kind":"character","id":"keeper"}}}]}]});
+    let run = |query: &serde_json::Value| {
+        run_dynamic(vec![
+            "catalog-query".into(),
+            root.to_string_lossy().into_owned(),
+            "--query-json".into(),
+            query.to_string(),
+            "--json".into(),
+        ])
+    };
+    let (code, response) = run(&query);
+    assert_eq!(code, 0);
+    assert_eq!(response["query"]["total"], 1);
+    assert_eq!(response["query"]["items"][0]["target"]["id"], "ledger");
+    query["filters"][0]["values"][0]["equals"]["value"]["id"] = json!("absent");
+    assert_eq!(run(&query).1["query"]["total"], 0);
+    query["schema_version"] = json!(1);
+    let (code, response) = run(&query);
+    assert_eq!(code, 2);
+    assert_eq!(response["error"]["code"], "INVALID_QUERY");
+    assert!(response["query"].is_null());
+    std::fs::remove_dir_all(root).unwrap();
+}

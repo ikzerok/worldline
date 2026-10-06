@@ -2,9 +2,9 @@
 
 worldline 是独立 Cargo workspace，成员为 core/runtime/cli/agent；不依赖父目录文件与编辑器。保留 Cargo.lock 与 rust-toolchain.toml，执行 `cargo build --workspace --release --locked` 生成 wl 和 wl-agent。
 
-源码包含 spec、docs、examples、源码、测试、许可证和 CI。examples/harbor-world 是 Project::new 的编译期模板，必须保留。target、日志、临时文件和发行包不上传。运行 `cargo doc --workspace --no-deps --locked` 可生成完整公开 Rust API 文档。
+源码发布包包含 spec、docs、源码、测试、许可证和 CI；不分发仓库中的历史演示工程与规范样例。`.gitattributes` 的 `export-ignore` 是正式 `git archive` 的排除依据；归档路径和字节须与该提交按这些规则生成的结果逐一核对。`Project::new` 生成单文件空白骨架，不编译嵌入故事样例。必要的回归输入、冻结历史兼容夹具和不含故事值的字段模板仍属于可构建/可测试源码。target、日志、临时文件和发行包不上传。运行 `cargo doc --workspace --no-deps --locked` 可生成完整公开 Rust API 文档。
 
-与同级 worldedit 联合发布时使用其 scripts/package.ps1，Windows 包会附两项语言工具、完整规范和示例，另输出独立 worldline-source.zip 及 SHA256 校验和。工具包版本与语言规范版本分开记录；0.3.0 同时支持显式 1.10 作者资料能力。当前不包含签名安装器。
+与同级 worldedit 联合发布时使用其 scripts/package.ps1，Windows 包会附两项语言工具、规范和使用文档，不附演示工程，另输出独立 worldline-source.zip 及 SHA256 校验和。工具包版本与语言规范版本分开记录；0.3.0 同时支持显式 1.10 作者资料能力。当前不包含签名安装器。
 
 
 ## 0.11.0 更新

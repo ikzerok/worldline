@@ -31,6 +31,7 @@ pub mod map_creation;
 pub mod markdown_import;
 pub mod migration;
 pub mod navigation;
+pub mod object_search;
 pub mod parser;
 pub mod presentation;
 pub mod presentation_commands;

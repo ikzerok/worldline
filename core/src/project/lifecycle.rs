@@ -250,36 +250,14 @@ impl Project {
     pub fn new(root: &Path) -> Self {
         let root = source_path(root);
         let entry = root.join("world.wl");
-        let documents = [
-            (
-                "world.wl",
-                include_str!("../../../examples/harbor-world/world.wl"),
-            ),
-            (
-                "characters.wl",
-                include_str!("../../../examples/harbor-world/characters.wl"),
-            ),
-            (
-                "events/harbor.wl",
-                include_str!("../../../examples/harbor-world/events/harbor.wl"),
-            ),
-            (
-                "events/lighthouse.wl",
-                include_str!("../../../examples/harbor-world/events/lighthouse.wl"),
-            ),
-        ]
-        .into_iter()
-        .map(|(path, text)| {
-            (
-                root.join(path),
-                Document {
-                    text: text.into(),
-                    saved: None,
-                    deleted: false,
-                },
-            )
-        })
-        .collect();
+        let documents = BTreeMap::from([(
+            entry.clone(),
+            Document {
+                text: "event start\n  -> END\n".into(),
+                saved: None,
+                deleted: false,
+            },
+        )]);
         Self {
             root,
             entry,

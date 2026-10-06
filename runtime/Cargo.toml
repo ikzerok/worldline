@@ -9,6 +9,7 @@ description = "worldline 运行时:故事状态机、选择分支、存读档"
 worldline-core = { path = "../core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+self_cell = "=1.2.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = "1"

@@ -105,24 +105,36 @@ fn deletion_impact_lists_existing_content_sources_without_changing_the_project()
     let root =
         std::env::temp_dir().join(format!("worldline-content-impact-{}", std::process::id()));
     let mut project = Project::new(&root);
+    project
+        .set_text(
+            &project.entry.clone(),
+            concat!(
+                "period phase\n",
+                "event first during phase\n  -> target\n",
+                "event target during phase\n  -> END\n",
+                "event last during phase follows target\n  -> END\n",
+            )
+            .into(),
+        )
+        .unwrap();
     let before = project.sources();
-    let target = worldline_core::catalog::TargetRef::new("event", "beacon");
+    let target = worldline_core::catalog::TargetRef::new("event", "target");
     let impact = project.deletion_impact(&target);
     assert!(impact.target_exists);
     assert!(impact.complete, "{:?}", impact.diagnostics);
     assert!(impact.map_placements.is_empty());
     assert!(!impact.can_delete());
     assert!(impact.content_references.iter().any(|reference| {
-        reference.source == worldline_core::catalog::TargetRef::new("event", "arrival")
+        reference.source == worldline_core::catalog::TargetRef::new("event", "first")
             && reference.kind == "叙事连接"
             && reference.target == target
     }));
     assert!(impact.content_references.iter().any(|reference| {
-        reference.source == worldline_core::catalog::TargetRef::new("event", "farewell")
+        reference.source == worldline_core::catalog::TargetRef::new("event", "last")
             && reference.kind == "先后约束"
             && reference.target == target
     }));
-    assert!(project.remove_event("beacon").is_err());
+    assert!(project.remove_event("target").is_err());
     assert_eq!(project.sources(), before);
     let absent =
         project.deletion_impact(&worldline_core::catalog::TargetRef::new("event", "missing"));
