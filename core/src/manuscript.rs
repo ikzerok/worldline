@@ -1,9 +1,11 @@
 //! 书稿编排的解析、来源投影、分页与基线保护写入。
 //!
 //! Project 只读取清单明确注册的书稿，并通过统一展示文档缓冲提交修改；
-//! 书稿不修改源码语义或运行指纹。
+//! 纯编排不修改源码语义或运行指纹；独立新章组合事务可显式创建正式来源。
 
 mod commands;
+mod creation;
+pub use creation::*;
 mod index;
 mod organization;
 mod reading;
@@ -17,6 +19,8 @@ pub use review::{
 mod reading_tests;
 mod source;
 mod writing;
+mod writing_insertion;
+pub use writing_insertion::WritingProseInsertion;
 
 #[cfg(test)]
 mod writing_tests;

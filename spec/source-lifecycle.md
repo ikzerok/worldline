@@ -166,3 +166,8 @@ Windows 保留全体祖先目录句柄，允许 READ/WRITE 共享但禁止 DELET
 中途 junction 重定向导致路径不符时拒绝。叶句柄仍仅共享 READ，禁止写入/删除替换。
 超限显式拒绝且不截断证明。提交前重新检查目的缺失、完整保存基线和资源摘要；
 取消回调返回后也执行这一步。
+
+0.30 新章组合事务复用 Create 的相对路径、缺失目标、全库存、活动成员与 include
+保护；候选最终新源是正式空 event，不保留 add_file 的引导注释或样例正文。
+独立 SourceLifecycleRequest 与既有保存协议不变，见
+[manuscript-authoring.md](manuscript-authoring.md)。

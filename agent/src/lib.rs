@@ -32,10 +32,14 @@ mod catalog_import;
 mod entities;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/manuscript_chapter.rs"]
+mod manuscript_chapter;
 #[path = "lib/manuscript_review.rs"]
 mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
+#[path = "lib/object_search.rs"]
+mod object_search;
 #[path = "lib/playthrough_report.rs"]
 mod playthrough_report;
 #[path = "lib/problems.rs"]
@@ -225,6 +229,9 @@ impl Server {
 
     fn call(&mut self, method: &str, params: &Value) -> Result<Value, ProtoError> {
         match method {
+            "manuscript.chapter.preview" => self.manuscript_chapter(params, false),
+            "manuscript.chapter.apply" => self.manuscript_chapter(params, true),
+            "world.objects.search" => self.object_search(params),
             "initialize" => Ok(json!({
                 "protocol": PROTOCOL,
                 "server": "wl-agent",
@@ -232,6 +239,8 @@ impl Server {
                 "capabilities": [
                     "authoring.problems.v1",
                     "catalog_import_v1",
+                    "authoring.manuscript_chapter.v1",
+                    "authoring.object_search.v1",
                     worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,

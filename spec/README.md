@@ -53,3 +53,5 @@
 
 - [静态可执行依赖](https://github.com/ikzerok/worldline/blob/main/spec/executable-context.md)：调用与全局读写的明确语境、同快照索引与显式消费
 - [可读试玩审阅](https://github.com/ikzerok/worldline/blob/main/spec/playthrough-report.md)：重新验证的单路线、实际输出来源、私密交接与预算
+
+- [新章与正式正文来源](manuscript-authoring.md)：原子创建预览/应用、安全空正文槽与机器接口

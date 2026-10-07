@@ -789,3 +789,29 @@ CLI默认写出同一Markdown，JSON与RPC结果为 `{ok,report}`；调用错误
 
 
 资料查询 `catalog.query` 的显式 query v3 支持既有对象引用属性的精确条件 `equals:{"type":"reference","value":{"kind":"entity","id":"harbor"}}`，并沿用原分页协议；v1/v2不接受此值。合法缺失目标返回零命中，非法类型/身份返回INVALID_QUERY。默认不升级，详细兼容与保存文档能力见 [catalog.md](catalog.md) §7.3。
+
+## 0.30 原子新章与正式来源
+
+新增 `authoring.manuscript_chapter.v1` 能力与 `manuscript.chapter.preview/apply`、
+`wl manuscript-chapter preview|apply`。版本化请求、修订、完整候选摘要、业务失败、
+内存应用/显式保存和严格 JSON 边界见 [manuscript-authoring.md](manuscript-authoring.md)。
+协议仍 1，默认语言 1.9、最高 1.13 不变，旧书稿纯编排接口不生成源码。
+
+## 0.30 统一只读对象候选页
+
+能力 `authoring.object_search.v1`，`world.objects.search` 接受已打开的 `project_id`、
+`query` 字符串（可空）、可选 `filter`、`options`、`expected_baseline`；不接受 path。
+CLI `wl object-search PROJECT --query TEXT [--filter-json DTO] [--options-json DTO]
+[--expected-baseline BASELINE] [--json]` 只读打开磁盘作品，不恢复事务。
+filter/options 直接使用 [object-search.md](object-search.md) 的 core DTO，不复制匹配算法。
+
+两端只读编译当前已应用快照，不刷新/应用/保存，返回 `schema_version:1`、`baseline`、
+`language_version`、`snapshot:"applied"`、`diagnostics`、`workspace_diagnostics`、
+`read_only` 和原样 `page`。页只描述所给目录，坏稿为 ok:false / INVALID_SOURCE，仍
+保留实际页并明确不完整。只读工作区允许查询，不能把快照称作实时磁盘数据。
+
+未知参数/嵌套字段、错误类型、重复 key 拒绝；RPC 类型错误 -32602，重复 key -32700，
+CLI 用法错误退出2。参数合计上限64KiB。陈旧基线及 core 数值/页/预算拒绝为业务
+ok:false、page:null，code 为 STALE_BASELINE、INVALID_LIMIT、INVALID_CANDIDATE_BUDGET、
+CANDIDATE_BUDGET_EXCEEDED、INVALID_OFFSET；不假造空页或总数。CLI 成功0，业务失败1，
+读取失败2。未知kind/entity_type合法零命中，分页顺序与全部身份由core唯一提供。

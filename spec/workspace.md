@@ -107,3 +107,7 @@ DTO 见 [source-lifecycle.md](source-lifecycle.md)。
 工具 0.24 增加 [单实体声明安全移源](entity-source-move.md)：只将稳定 entity ID 的
 明确声明搬入另一已有活动源码，精确原字节预览与双缓冲一次提交，不改变 include、
 运行语义或资源，不接管相邻声明和独立注释。
+
+0.30 的显式“新章＋正式来源”在一个候选中复用上述源码/展示生命周期；打开作品或
+空状态不会创建文件。预览与内存应用不保存，新源/清单/书稿仍由既有 journal 一起
+保存；浏览器仍只验证授权快照。详见 [manuscript-authoring.md](manuscript-authoring.md)。

@@ -66,7 +66,8 @@ impl Project {
         revision: Revision,
         command: &ManuscriptCommand,
     ) -> Result<ManuscriptIndex, String> {
-        self.prepare_manuscript(revision, command)
+        self.clone()
+            .prepare_manuscript(revision, command)
             .map(|(_, index, _)| index)
     }
 
@@ -76,7 +77,8 @@ impl Project {
         revision: &mut Revision,
         command: ManuscriptCommand,
     ) -> Result<ManuscriptResult, String> {
-        let (candidate, _index, changed_files) = self.prepare_manuscript(*revision, &command)?;
+        let (candidate, _index, changed_files) =
+            self.clone().prepare_manuscript(*revision, &command)?;
         let new_revision = revision.next_presentation();
         *self = candidate;
         *revision = new_revision;
@@ -86,8 +88,8 @@ impl Project {
         })
     }
 
-    fn prepare_manuscript(
-        &self,
+    pub(super) fn prepare_manuscript(
+        self,
         revision: Revision,
         command: &ManuscriptCommand,
     ) -> Result<(Project, ManuscriptIndex, Vec<PathBuf>), String> {
@@ -101,7 +103,7 @@ impl Project {
         if !self.recovery_conflicts().is_empty() {
             return Err("工程有未解决的保存事务冲突".into());
         }
-        ensure_disk_matches_saved_baselines(self)?;
+        ensure_disk_matches_saved_baselines(&self)?;
         validate_draft_shape(&command.draft)?;
 
         let manifest = manifest_path(&self.root);
@@ -245,14 +247,15 @@ impl Project {
         }
 
         let content = self.compile_current();
-        let mut candidate = self.clone();
-        let mut changed_files = Vec::new();
         let manifest_changed =
             existing_manifest.is_none() || original_index.is_none() || feature_added;
+        let had_manifest = existing_manifest.is_some();
+        let mut candidate = self;
+        let mut changed_files = Vec::new();
         if manifest_changed {
             let manifest_bytes =
                 serde_json::to_vec_pretty(&manifest_value).map_err(|error| error.to_string())?;
-            if existing_manifest.is_some() {
+            if had_manifest {
                 candidate.set_authoring_document(&manifest, manifest_bytes)?;
             } else {
                 candidate.create_authoring_document(&manifest, manifest_bytes)?;
