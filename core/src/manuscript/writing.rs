@@ -29,6 +29,7 @@ pub struct WritingProjection {
     pub range: Range<usize>,
     pub source: String,
     pub blocks: Vec<WritingBlock>,
+    pub empty_prose_slot: Option<super::WritingProseInsertion>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,9 @@ pub struct WritingBuffer {
 }
 
 impl WritingBuffer {
+    pub(super) fn original(&self) -> &str {
+        &self.original
+    }
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -226,13 +230,33 @@ impl Project {
                 .find(|entry| entry.no == line)
                 .map(|entry| structure_label(&entry.kind))
                 .unwrap_or("注释 / 留白");
+            let mut block_start = offset + indent_len;
+            let mut block_line = line;
+            if kind == WritingBlockKind::Prose {
+                // 空槽先输入换行时，将其真实前导空白并入首个正文块，保持控件起点。
+                // 注释与结构不会被吸收；缩进必须能按本块的正式正文缩进解释。
+                while let Some(previous) = blocks.last().filter(|previous| {
+                    previous.kind == WritingBlockKind::Structure
+                        && previous.text.is_empty()
+                        && previous.indent.starts_with(&raw[..indent_len])
+                }) {
+                    block_start = previous.range.start - previous.indent.len() + indent_len;
+                    block_line = previous.line;
+                    blocks.pop();
+                }
+            }
+            let source = &buffer.text[block_start..offset + raw.len()];
             blocks.push(WritingBlock {
                 kind,
                 label: label.into(),
-                line,
-                range: offset + indent_len..offset + raw.len(),
-                text: raw[indent_len..].into(),
-                source: raw[indent_len..].into(),
+                line: block_line,
+                range: block_start..offset + raw.len(),
+                text: if kind == WritingBlockKind::Prose {
+                    deindent(source, &raw[..indent_len])
+                } else {
+                    source.into()
+                },
+                source: source.into(),
                 indent: raw[..indent_len].into(),
             });
         }
@@ -242,6 +266,9 @@ impl Project {
             source: buffer.text[range.clone()].into(),
             range,
             blocks,
+            empty_prose_slot: super::writing_insertion::project_slot(
+                self, buffer, target, &result, &lines,
+            ),
         })
     }
 

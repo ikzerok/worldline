@@ -15,12 +15,13 @@ impl Server {
         let baseline = project.content_baseline();
         self.next_project += 1;
         let project_id = format!("p{}", self.next_project);
-        let response = project_view(
+        let mut response = project_view(
             &result,
             Some(project_id.clone()),
             baseline,
             project.authoring_diagnostics(),
         );
+        response["revision"] = json!(worldline_core::presentation_commands::Revision::default());
         self.projects.insert(
             project_id,
             ProjectUnit {

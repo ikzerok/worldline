@@ -316,10 +316,14 @@ mod catalog_query;
 mod entity;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/manuscript_chapter.rs"]
+mod manuscript_chapter;
 #[path = "lib/manuscript_review.rs"]
 mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
 mod markdown_import;
+#[path = "lib/object_search.rs"]
+mod object_search;
 #[path = "lib/parse_files.rs"]
 mod parse_files;
 #[path = "lib/parse_relation_edits.rs"]
@@ -397,6 +401,8 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         }
         "catalog" => catalog::cmd_catalog(&catalog::parse_catalog_args(rest)?, out),
         "catalog-query" => catalog_query::cmd_catalog_query(&catalog_query::parse_catalog_query_args(rest)?, out),
+        "manuscript-chapter" => manuscript_chapter::command(rest, out),
+        "object-search" => object_search::command(rest, out),
         "catalog-import" => catalog_import::command(rest, out),
         "source-edit" => source_edit::command(rest, out),
         "source-lifecycle" => source_lifecycle::command(rest, out),
@@ -418,7 +424,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "route-compare" => route_comparison::command(rest, out),
         "playthrough-report" => playthrough_report::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

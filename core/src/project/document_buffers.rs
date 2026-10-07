@@ -125,26 +125,36 @@ impl Project {
         self.source_lifecycle_disk_baselines_match()?;
         let path = crate::source_lifecycle::safety::native_destination(self, relative)?;
         let mut candidate = self.clone();
-        candidate.documents.insert(
-            path.clone(),
+        candidate.add_file_candidate(relative, &path)?;
+        *self = candidate;
+        Ok(path)
+    }
+
+    /// 调用方持有已完整验证的私有候选；失败时必须丢弃候选。
+    pub(crate) fn add_file_candidate(
+        &mut self,
+        relative: &Path,
+        path: &Path,
+    ) -> Result<(), String> {
+        self.documents.insert(
+            path.to_path_buf(),
             Document {
                 text: "// 在此文件编写事件,ID 在工程内唯一。\n".into(),
                 saved: None,
                 deleted: false,
             },
         );
-        candidate.add_active_source(relative)?;
-        candidate.include_file_in_memory(&path)?;
+        self.add_active_source(relative)?;
+        self.include_file_in_memory(path)?;
         crate::source_lifecycle::safety::writable_path(&self.entry)?;
-        crate::source_lifecycle::safety::writable_path(&path)?;
+        crate::source_lifecycle::safety::writable_path(path)?;
         if self.source_selection.is_some() {
             crate::source_lifecycle::safety::writable_path(
                 &crate::workspace_documents::manifest_path(&self.root),
             )?;
         }
-        crate::source_lifecycle::safety::buffer_budget(&candidate)?;
-        *self = candidate;
-        Ok(path)
+        crate::source_lifecycle::safety::buffer_budget(self)?;
+        Ok(())
     }
 
     /// 引用既有活动源码；归档或非活动文件不会被此操作暗中启用。

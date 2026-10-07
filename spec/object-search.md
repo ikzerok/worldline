@@ -49,3 +49,47 @@ UI 不再自行匹配名称/ID/类型/别名，不调用逐帧 `Project::query_c
 身份；来源变化导致失效时必须明确提示，不得自动解绑或替换。取消表单仍取消整个未提交
 草稿，保存/删除/落点继续经既有 core 命令。地图反查位置仍来自现有 MapIndex，保留
 跨地图导航、隐藏图层确认、子地图行为与所有未提交草稿守卫。
+
+## 工具 0.30：统一显式筛选页
+
+新增 `Catalog::search_objects_filtered_page(query, &ObjectSearchFilter, options)`，
+结果和错误仍复用 `ObjectSearchPage`／`ObjectSearchError`。旧 `search_objects_page`
+等价于默认筛选；旧无分页 `search_objects` 的公开行为保持不变，不增加路径或 kind 匹配。
+
+`ObjectSearchFilter` 可序列化，缺失字段使用默认值，不接受未知字段：
+
+- `allowed_kinds: Vec<String>`：空列表不限制；非空按正式 kind 精确、区分大小写匹配
+- `match_source_path: bool`：默认 false；true 时将对象定义 `file` 的 Unicode 小写
+  子串加入文字匹配；不搜索别名声明路径、不读取磁盘，路径不是对象身份
+- `entity_type: Option<String>`：默认 null；非空时仅允许正式 kind 为 entity、且
+  `Catalog.entities` 中 `entity_type` 完全相同的对象，与 allowed_kinds 取交集。
+  未知 kind、未知或空 entity_type 是合法无匹配，不猜类型、自动转换或回退全部
+
+过滤和文本条件取交集，全部在 core 解释。预算仍在任何筛选前检查完整传入目录的
+对象数，不能先拼裁剪 Catalog 规避预算。除显式启用定义路径外，文字匹配沿用名称、
+ID、kind 和别名行为。总数在筛选后精确计算，排序、真实定义来源、offset 边界、
+默认 20／上限 100、候选默认 10000／上限 100000 和四种错误均不改变。
+
+通用表单、模板引用、全局对象切换与查找窗口的对象部分都使用此页，显式启用来源
+文字；模板的 entity_type 约束也传给 core。显示完整身份、定义来源、总数及页范围，
+可用前后页遍历超过 1000 项的目录。命令列表与对象候选有独立范围，不伪装全文命中。
+
+当前稿对象检索按工作区、应用快照代次和全部写作缓冲 generation 缓存编译投影，
+再按输入、筛选和页缓存结果，不逐帧重编译。来源、查询或筛选改变回到首页并清理旧
+候选；不可用／错误页不复用旧候选。当前稿无法编译时明确标记“已应用目录”；
+当前稿无错误但部分源码有诊断时显示目录不完整。导航前重验完整身份、真实定义位置，
+并使用 core 来源守卫；不把已应用目录的行号配到未应用正文。
+
+表单原有引用属于作者输入，查询、翻页、无匹配、错误和取消都不清空或替換它。
+仅明确点击候选、在可见当前候选上确认 Enter、或明确清空可变更引用。IME 组合期间
+不处理候选导航／确认／取消键；关闭后返回原控件焦点。来源变化使当前候选选择失效，
+必须在新页重新选择，不能把旧行索引直接提交为新的对象。
+
+`ObjectSearchFilter::accepts_object(catalog, object)` 只投影单个已知对象的 kind／entity_type
+范围是否允许，供原引用状态提示复用。它不执行自由文本搜索、不返回候选集合，不替代
+分页接口的完整目录预算检查。
+
+`Project::compile_object_search_snapshot()` 公开既有只读问题快照编译路径，消费当前
+已加载缓冲，允许只读工作区，不触发 refresh、保存或恢复，也不从磁盘补载未加入当前
+缓冲的 include。返回完整 `CompileResult`，由端同时展示 diagnostics／不完整状态。
+此入口不代表当前写作草稿覆盖；编辑器当前稿仍使用 `compile_writing_drafts`。

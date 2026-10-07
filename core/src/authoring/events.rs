@@ -224,6 +224,29 @@ impl Project {
         self.edit(|candidate| candidate.replace_event_source(path, original, draft))
     }
 
+    /// 已验证的私有组合候选专用；失败必须丢弃整个候选。
+    pub(crate) fn write_event_candidate(
+        &mut self,
+        path: &Path,
+        draft: &EventDraft,
+    ) -> Result<(), String> {
+        let before = self.compile_current();
+        self.validate_event_edit(path, None, draft, &before)?;
+        self.replace_event_source(path, None, draft)?;
+        let after = self.compile_current();
+        if let Some(diagnostic) = after
+            .diagnostics
+            .iter()
+            .find(|d| d.severity == Severity::Error)
+        {
+            return Err(format!(
+                "{}:{} {} {}",
+                diagnostic.file, diagnostic.span.line, diagnostic.code, diagnostic.message
+            ));
+        }
+        Ok(())
+    }
+
     fn replace_event_source(
         &mut self,
         path: &Path,
