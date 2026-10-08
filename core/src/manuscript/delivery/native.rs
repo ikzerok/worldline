@@ -65,15 +65,20 @@ fn missing(path: &Path) -> Result<(), String> {
     }
 }
 fn check_directory_chain(path: &Path) -> Result<(), String> {
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component);
-        let metadata = std::fs::symlink_metadata(&current).map_err(|error| error.to_string())?;
+    for current in directory_chain(path) {
+        let metadata = std::fs::symlink_metadata(current).map_err(|error| error.to_string())?;
         if crate::file_access::is_link_or_junction(&metadata) || !metadata.is_dir() {
             return Err("审稿本目标目录链不能包含链接、联接或非目录".into());
         }
     }
     Ok(())
+}
+fn directory_chain(path: &Path) -> Vec<&Path> {
+    // 完整祖先保留Windows盘符/UNC/verbatim根；不对裸Prefix做IO。
+    // 仍从根向叶核验，先拒绝父级链接/联接，再观察其下的目录。
+    let mut chain: Vec<_> = path.ancestors().collect();
+    chain.reverse();
+    chain
 }
 fn create_stage(parent: &Path) -> Result<(PathBuf, std::fs::File), String> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -95,3 +100,6 @@ fn create_stage(parent: &Path) -> Result<(PathBuf, std::fs::File), String> {
     }
     Err("不能分配唯一审稿本暂存文件".into())
 }
+
+#[cfg(test)]
+mod tests;
