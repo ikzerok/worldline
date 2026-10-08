@@ -6,6 +6,8 @@ use worldline_core::project::Project;
 use worldline_core::project_templates::{
     ProjectTemplateMutation, ProjectTemplateValueState, TemplateCommand,
 };
+#[path = "project_templates/drafts.rs"]
+mod drafts;
 #[path = "project_templates/lifecycle.rs"]
 mod lifecycle;
 #[path = "project_templates/object_refs.rs"]

@@ -1,5 +1,6 @@
 use super::*;
-mod fields;
+pub(super) mod fields;
+mod repair_guard;
 
 fn line_for(bytes: &[u8], needle: &str) -> u32 {
     let Ok(text) = std::str::from_utf8(bytes) else {
@@ -42,49 +43,67 @@ impl ProjectTemplateDocument {
     }
 }
 fn preserve_unknown_fields(old: &Value, new: &mut Value, context: &str) {
-    let (Value::Object(old), Value::Object(new)) = (old, new) else {
-        return;
-    };
-    let known: &[&str] = match context {
-        "root" => &[
-            "schema_version",
-            "id",
-            "title",
-            "applies_to",
-            "fields",
-            "required_features",
-        ],
-        "applies_to" | "target" => &["kind", "entity_type"],
-        "field" => &[
-            "id", "key", "label", "type", "required", "choices", "target", "fields", "default",
-        ],
-        _ => &[],
-    };
-    for (key, value) in old {
-        if !known.contains(&key.as_str()) && !new.contains_key(key) {
-            new.insert(key.clone(), value.clone());
-        }
-    }
-    for key in ["applies_to", "target"] {
-        if let (Some(old), Some(new)) = (old.get(key), new.get_mut(key)) {
-            preserve_unknown_fields(old, new, key);
-        }
-    }
-    if let (Some(Value::Array(old_fields)), Some(Value::Array(new_fields))) =
-        (old.get("fields"), new.get_mut("fields"))
-    {
-        let old_by_id = old_fields
-            .iter()
-            .filter_map(|field| Some((field.get("id")?.as_str()?, field)))
-            .collect::<HashMap<_, _>>();
-        for field in new_fields {
-            if let Some(id) = field.get("id").and_then(Value::as_str) {
-                if let Some(old_field) = old_by_id.get(id) {
-                    preserve_unknown_fields(old_field, field, "field");
+    fn index_fields<'a>(value: &'a Value, fields: &mut HashMap<&'a str, &'a Value>) {
+        if let Some(children) = value.get("fields").and_then(Value::as_array) {
+            for field in children {
+                if let Some(id) = field.get("id").and_then(Value::as_str) {
+                    fields.insert(id, field);
                 }
+                index_fields(field, fields);
             }
         }
     }
+    fn merge(old: &Value, new: &mut Value, context: &str, fields: &HashMap<&str, &Value>) {
+        let (Value::Object(old), Value::Object(new)) = (old, new) else {
+            return;
+        };
+        let known: &[&str] = match context {
+            "root" => &[
+                "schema_version",
+                "id",
+                "title",
+                "applies_to",
+                "fields",
+                "required_features",
+            ],
+            "applies_to" | "target" => &["kind", "entity_type"],
+            "field" => &[
+                "id", "key", "label", "type", "required", "choices", "target", "fields", "default",
+            ],
+            _ => &[],
+        };
+        for (key, value) in old {
+            if !known.contains(&key.as_str()) && !new.contains_key(key) {
+                new.insert(key.clone(), value.clone());
+            }
+        }
+        for key in ["applies_to", "target"] {
+            if let (Some(old), Some(new)) = (old.get(key), new.get_mut(key)) {
+                merge(old, new, key, fields);
+            }
+        }
+        if let Some(Value::Array(children)) = new.get_mut("fields") {
+            merge_children(children, fields);
+        }
+    }
+    fn merge_children(children: &mut [Value], fields: &HashMap<&str, &Value>) {
+        for field in children {
+            let old = field
+                .get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| fields.get(id))
+                .copied();
+            if let Some(old) = old {
+                merge(old, field, "field", fields);
+            } else if let Some(Value::Array(children)) = field.get_mut("fields") {
+                // 新父组中的旧字段仍按全模板稳定身份匹配；删除项不遍历也不复活。
+                merge_children(children, fields);
+            }
+        }
+    }
+    let mut fields = HashMap::new();
+    index_fields(old, &mut fields);
+    merge(old, new, context, &fields);
 }
 fn valid_default(
     field_type: &str,

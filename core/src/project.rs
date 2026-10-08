@@ -10,6 +10,7 @@ mod conflicts;
 mod document_buffers;
 mod export;
 mod lifecycle;
+mod query_observation;
 mod read_only;
 mod review_navigation;
 mod save;
@@ -54,6 +55,7 @@ pub struct Project {
     pub authoring_documents: BTreeMap<PathBuf, AuthoringDocument>,
     authoring_diagnostics: Vec<crate::Diagnostic>,
     refresh_generation: u64,
+    query_observation: std::sync::Arc<std::sync::Mutex<query_observation::Observation>>,
     recovery_conflicts: Vec<PathBuf>,
     language_version: LanguageVersion,
     source_selection: Option<crate::source_config::SourceSelection>,

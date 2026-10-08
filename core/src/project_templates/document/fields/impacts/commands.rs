@@ -73,6 +73,25 @@ impl Project {
         revision: Revision,
         command: &TemplateCommand,
     ) -> Result<ProjectTemplatePreview, String> {
+        self.preview_template_mutation_internal(revision, command, None)
+    }
+
+    /// 受限机器调用；超出实际适用行、字段值或报告字节预算时拒绝，不截断。
+    pub fn preview_template_mutation_with_limits(
+        &self,
+        revision: Revision,
+        command: &TemplateCommand,
+        limits: &TemplateImpactLimits,
+    ) -> Result<ProjectTemplatePreview, String> {
+        self.preview_template_mutation_internal(revision, command, Some(limits))
+    }
+
+    fn preview_template_mutation_internal(
+        &self,
+        revision: Revision,
+        command: &TemplateCommand,
+        impact_limits: Option<&TemplateImpactLimits>,
+    ) -> Result<ProjectTemplatePreview, String> {
         if command.expected_revision != revision {
             return Err("StaleRevision：模板编辑修订已过期，请重新预览".into());
         }
@@ -84,27 +103,64 @@ impl Project {
             return Err("工程有未解决的保存事务冲突".into());
         }
         ensure_disk_matches_saved_baselines(self)?;
-        let (candidate, old, new, changed_files, diagnostics) =
-            prepare_template_mutation(self, &command.mutation, command.check_integrity)?;
+        let content = self.compile_current();
+        let complete = command.check_integrity && !content.has_errors();
+        let incomplete_reason = if !command.check_integrity {
+            Some("未执行实例完整性检查；此预览不可应用")
+        } else if content.has_errors() {
+            Some("活动源码存在编译错误，已知实例不是完整影响范围；修复来源后请重新预览")
+        } else {
+            None
+        };
+        let (candidate, old, new, changed_files, mut diagnostics) =
+            prepare_template_mutation(self, &command.mutation, &content)?;
+        let old_fields = old.as_ref().map(flatten_fields).unwrap_or_default();
+        let new_fields = new.as_ref().map(flatten_fields).unwrap_or_default();
+        let instances = instances::prepare(
+            old.as_ref(),
+            new.as_ref(),
+            &old_fields,
+            &new_fields,
+            &content,
+            impact_limits,
+        )?;
+        let mut budget = limits::ImpactBudget::new(
+            impact_limits,
+            limits::ReportHead {
+                revision,
+                baseline: &command.expected_baseline,
+                complete,
+                incomplete_reason,
+                current: old.as_ref(),
+                proposed: new.as_ref(),
+                template_diagnostics: &diagnostics,
+                source_diagnostics: &content.diagnostics,
+                changed_files: &changed_files,
+            },
+        )?;
+        diagnostics.extend(content.diagnostics.iter().cloned());
         let mut preview = ProjectTemplatePreview {
             mutation: command.mutation.clone(),
             expected_revision: revision,
             expected_baseline: command.expected_baseline.clone(),
+            complete,
+            incomplete_reason: incomplete_reason.map(str::to_owned),
+            current_template: old.as_ref().map(ProjectTemplateSummary::from),
+            proposed_template: new.as_ref().map(ProjectTemplateSummary::from),
+            verified_complete: complete,
             field_changes: Vec::new(),
             instances: Vec::new(),
             diagnostics,
             changed_files,
             candidate,
         };
-        preview.field_changes = field_changes(old.as_ref(), new.as_ref());
-        let content = self.compile_current();
-        preview.instances = instance_impacts(
-            old.as_ref(),
-            new.as_ref(),
+        preview.field_changes = field_changes(&old_fields, &new_fields, &mut budget)?;
+        preview.instances = instances.build(
             &content,
             command.check_integrity,
             &mut preview.diagnostics,
-        );
+            &mut budget,
+        )?;
         Ok(preview)
     }
 
@@ -114,6 +170,9 @@ impl Project {
         revision: &mut Revision,
         preview: ProjectTemplatePreview,
     ) -> Result<ProjectTemplateResult, String> {
+        if !preview.complete || !preview.verified_complete {
+            return Err("模板影响预览不完整，不能应用；请修复来源并重新执行完整检查".into());
+        }
         if *revision != preview.expected_revision {
             return Err("StaleRevision：模板编辑修订已过期，请重新预览".into());
         }
@@ -137,7 +196,7 @@ impl Project {
 fn prepare_template_mutation(
     project: &Project,
     mutation: &ProjectTemplateMutation,
-    check_integrity: bool,
+    content: &CompileResult,
 ) -> Result<PreparedTemplateMutation, String> {
     let manifest = manifest_path(&project.root);
     let existing_manifest = project
@@ -185,14 +244,23 @@ fn prepare_template_mutation(
             }
             (id.clone(), Some(document.clone()), "import")
         }
-        ProjectTemplateMutation::Replace { id, document } => {
+        ProjectTemplateMutation::Replace { id, document }
+        | ProjectTemplateMutation::RepairInvalid { id, document } => {
             if !crate::workspace_documents::valid_template_id(id) {
                 return Err("TPL003：工程模板 ID 必须使用 project: 命名空间".into());
             }
             if !registry.templates.contains_key(id) {
                 return Err("待替换工程模板未注册".into());
             }
-            (id.clone(), Some(document.clone()), "replace")
+            (
+                id.clone(),
+                Some(document.clone()),
+                if matches!(mutation, ProjectTemplateMutation::RepairInvalid { .. }) {
+                    "repair_invalid"
+                } else {
+                    "replace"
+                },
+            )
         }
         ProjectTemplateMutation::Delete { id } => {
             if !crate::workspace_documents::valid_template_id(id) {
@@ -229,11 +297,35 @@ fn prepare_template_mutation(
             &registry.required_features,
             registry.read_only(path) || document.is_some_and(AuthoringDocument::is_read_only),
             project.language_version_kind(),
-            &project.compile_current(),
+            content,
         )
     });
-    if old_entry.as_ref().is_some_and(|entry| entry.read_only) {
-        return Err("模板格式或必需能力未知，只能只读查看".into());
+    let repairing = operation == "repair_invalid";
+    if repairing {
+        let repairable = old_entry.as_ref().is_some_and(|entry| {
+            !entry.diagnostics.is_empty() && entry.diagnostics.iter().all(|d| d.code == "TPL001")
+        }) && old_path.as_ref().is_some_and(|path| {
+            !registry.read_only(path)
+                && project
+                    .authoring_documents
+                    .get(path)
+                    .is_some_and(|document| !document.is_read_only() && !document.is_deleted())
+        });
+        if !repairable {
+            return Err("只有无继承只读保护且仅 TPL001 的坏原文可显式完整替换".into());
+        }
+        let old_bytes = old_entry
+            .as_ref()
+            .expect("已验证修复原文")
+            .source_bytes
+            .as_slice();
+        repair_guard::validate(
+            old_bytes,
+            &registry.required_features,
+            project.language_version_kind(),
+        )?;
+    } else if old_entry.as_ref().is_some_and(|entry| entry.read_only) {
+        return Err("模板格式或必需能力未知，只能只读查看；坏 JSON 须显式选择完整替换修复".into());
     }
     let old_template = old_entry.as_ref().and_then(|entry| entry.template.clone());
 
@@ -246,16 +338,26 @@ fn prepare_template_mutation(
         if old.is_read_only() {
             return Err("模板格式或必需能力未知，只能只读查看".into());
         }
-        let old_value = parse_unique_json(old.bytes())
-            .map_err(|error| format!("TPL001：模板 JSON 无法安全读取：{error}"))?;
         let mut new_value = parse_unique_json(new_bytes)
             .map_err(|error| format!("TPL001：模板 JSON 无法安全读取：{error}"))?;
-        preserve_unknown_fields(&old_value, &mut new_value, "root");
-        *new_bytes = serde_json::to_vec_pretty(&new_value).map_err(|e| e.to_string())?;
+        if !repairing {
+            let old_value = parse_unique_json(old.bytes())
+                .map_err(|error| format!("TPL001：模板 JSON 无法安全读取：{error}"))?;
+            preserve_unknown_fields(&old_value, &mut new_value, "root");
+            *new_bytes = serde_json::to_vec_pretty(&new_value).map_err(|e| e.to_string())?;
+        }
     }
 
     let mut new_template = None;
     let mut diagnostics = Vec::new();
+    if repairing {
+        diagnostics.push(Diagnostic::warning(
+            "TPL007",
+            &old_path.as_ref().expect("修复路径").to_string_lossy(),
+            Span::new(1, 1, 1),
+            "旧原文无法安全解析，确认替换会采用完整新文；旧扩展无法合并，请先复制原文",
+        ));
+    }
     let path = if let Some(bytes) = bytes.as_ref() {
         let path = match old_path.as_ref() {
             Some(path) => path.clone(),
@@ -285,7 +387,7 @@ fn prepare_template_mutation(
             &parse_features,
             registered_read_only,
             project.language_version_kind(),
-            &project.compile_current(),
+            content,
         );
         diagnostics.extend(parsed.diagnostics.iter().cloned());
         if parsed
@@ -371,7 +473,7 @@ fn prepare_template_mutation(
                 Value::String(relative.to_string_lossy().replace('\\', "/")),
             );
         }
-        "replace" => {}
+        "replace" | "repair_invalid" => {}
         "delete" => {
             templates.remove(&id);
         }
@@ -398,7 +500,6 @@ fn prepare_template_mutation(
     let mut changed_files = vec![manifest, path.0];
     changed_files.sort();
     changed_files.dedup();
-    let _ = check_integrity;
     Ok((
         candidate,
         old_template,

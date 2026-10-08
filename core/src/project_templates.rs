@@ -10,11 +10,14 @@ use crate::workspace_documents::{
     manifest_path, parse_registry, parse_unique_json, registered_path,
 };
 use crate::{CompileResult, Diagnostic, Span};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 mod document;
+mod drafts;
+pub use drafts::*;
+pub mod protocol;
 mod references;
 
 type PreparedTemplateMutation = (
@@ -29,7 +32,7 @@ pub const PROJECT_TEMPLATE_REQUIRED_FEATURE: &str = "content.templates.v1";
 pub const OBJECT_REFS_REQUIRED_FEATURE: &str = "content.object_refs.v1";
 pub const CHARACTER_REFS_REQUIRED_FEATURE: &str = "content.character_refs.v1";
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectTemplateField {
     pub id: String,
     pub key: Option<String>,
@@ -43,7 +46,7 @@ pub struct ProjectTemplateField {
     pub fields: Vec<ProjectTemplateField>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectTemplate {
     pub id: String,
     pub title: String,
@@ -70,11 +73,25 @@ pub struct ProjectTemplateIndex {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProjectTemplateMutation {
-    Import { id: String, document: Vec<u8> },
-    Replace { id: String, document: Vec<u8> },
-    Delete { id: String },
+    Import {
+        id: String,
+        document: Vec<u8>,
+    },
+    Replace {
+        id: String,
+        document: Vec<u8>,
+    },
+    /// 显式以完整新文修复仅 TPL001 的坏原文；普通 Replace 不提供此救援。
+    RepairInvalid {
+        id: String,
+        document: Vec<u8>,
+    },
+    Delete {
+        id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +125,8 @@ pub struct ProjectTemplateFieldImpact {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ProjectTemplateInstanceImpact {
     pub target: TargetRef,
+    pub current_applicable: bool,
+    pub proposed_applicable: bool,
     pub fields: Vec<ProjectTemplateFieldImpact>,
 }
 
@@ -119,6 +138,40 @@ pub struct ProjectTemplateFieldChange {
     pub new_key: Option<String>,
     pub old_type: Option<String>,
     pub new_type: Option<String>,
+    pub old_parent_id: Option<String>,
+    pub new_parent_id: Option<String>,
+    pub old_index: Option<usize>,
+    pub new_index: Option<usize>,
+    pub old_properties: Option<ProjectTemplateFieldProperties>,
+    pub new_properties: Option<ProjectTemplateFieldProperties>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectTemplateSummary {
+    pub id: String,
+    pub title: String,
+    pub applies_to: TargetRef,
+    pub applies_to_entity_type: Option<String>,
+}
+
+impl From<&ProjectTemplate> for ProjectTemplateSummary {
+    fn from(template: &ProjectTemplate) -> Self {
+        Self {
+            id: template.id.clone(),
+            title: template.title.clone(),
+            applies_to: template.applies_to.clone(),
+            applies_to_entity_type: template.applies_to_entity_type.clone(),
+        }
+    }
+}
+
+/// 显式受限调用的影响预算；旧预览入口不隐式应用这些限制。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateImpactLimits {
+    pub max_instances: usize,
+    pub max_field_values: usize,
+    pub max_output_bytes: usize,
 }
 
 #[derive(Clone)]
@@ -126,11 +179,17 @@ pub struct ProjectTemplatePreview {
     pub mutation: ProjectTemplateMutation,
     pub expected_revision: Revision,
     pub expected_baseline: String,
+    pub complete: bool,
+    pub incomplete_reason: Option<String>,
+    pub current_template: Option<ProjectTemplateSummary>,
+    pub proposed_template: Option<ProjectTemplateSummary>,
     pub field_changes: Vec<ProjectTemplateFieldChange>,
     pub instances: Vec<ProjectTemplateInstanceImpact>,
     pub diagnostics: Vec<Diagnostic>,
     pub changed_files: Vec<PathBuf>,
     candidate: Project,
+    // 公开摘要不能被调用方篡改为可应用；仅核心生产者设置此凭据。
+    verified_complete: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +205,10 @@ impl std::fmt::Debug for ProjectTemplatePreview {
             .field("mutation", &self.mutation)
             .field("expected_revision", &self.expected_revision)
             .field("expected_baseline", &self.expected_baseline)
+            .field("complete", &self.complete)
+            .field("incomplete_reason", &self.incomplete_reason)
+            .field("current_template", &self.current_template)
+            .field("proposed_template", &self.proposed_template)
             .field("field_changes", &self.field_changes)
             .field("instances", &self.instances)
             .field("diagnostics", &self.diagnostics)

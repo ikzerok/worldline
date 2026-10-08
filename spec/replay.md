@@ -130,3 +130,10 @@ DSL、replay schema 或解释器语义。节点来源文本计入已有证据预
 [replay-exchange.md](replay-exchange.md) 定义同版可往返的有界紧凑JSON交换，保留旧runtime
 路径的只读导入，不放宽执行兼容或报告/比较业务额度。[owned-story.md](owned-story.md)
 定义安全拥有编译快照的试玩会话；原借用Story与本页运行语义、指纹和持久字段不变。
+
+## 工具 0.31：当前真实状态检查
+
+[state-inspection.md](state-inspection.md) 定义当前Story的typed检索、真实首次/上一观察
+与当前值对照。基线只在本页定义的真实initial/step observation写入时捕获；构造、
+预算片段和查看不制造观察。瞬态运行/调用身份不写入本页持久格式，原始trace只读
+调试入口保留，不把未验证导入记录当作当前运行或当前源码导航授权。

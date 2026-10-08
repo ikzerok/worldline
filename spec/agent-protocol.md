@@ -815,3 +815,78 @@ CLI 用法错误退出2。参数合计上限64KiB。陈旧基线及 core 数值/
 ok:false、page:null，code 为 STALE_BASELINE、INVALID_LIMIT、INVALID_CANDIDATE_BUDGET、
 CANDIDATE_BUDGET_EXCEEDED、INVALID_OFFSET；不假造空页或总数。CLI 成功0，业务失败1，
 读取失败2。未知kind/entity_type合法零命中，分页顺序与全部身份由core唯一提供。
+
+## 工具 0.31：模板设计、书稿检索与真实状态检查
+
+新增协商能力 `authoring.template_designer.v1`、`authoring.manuscript_query.v1`、
+`runtime.state_inspection.v1`。protocol 仍为1，语言默认1.9、最高显式1.13；新增入口
+不改变旧方法返回形状，也不把界面操作提升为另一套语言解释器。
+
+### 模板草稿及预览/应用
+
+- `template.draft`：参数 `project_id`、`request`。request含 `schema_version:1`、
+  可选 `expected_baseline` 与 `action`。action是 `open {source}`、`inspect {draft}`
+  或 `edit {draft,edit}`。source是 `new`、`copy {id}`、`existing {id}`、`json {bytes}`。
+  draft保留 `source_bytes`、可空 `existing_id`，以及 `reserved_field_ids` / `reserved_keys`
+  两组草稿期保留身份；后两者缺省为空以接受旧DTO，删除字段后不得复用身份使未知扩展复活。
+  这些保留信息不写进作品模板schema。结构edit由core定义，见templates.md。
+  返回baseline和projection（原始字节、typed模板、diagnostics、read_only、editable）；
+  调用成功只表示投影完成，不表示文档可应用。不开启、应用或保存任何作者文件
+- `template.preview` / `template.apply`：参数 `project_id`、`request`；apply另需
+  `plan_digest`。request含 `schema_version:1`、完整 `expected_revision`、
+  `expected_baseline`、`intent`。intent是 `upsert {draft}`、明确的
+  `repair_invalid {draft}` 或 `delete {id}`。upsert保留Existing身份；修改JSON ID
+  不能替换原模板，按新身份导入必须显式移除draft的existing_id绑定
+- preview复用core完整模板事务，返回import/replace/repair_invalid/delete、真实ID、
+  字段变化、实例影响、诊断、改动文件、complete、incomplete_reason、can_apply及摘要。
+  current_template / proposed_template明确两侧标题和适用范围，实例逐侧标注applicable；
+  字段变化携带两侧父组及索引。源码不完整时保留已知影响但complete=false、can_apply=false。
+  apply用同一request重建
+  完整计划并校验摘要，再通过既有修订/内容/磁盘基线守卫整批提交内存；不自动保存
+- 摘要绑定请求原字节、身份、完整基线/修订和全部可见计划；它用于检出过期或改动，
+  不是密码学签名或授权令牌。repair_invalid必须明确选择并满足templates.md的受限
+  修复条件，普通replace不能绕过原来的只读保护
+
+业务request DTO最多4MiB，模板机器预览/投影最多8MiB。机器影响报告还限制真正适用的
+实例最多10,000个、实例字段值最多100,000个；core在实例/字段值物化前检查数量，
+在克隆值之前流式计量输出，不先分配巨大JSON再判断额度。最终计划计入16字符摘要后
+再次核8MiB。超限返回PLAN_LIMIT，不截断已声明完整的实例影响；旧UI/高级JSON/core
+无预算入口继续保留全量能力。机器DTO拒绝未知参数字段，raw模板JSON的未知可选扩展仍保留。
+已成功解析JSON后的参数/DTO错误用-32602；全局原始JSON解析与重复key仍遵循既有
+-32700。过期、core拒绝、只读或结果预算失败是 `ok:false` 的故事层结果。
+
+CLI对应 `wl template draft|preview|apply <目录或入口> --request-json JSON`，apply须
+附 `--plan-digest`，仅显式 `--save` 才在应用后保存；不带--save为本进程内存修改，
+进程结束即丢失。draft/preview不接受--save。JSON模式单行返回明确applied/saved，
+保存失败不伪装回滚成功，沿既有可恢复事务处理。所有路径以工作区为边界。
+
+### 书稿查询
+
+`manuscript.query`参数为 `project_id`、`query`、可选`drafts`，使用
+[manuscript-query.md](manuscript-query.md)的同一DTO与不可变快照查询。query必须明确
+schema_version=1和manuscript_id；drafts每项绑定expected_baseline。进程内WritingBuffer
+可以由core调用方显式叠加，机器入口不自动获取编辑器未提交输入，也不引入另一份正文。
+CLI为 `wl manuscript-query <目录或入口> --query-json JSON [--drafts-json JSON] --json`。
+
+业务参数载荷最多4MiB，查询结果最多4MiB；超限结构化失败。查询错误与不完整范围
+返回ok:false并保留可提供的诚实页面/诊断；无匹配不等于没有问题。已生成不可变快照
+上的筛选/分页零IO；快照生成仍复用core只读路径、注册同一性与附件metadata检查，
+禁止缺失源码磁盘回退和保存预检。不会创建、应用、保存或刷新作品。
+
+### 真实运行状态
+
+`session.inspect`参数仅为 `session_id` 与可选 `query`，业务参数最多64KiB。
+复用 [state-inspection.md](state-inspection.md) 的有类型query/page；默认每页50、
+最大100，不为查看隐式创建或推进Story。返回 `ok:true,inspection:page`；过期stamp
+或结果预算错误返回ok:false，参数结构/额度错误为-32602。原session.state保持原样。
+
+新inspection stamp的 `run_id`、`compiled_snapshot`、`fingerprint`、`trace_generation`、
+`revision` 在JSON中均为规范十进制字符串，内部仍为u64。仅接受`"0"`或非零ASCII数字
+开头的无符号整数串且不超过u64范围；数字类型、前导零/符号、空白、小数、指数、
+缺失或未知字段拒绝。客户端原样回传同会话的stamp，普通JavaScript JSON往返不会
+舍入64位身份。本轮新能力尚未发布，没有数值stamp旧schema兼容承诺；既有trace、
+checkpoint、Story Save、state_view及旧方法的fingerprint编码不变。
+
+CLI普通或JSON试玩在等待选择输入时接收 `inspect` 或 `inspect {query JSON}`，只输出
+状态检查结果并继续等待同一选择，不执行continue/choose。首次/上一基线仅来自真实
+已记录观测，缺失和省略不能补0/false/空值，声明定位不能冒称最后写入的原因。

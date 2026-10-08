@@ -1,10 +1,43 @@
 use super::*;
 use crate::ast::{Stmt, TextPart};
 use crate::CompileResult;
+use std::collections::BTreeMap;
+
+pub(super) struct SourceLookup<'a> {
+    objects: BTreeMap<&'a TargetRef, &'a crate::catalog::CatalogObject>,
+    events: BTreeMap<&'a str, &'a [Stmt]>,
+    fragments: BTreeMap<&'a str, &'a [Stmt]>,
+}
+impl<'a> SourceLookup<'a> {
+    pub(super) fn new(content: &'a CompileResult) -> Self {
+        let mut objects = BTreeMap::new();
+        for object in &content.analysis.catalog.objects {
+            objects.entry(&object.target).or_insert(object);
+        }
+        let mut events = BTreeMap::new();
+        for event in &content.program.events {
+            events
+                .entry(event.name.as_str())
+                .or_insert(event.body.as_slice());
+        }
+        let mut fragments = BTreeMap::new();
+        for fragment in &content.program.fragments {
+            fragments
+                .entry(fragment.name.as_str())
+                .or_insert(fragment.body.as_slice());
+        }
+        Self {
+            objects,
+            events,
+            fragments,
+        }
+    }
+}
 
 pub(super) fn resolve_source(
     target: &TargetRef,
     content: &CompileResult,
+    lookup: &SourceLookup<'_>,
     index: &mut ManuscriptIndex,
 ) -> ManuscriptSource {
     if !matches!(
@@ -37,7 +70,7 @@ pub(super) fn resolve_source(
             stats: None,
         };
     }
-    let Some(object) = content.analysis.catalog.object(target) else {
+    let Some(object) = lookup.objects.get(target) else {
         let status = missing_or_unresolved(content);
         report_missing_target(target, status, index);
         return ManuscriptSource {
@@ -47,12 +80,10 @@ pub(super) fn resolve_source(
         };
     };
     let text = match target.kind.as_str() {
-        "event" => content
-            .program
+        "event" => lookup
             .events
-            .iter()
-            .find(|event| event.name == target.id)
-            .map(|event| narrative_text(&event.body)),
+            .get(target.id.as_str())
+            .map(|body| narrative_text(body)),
         "scene" => content
             .analysis
             .symbols
@@ -67,12 +98,10 @@ pub(super) fn resolve_source(
             })
             .and_then(|(event, path)| scene_body(&event.body, &path.scenes))
             .map(narrative_text),
-        "fragment" => content
-            .program
+        "fragment" => lookup
             .fragments
-            .iter()
-            .find(|fragment| fragment.name == target.id)
-            .map(|fragment| narrative_text(&fragment.body)),
+            .get(target.id.as_str())
+            .map(|body| narrative_text(body)),
         "entity" => content
             .analysis
             .catalog
@@ -105,6 +134,7 @@ pub(super) fn resolve_source(
 pub(super) fn resolve_perspective(
     target: &TargetRef,
     content: &CompileResult,
+    lookup: &SourceLookup<'_>,
     index: &mut ManuscriptIndex,
 ) -> ManuscriptReferenceStatus {
     if target.kind != "character" {
@@ -114,7 +144,7 @@ pub(super) fn resolve_perspective(
         );
         return ManuscriptReferenceStatus::Invalid;
     }
-    if content.analysis.catalog.object(target).is_some() {
+    if lookup.objects.contains_key(target) {
         ManuscriptReferenceStatus::Resolved
     } else {
         let status = missing_or_unresolved(content);

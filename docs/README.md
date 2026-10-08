@@ -2,7 +2,14 @@
 
 - [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 
-当前产品版本为 0.28.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+当前工作分支对应 0.31.0 候选；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+
+## 模板、书稿与运行状态
+
+- [模板结构契约](../spec/templates.md)：草稿、字段身份、影响预览和受保护事务
+- [书稿查询契约](../spec/manuscript-query.md)：同快照筛选、分页、完整性和失效边界
+- [运行状态检查](../spec/state-inspection.md)：真实观测、类型、预算和只读查询
+- [机器协议](../spec/agent-protocol.md)：CLI/RPC 参数、错误、明确保存与零推进
 
 ## 作者依赖与试玩交接
 

@@ -106,6 +106,7 @@ impl Project {
             authoring_documents: BTreeMap::new(),
             authoring_diagnostics: registry.diagnostics.clone(),
             refresh_generation: 0,
+            query_observation: Default::default(),
             recovery_conflicts: Vec::new(),
             language_version: registry.language_version,
             source_selection: registry.source_selection.clone(),
@@ -141,6 +142,7 @@ impl Project {
                 .entry(path)
                 .or_insert_with(|| AuthoringDocument::missing(read_only));
         }
+        project.record_query_observation(None);
         Ok(project)
     }
 

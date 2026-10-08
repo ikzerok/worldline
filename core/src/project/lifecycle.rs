@@ -2,6 +2,12 @@ use super::*;
 
 impl Project {
     pub fn refresh(&mut self) -> Result<Vec<PathBuf>, String> {
+        let result = self.refresh_loaded_documents();
+        self.record_query_observation(result.as_ref().err().map(String::as_str));
+        result
+    }
+
+    fn refresh_loaded_documents(&mut self) -> Result<Vec<PathBuf>, String> {
         #[cfg(not(target_arch = "wasm32"))]
         let recovery = crate::storage::recover(&self.root)?;
         #[cfg(not(target_arch = "wasm32"))]
@@ -234,6 +240,7 @@ impl Project {
             authoring_documents: BTreeMap::new(),
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
+            query_observation: Default::default(),
             recovery_conflicts: recovery.conflicts,
             language_version: LanguageVersion::V1_9,
             source_selection: None,
@@ -258,18 +265,21 @@ impl Project {
                 deleted: false,
             },
         )]);
-        Self {
+        let project = Self {
             root,
             entry,
             documents,
             authoring_documents: BTreeMap::new(),
             authoring_diagnostics: Vec::new(),
             refresh_generation: 0,
+            query_observation: Default::default(),
             recovery_conflicts: Vec::new(),
             language_version: LanguageVersion::V1_9,
             source_selection: None,
             #[cfg(target_arch = "wasm32")]
             checkpoint_session_id: crate::checkpoints::next_checkpoint_session_id(),
-        }
+        };
+        project.record_query_observation(None);
+        project
     }
 }

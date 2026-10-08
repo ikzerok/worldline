@@ -27,6 +27,8 @@
 | [workspace-snapshot.md](workspace-snapshot.md) | 后台当前稿快照、只读/墓碑保真、有界传输与过期结果保护 |
 | [language-versions.md](language-versions.md) | 支持版本、显式能力预览/启用及兼容边界 |
 | [manuscript.md](manuscript.md) | 书稿章节、来源引用与正文边界 |
+| [manuscript-query.md](manuscript-query.md) | 不可变书稿快照、完整范围筛选、分页与失效边界 |
+| [state-inspection.md](state-inspection.md) | 真实运行状态、有类型历史观测、只读检索和来源边界 |
 | [manuscript-review.md](manuscript-review.md) | 可信全分支作者审稿、真实来源与预算 |
 | [templates.md](templates.md) | 内容模板与注册文档 |
 | [markdown-import.md](markdown-import.md) | 外部 Markdown 的预览、损失核对和应用 |

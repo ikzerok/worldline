@@ -157,6 +157,7 @@ PRESET 诊断只描述展示选择，不生成世界语义；原始预设字节�
 | TPL004 | error | 字段 ID、key、type、choices、default、target 或分组结构无效 |
 | TPL005 | error | 工程模板注册未声明 `content.templates.v1` |
 | TPL006 | error | 工程模板实例字段值类型或对象引用目标 kind 不匹配 |
+| TPL007 | warning | 显式修复坏原文将采用完整新文；旧扩展无法安全合并，应先复制原文 |
 
 模板文档错误逐项隔离，不丢弃原始字节或阻断其他有效模板。模板影响预览是只读投影，
 应用错误返回 Project 操作失败，不写入部分注册或实例值。

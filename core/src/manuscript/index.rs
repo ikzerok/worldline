@@ -1,4 +1,4 @@
-use super::source::{resolve_perspective, resolve_source};
+use super::source::{resolve_perspective, resolve_source, SourceLookup};
 use super::*;
 use crate::workspace_documents::parse_unique_json;
 use crate::{CompileResult, Span};
@@ -26,6 +26,9 @@ pub fn build_manuscript_index(
         source_bytes: bytes.to_vec(),
         source_document: None,
         chapter_order: Vec::new(),
+        original_parents: Vec::new(),
+        original_parent_valid: Vec::new(),
+        original_id_counts: std::collections::BTreeMap::new(),
     };
     let document = match parse_unique_json(bytes) {
         Ok(document) => document,
@@ -97,7 +100,23 @@ pub fn build_manuscript_index(
         return index;
     };
 
-    let mut first_by_id = HashMap::new();
+    // 身份先于kind识别：无法投影的坏项仍可能与合法项争用同一ID。
+    for value in entries {
+        if let Some(id) = value.get("id").and_then(Value::as_str) {
+            *index.original_id_counts.entry(id.to_owned()).or_default() += 1;
+        }
+    }
+    let duplicates: Vec<_> = index
+        .original_id_counts
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(id, count)| (id.clone(), *count))
+        .collect();
+    for (id, count) in duplicates {
+        for _ in 1..count {
+            index.error("MAN005", format!("书稿节点 ID `{id}` 重复"));
+        }
+    }
     for value in entries {
         let Some(node) = value.as_object() else {
             index.error("MAN001", "书稿 entries 中的每项必须是对象");
@@ -156,12 +175,10 @@ pub fn build_manuscript_index(
             _ => {}
         }
 
-        if let Some(first) = first_by_id.get(entry_id).copied() {
-            let _ = first;
-            index.error("MAN005", format!("书稿节点 ID `{entry_id}` 重复"));
-        } else {
-            first_by_id.insert(entry_id.to_string(), index.entries.len());
-        }
+        index.original_parent_valid.push(matches!(
+            node.get("parent_id"),
+            None | Some(Value::Null) | Some(Value::String(_))
+        ));
         index.entries.push(ManuscriptEntry {
             id: entry_id.to_string(),
             kind,
@@ -177,17 +194,40 @@ pub fn build_manuscript_index(
         });
     }
 
+    index.original_parents = index
+        .entries
+        .iter()
+        .map(|entry| entry.parent_id.clone())
+        .collect();
     validate_hierarchy(&mut index);
+    let lookup = SourceLookup::new(content);
+    let mut sources = std::collections::BTreeMap::new();
+    let mut perspectives = std::collections::BTreeMap::new();
     for entry_index in 0..index.entries.len() {
         if index.entries[entry_index].kind != ManuscriptEntryKind::Chapter {
             continue;
         }
         if let Some(target) = index.entries[entry_index].target_ref.clone() {
-            let source = resolve_source(&target, content, &mut index);
+            let (source, diagnostics) = sources.entry(target.clone()).or_insert_with(|| {
+                let start = index.diagnostics.len();
+                let source = resolve_source(&target, content, &lookup, &mut index);
+                let diagnostics = index.diagnostics.drain(start..).collect::<Vec<_>>();
+                (source, diagnostics)
+            });
+            index.diagnostics.extend(diagnostics.iter().cloned());
+            let source = source.clone();
             index.entries[entry_index].source = Some(source);
         }
         if let Some(perspective) = index.entries[entry_index].perspective.clone() {
-            let status = resolve_perspective(&perspective, content, &mut index);
+            let (status, diagnostics) =
+                perspectives.entry(perspective.clone()).or_insert_with(|| {
+                    let start = index.diagnostics.len();
+                    let status = resolve_perspective(&perspective, content, &lookup, &mut index);
+                    let diagnostics = index.diagnostics.drain(start..).collect::<Vec<_>>();
+                    (status, diagnostics)
+                });
+            index.diagnostics.extend(diagnostics.iter().cloned());
+            let status = *status;
             index.entries[entry_index].perspective_status = Some(status);
         }
     }
