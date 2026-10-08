@@ -45,6 +45,7 @@ fn rpc_matches_core_and_does_not_mutate_project() {
             entry: path,
             scene_revision: Default::default(),
             problems_report: None,
+            reconciliation: Default::default(),
         },
     );
     let params = json!({"project_id":"p1","target":{"kind":"event","id":"start"}});

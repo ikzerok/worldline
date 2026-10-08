@@ -29,13 +29,13 @@ impl Default for CatalogQueryOptions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuerySource {
     pub file: String,
     pub line: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatalogQueryMatch {
     pub target: TargetRef,
     pub display: String,
@@ -177,7 +177,7 @@ impl Project {
         })
     }
 }
-fn validate_options(options: CatalogQueryOptions) -> Result<(), QueryError> {
+pub(super) fn validate_options(options: CatalogQueryOptions) -> Result<(), QueryError> {
     if !(1..=MAX_CATALOG_QUERY_PAGE_SIZE).contains(&options.page_size) {
         return Err(QueryError::InvalidOptions(format!(
             "page_size 必须在 1–{MAX_CATALOG_QUERY_PAGE_SIZE} 之间"
@@ -191,7 +191,7 @@ fn validate_options(options: CatalogQueryOptions) -> Result<(), QueryError> {
     Ok(())
 }
 
-fn query_fingerprint(query: &CatalogQuery) -> Result<String, QueryError> {
+pub(super) fn query_fingerprint(query: &CatalogQuery) -> Result<String, QueryError> {
     let bytes = serde_json::to_vec(query)
         .map_err(|error| QueryError::InvalidQuery(format!("无法编码查询：{error}")))?;
     let mut hash = 0xcbf29ce484222325u64;
@@ -202,7 +202,7 @@ fn query_fingerprint(query: &CatalogQuery) -> Result<String, QueryError> {
     Ok(format!("{hash:016x}"))
 }
 
-fn matching_reasons(
+pub(super) fn matching_reasons(
     query: &CatalogQuery,
     object: &CatalogObject,
     analysis: &Analysis,
@@ -343,14 +343,14 @@ fn property_equals(actual: &PropertyValue, expected: &PropertyScalar) -> bool {
     }
 }
 
-struct QueryEvaluator {
+pub(super) struct QueryEvaluator {
     tag_targets: BTreeSet<TargetRef>,
     relation_targets: BTreeSet<TargetRef>,
     relation_types_by_target: BTreeMap<TargetRef, BTreeSet<String>>,
 }
 
 impl QueryEvaluator {
-    fn new(query: &CatalogQuery, catalog: &Catalog) -> Self {
+    pub(super) fn new(query: &CatalogQuery, catalog: &Catalog) -> Self {
         let mut evaluator = Self {
             tag_targets: BTreeSet::new(),
             relation_targets: BTreeSet::new(),

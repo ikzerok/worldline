@@ -4,6 +4,8 @@
 //! 纯编排不修改源码语义或运行指纹；独立新章组合事务可显式创建正式来源。
 
 mod commands;
+mod delivery;
+pub use delivery::*;
 mod creation;
 pub use creation::*;
 mod index;

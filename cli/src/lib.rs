@@ -312,12 +312,18 @@ mod catalog;
 mod catalog_import;
 #[path = "lib/catalog_query.rs"]
 mod catalog_query;
+#[path = "lib/catalog_scope.rs"]
+mod catalog_scope;
+#[path = "lib/draft_rehearsal.rs"]
+mod draft_rehearsal;
 #[path = "lib/entity.rs"]
 mod entity;
 #[path = "lib/localization.rs"]
 mod localization;
 #[path = "lib/manuscript_chapter.rs"]
 mod manuscript_chapter;
+#[path = "lib/manuscript_delivery.rs"]
+mod manuscript_delivery;
 #[path = "lib/manuscript_query.rs"]
 mod manuscript_query;
 #[path = "lib/manuscript_review.rs"]
@@ -340,6 +346,8 @@ mod playthrough_report;
 mod problems;
 #[path = "lib/reader_export.rs"]
 mod reader_export;
+#[path = "lib/reconciliation.rs"]
+mod reconciliation;
 #[path = "lib/relation_edit.rs"]
 mod relation_edit;
 #[path = "lib/relation_query.rs"]
@@ -371,7 +379,11 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     let rest = &args[1..];
     match cmd.as_str() {
         "problems" => problems::command(rest, out),
+        "draft-rehearsal" => draft_rehearsal::command(rest, out),
+        "catalog-scope" => catalog_scope::cmd_catalog_scope(&catalog_scope::parse_catalog_scope_args(rest)?, out),
+        "reconciliation" => reconciliation::command(rest, out),
         "manuscript-review" => manuscript_review::command(rest, out),
+        "manuscript-delivery" => manuscript_delivery::command(rest, out),
         "scene" => scene::command(rest, out),
         "world-context" => world_context::command(rest, out, "context"),
         "world-object" => world_context::command(rest, out, "object"),
@@ -430,7 +442,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "route-compare" => route_comparison::command(rest, out),
         "playthrough-report" => playthrough_report::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:reconciliation / draft-rehearsal / manuscript-delivery / catalog-scope / problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

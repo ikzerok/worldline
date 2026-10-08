@@ -11,6 +11,7 @@ mod action_capture;
 mod bounded;
 mod choices;
 mod comparison_boundary;
+pub mod draft_rehearsal;
 mod effects;
 mod evidence;
 mod execution;

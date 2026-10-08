@@ -1,9 +1,13 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.28.0不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.32.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
+| [workspace-reconciliation.md](workspace-reconciliation.md) | 完整三方身份、显式候选、重新验证、内存采纳与独立保存 |
+| [draft-rehearsal.md](draft-rehearsal.md) | 未应用正文的隔离真实运行、状态检查、来源返回与有界协议 |
+| [manuscript-delivery.md](manuscript-delivery.md) | 同一查询范围的连续全分支审稿、完整性和作者私密 Markdown |
+| [catalog-scope.md](catalog-scope.md) | 不可变 typed 查询范围、地图逐处绑定、正式关系及失效保护 |
 | [source-coordinates.md](https://github.com/ikzerok/worldline/blob/main/spec/source-coordinates.md) | 当前精确源码的物理行、Unicode字符列、预览与过期定位守卫 |
 | [source-outline.md](https://github.com/ikzerok/worldline/blob/main/spec/source-outline.md) | 当前单文件声明结构、精确源码范围、预算与过期定位保护 |
 | [workspace.md](workspace.md) | 工作区目录边界、递归索引、外部刷新与完整导出 |

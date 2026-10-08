@@ -12,6 +12,7 @@ mod export;
 mod lifecycle;
 mod query_observation;
 mod read_only;
+pub mod reconciliation;
 mod review_navigation;
 mod save;
 mod snapshot;

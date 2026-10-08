@@ -28,12 +28,18 @@ mod authoring_intents;
 mod catalog;
 #[path = "lib/catalog_import.rs"]
 mod catalog_import;
+#[path = "lib/catalog_scope.rs"]
+mod catalog_scope;
+#[path = "lib/draft_rehearsal.rs"]
+mod draft_rehearsal;
 #[path = "lib/entities.rs"]
 mod entities;
 #[path = "lib/localization.rs"]
 mod localization;
 #[path = "lib/manuscript_chapter.rs"]
 mod manuscript_chapter;
+#[path = "lib/manuscript_delivery.rs"]
+mod manuscript_delivery;
 #[path = "lib/manuscript_query.rs"]
 mod manuscript_query;
 #[path = "lib/manuscript_review.rs"]
@@ -50,6 +56,8 @@ mod problems;
 mod projects;
 #[path = "lib/reader_exports.rs"]
 mod reader_exports;
+#[path = "lib/reconciliation.rs"]
+mod reconciliation;
 #[path = "lib/relation_common.rs"]
 mod relation_common;
 #[path = "lib/relation_drafts.rs"]
@@ -133,6 +141,7 @@ struct ProjectUnit {
     entry: PathBuf,
     scene_revision: worldline_core::presentation_commands::Revision,
     problems_report: Option<problems::CachedReport>,
+    reconciliation: reconciliation::Cache,
 }
 
 struct CompileInput {
@@ -160,13 +169,27 @@ impl CompileInput {
 /// 驱动一轮协议会话:逐行读请求、逐行写响应;EOF 或 `shutdown` 后返回退出码。
 pub fn run(reader: &mut impl BufRead, writer: &mut impl Write) -> i32 {
     let mut server = Server::default();
-    let mut line = String::new();
+    let mut line = Vec::new();
     loop {
         line.clear();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return 0;
+        let read = loop {
+            match reader.read_until(b'\n', &mut line) {
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                result => break result,
+            }
+        };
+        match read {
+            Ok(0) if line.is_empty() => return 0,
+            Ok(_) => {}
+            Err(_) => return 2,
         }
-        let Some(resp) = server.handle(line.trim()) else {
+        let response = match std::str::from_utf8(&line) {
+            Ok(line) => server.handle(line.trim()),
+            Err(_) => {
+                Some(err(Value::Null, -32700, "请求行不是有效UTF-8", Value::Null).to_string())
+            }
+        };
+        let Some(resp) = response else {
             continue;
         };
         if writeln!(writer, "{resp}").is_err() {
@@ -200,8 +223,23 @@ impl Server {
                 json!("消息必须是 JSON 对象"),
             ));
         }
+        if matches!(
+            msg.get("method").and_then(Value::as_str),
+            Some("reconciliation.capture" | "reconciliation.preview" | "reconciliation.apply")
+        ) {
+            return reconciliation::dispatch(self, &msg);
+        }
+        if msg.get("method").and_then(Value::as_str) == Some("project.draft_rehearsal") {
+            return draft_rehearsal::dispatch(self, &msg);
+        }
+        if msg.get("method").and_then(Value::as_str) == Some("catalog.scope") {
+            return catalog_scope::dispatch(self, &msg);
+        }
         if msg.get("method").and_then(Value::as_str) == Some("manuscript.review") {
             return manuscript_review::dispatch(self, &msg);
+        }
+        if msg.get("method").and_then(Value::as_str) == Some("manuscript.delivery") {
+            return manuscript_delivery::dispatch(self, &msg);
         }
         if msg.get("method").and_then(Value::as_str) == Some("project.compare_routes") {
             return route_comparison::dispatch(self, &msg);
@@ -235,6 +273,10 @@ impl Server {
 
     fn call(&mut self, method: &str, params: &Value) -> Result<Value, ProtoError> {
         match method {
+            "catalog.scope" => self.catalog_scope(params),
+            "reconciliation.capture" => self.reconciliation(params, "capture"),
+            "reconciliation.preview" => self.reconciliation(params, "preview"),
+            "reconciliation.apply" => self.reconciliation(params, "apply"),
             "manuscript.chapter.preview" => self.manuscript_chapter(params, false),
             "manuscript.chapter.apply" => self.manuscript_chapter(params, true),
             "manuscript.query" => self.manuscript_query(params),
@@ -252,6 +294,10 @@ impl Server {
                     "catalog_import_v1",
                     "authoring.manuscript_chapter.v1",
                     "authoring.manuscript_query.v1",
+                    worldline_core::draft_rehearsal::DRAFT_REHEARSAL_CAPABILITY,
+                    worldline_core::project::reconciliation::RECONCILIATION_CAPABILITY,
+                    "authoring.manuscript_delivery.v1",
+                    "catalog.scope.v1",
                     "authoring.object_search.v1",
                     worldline_runtime::STATE_INSPECTION_CAPABILITY,
                     worldline_core::project_templates::protocol::TEMPLATE_AUTHORING_CAPABILITY,

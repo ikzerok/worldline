@@ -24,6 +24,10 @@ fn main() -> ExitCode {
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl route-compare <目录或入口> --left-trace-json DTO --right-trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl playthrough-report <目录或入口> --trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
+            eprintln!("      wl draft-rehearsal <目录或入口> (--request 文件.json | --request-json DTO) [--json]");
+            eprintln!("      wl manuscript-delivery <目录或入口> --request-json DTO [--drafts-json DTO] [--output 全新.md] [--json]");
+            eprintln!("      wl catalog-scope <目录或入口> --query DTO [--offset N] [--page-size N] [--focus DTO] [--relation-options DTO] [--json]");
+            eprintln!("      wl reconciliation capture|preview|apply|save <工程目录> --input 文件.json [--request 文件.json] [--plan-digest 摘要] [--json]");
             eprintln!("      wl graph <文件.wl> [--json]");
             eprintln!("      wl timeline <文件.wl> [--json]");
             eprintln!(

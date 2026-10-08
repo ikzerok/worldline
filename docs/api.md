@@ -198,3 +198,12 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 `capabilities::language_capabilities` / `feature_capabilities` 是已有语言与必需能力的目录真源。`Project::plan_capability_enable` 接收目标版本、明确追加能力和内容基线，返回全文诊断、词法分类变化及真实运行指纹兼容预览；`apply_capability_enable` 重建并核对完整计划后只提交内存清单。无变化、候选错误、过期计划、外部变更或未知能力均不可写入，保存仍独立。参见 [语言版本契约](../spec/language-versions.md)。
 
 `evidence_source::resolve_evidence_source` 以实际 CompileResult、EvidenceSource 的文件/声明身份/行号返回经 AST 和正式词法核对的 `StatementHeader` 范围。它不求值；UI仍须绑定运行快照及草稿基线，点击时可用 `Project::verify_source_navigation` 检查磁盘保存基线。运行选择证据来源为可选扩展，默认解释 DTO 不新增 source。参见 [证据来源契约](../spec/replay.md)。
+
+## 0.32 同一稿的协调、演练与巡检
+
+- `Project::capture_reconciliation` / `preview_reconciliation` / `apply_reconciliation`，或后台 prepare 后真实 Project commit：完整三方、显式选择、受保护内存采纳。见[用法](workspace-reconciliation.md)
+- `Project::compile_draft_rehearsal` 与拥有型 `DraftRehearsal`：真实未应用正文的隔离运行及状态检查。见[用法](draft-rehearsal.md)
+- `ManuscriptDeliverySnapshot` / `ManuscriptDeliveryJob`：同一查询快照全范围逐章审稿与 Markdown，分页不重编译。见[用法](manuscript-delivery.md)
+- `Project::catalog_scope_snapshot`：一次编译的 typed 对象范围、地图绑定和正式关系，后续查询零编译。见[用法](catalog-scope.md)
+
+机器入口及预算见[协议](../spec/agent-protocol.md)。这些接口不会遥控正在运行的编辑器窗口；独立 CLI/RPC 只处理自己的输入和 Project。

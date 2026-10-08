@@ -2,7 +2,7 @@ use std::io;
 use std::path::Path;
 
 /// 操作系统在最后一次原子操作中保证目标不存在，拒绝检查后的竞争覆盖。
-pub(super) fn rename_new(source: &Path, destination: &Path) -> io::Result<()> {
+pub(crate) fn rename_new(source: &Path, destination: &Path) -> io::Result<()> {
     platform_rename(source, destination)
 }
 
