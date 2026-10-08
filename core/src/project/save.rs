@@ -68,6 +68,7 @@ impl Project {
             authoring_documents,
             authoring_diagnostics: self.authoring_diagnostics.clone(),
             refresh_generation: 0,
+            query_observation: Default::default(),
             recovery_conflicts: Vec::new(),
             language_version: self.language_version,
             source_selection: self.source_selection.clone(),
@@ -78,6 +79,7 @@ impl Project {
             std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
             std::fs::copy(source, path).map_err(|e| e.to_string())?;
         }
+        candidate.record_query_observation(None);
         *self = candidate;
         Ok(())
     }

@@ -1,180 +1,135 @@
 use super::*;
 mod commands;
+mod instances;
+mod limits;
+mod properties;
+use properties::BorrowedProperties;
+
+struct IndexedField<'a> {
+    field: &'a ProjectTemplateField,
+    parent_id: Option<&'a str>,
+    index: usize,
+}
+type FieldIndex<'a> = BTreeMap<&'a str, IndexedField<'a>>;
+
+fn flatten_fields(template: &ProjectTemplate) -> FieldIndex<'_> {
+    fn add<'a>(
+        fields: &'a [ProjectTemplateField],
+        parent: Option<&'a str>,
+        index: &mut FieldIndex<'a>,
+    ) {
+        for (position, field) in fields.iter().enumerate() {
+            index.insert(
+                &field.id,
+                IndexedField {
+                    field,
+                    parent_id: parent,
+                    index: position,
+                },
+            );
+            add(&field.fields, Some(&field.id), index);
+        }
+    }
+    let mut index = BTreeMap::new();
+    add(&template.fields, None, &mut index);
+    index
+}
 
 fn field_changes(
-    old: Option<&ProjectTemplate>,
-    new: Option<&ProjectTemplate>,
-) -> Vec<ProjectTemplateFieldChange> {
-    let old_fields = old.map(flatten_fields).unwrap_or_default();
-    let new_fields = new.map(flatten_fields).unwrap_or_default();
+    old_fields: &FieldIndex<'_>,
+    new_fields: &FieldIndex<'_>,
+    budget: &mut limits::ImpactBudget,
+) -> Result<Vec<ProjectTemplateFieldChange>, String> {
     let ids: BTreeSet<_> = old_fields
         .keys()
         .chain(new_fields.keys())
-        .cloned()
+        .copied()
         .collect();
-    ids.into_iter()
-        .filter_map(|id| {
-            let old = old_fields.get(&id);
-            let new = new_fields.get(&id);
-            let change = match (old, new) {
-                (None, Some(_)) => "added",
-                (Some(_), None) => "removed",
-                (Some(old), Some(new)) if old.key != new.key => "renamed",
-                (Some(old), Some(new)) if old.field_type != new.field_type => "type_changed",
-                (Some(old), Some(new)) if old.label != new.label => "label_changed",
-                (Some(old), Some(new))
-                    if old.required != new.required
-                        || old.default != new.default
-                        || old.choices != new.choices
-                        || old.target != new.target
-                        || old.target_entity_type != new.target_entity_type =>
-                {
-                    "constraints_changed"
-                }
-                _ => return None,
-            };
-            Some(ProjectTemplateFieldChange {
-                field_id: id,
-                change: change.into(),
-                old_key: old.and_then(|field| field.key.clone()),
-                new_key: new.and_then(|field| field.key.clone()),
-                old_type: old.map(|field| field.field_type.clone()),
-                new_type: new.map(|field| field.field_type.clone()),
-            })
-        })
-        .collect()
+    let mut changes = Vec::new();
+    for id in ids {
+        let old_position = old_fields.get(id);
+        let new_position = new_fields.get(id);
+        let old = old_position.map(|position| position.field);
+        let new = new_position.map(|position| position.field);
+        let old_properties = old.map(BorrowedProperties::new).transpose()?;
+        let new_properties = new.map(BorrowedProperties::new).transpose()?;
+        let record = |change| BorrowedChange {
+            field_id: id,
+            change,
+            old_key: old.and_then(|field| field.key.as_deref()),
+            new_key: new.and_then(|field| field.key.as_deref()),
+            old_type: old.map(|field| field.field_type.as_str()),
+            new_type: new.map(|field| field.field_type.as_str()),
+            old_parent_id: old_position.and_then(|position| position.parent_id),
+            new_parent_id: new_position.and_then(|position| position.parent_id),
+            old_index: old_position.map(|position| position.index),
+            new_index: new_position.map(|position| position.index),
+            old_properties,
+            new_properties,
+        };
+        let attribute_change = match (old, new) {
+            (None, Some(_)) => Some("added"),
+            (Some(_), None) => Some("removed"),
+            (Some(old), Some(new)) if old.key != new.key => Some("renamed"),
+            (Some(old), Some(new)) if old.field_type != new.field_type => Some("type_changed"),
+            (Some(old), Some(new)) if old.label != new.label => Some("label_changed"),
+            (Some(old), Some(new))
+                if old.required != new.required
+                    || old.default != new.default
+                    || old.choices != new.choices
+                    || old.target != new.target
+                    || old.target_entity_type != new.target_entity_type =>
+            {
+                Some("constraints_changed")
+            }
+            _ => None,
+        };
+        let position_change = matches!((old_position, new_position), (Some(old), Some(new))
+            if old.parent_id != new.parent_id || old.index != new.index)
+        .then_some("position_changed");
+        for change in [attribute_change, position_change].into_iter().flatten() {
+            let borrowed = record(change);
+            budget.comma(!changes.is_empty())?;
+            budget.json(&borrowed)?;
+            changes.push(borrowed.into_owned());
+        }
+    }
+    Ok(changes)
 }
 
-fn flatten_fields(template: &ProjectTemplate) -> BTreeMap<String, ProjectTemplateField> {
-    fn add(field: &ProjectTemplateField, fields: &mut BTreeMap<String, ProjectTemplateField>) {
-        fields.insert(field.id.clone(), field.clone());
-        for child in &field.fields {
-            add(child, fields);
-        }
-    }
-    let mut fields = BTreeMap::new();
-    for field in &template.fields {
-        add(field, &mut fields);
-    }
-    fields
+#[derive(Serialize)]
+struct BorrowedChange<'a> {
+    field_id: &'a str,
+    change: &'static str,
+    old_key: Option<&'a str>,
+    new_key: Option<&'a str>,
+    old_type: Option<&'a str>,
+    new_type: Option<&'a str>,
+    old_parent_id: Option<&'a str>,
+    new_parent_id: Option<&'a str>,
+    old_index: Option<usize>,
+    new_index: Option<usize>,
+    old_properties: Option<BorrowedProperties<'a>>,
+    new_properties: Option<BorrowedProperties<'a>>,
 }
 
-fn instance_impacts(
-    old: Option<&ProjectTemplate>,
-    new: Option<&ProjectTemplate>,
-    content: &CompileResult,
-    check_integrity: bool,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<ProjectTemplateInstanceImpact> {
-    let mut templates = Vec::new();
-    if let Some(old) = old {
-        templates.push((old, "current"));
-    }
-    if let Some(new) = new {
-        if old != Some(new) {
-            templates.push((new, "proposed"));
+impl BorrowedChange<'_> {
+    fn into_owned(self) -> ProjectTemplateFieldChange {
+        ProjectTemplateFieldChange {
+            field_id: self.field_id.into(),
+            change: self.change.into(),
+            old_key: self.old_key.map(str::to_owned),
+            new_key: self.new_key.map(str::to_owned),
+            old_type: self.old_type.map(str::to_owned),
+            new_type: self.new_type.map(str::to_owned),
+            old_parent_id: self.old_parent_id.map(str::to_owned),
+            new_parent_id: self.new_parent_id.map(str::to_owned),
+            old_index: self.old_index,
+            new_index: self.new_index,
+            old_properties: self.old_properties.map(BorrowedProperties::into_owned),
+            new_properties: self.new_properties.map(BorrowedProperties::into_owned),
         }
     }
-    let mut objects = BTreeMap::<TargetRef, BTreeMap<String, PropertyValue>>::new();
-    for (template, _) in &templates {
-        for object in content
-            .analysis
-            .catalog
-            .objects
-            .iter()
-            .filter(|object| object.target.kind == template.applies_to.kind)
-        {
-            let properties = match object.target.kind.as_str() {
-                "entity" => content
-                    .analysis
-                    .catalog
-                    .entities
-                    .get(&object.target.id)
-                    .filter(|entity| {
-                        template
-                            .applies_to_entity_type
-                            .as_ref()
-                            .is_none_or(|kind| kind == &entity.entity_type)
-                    })
-                    .map(|entity| &entity.properties),
-                "character" => content
-                    .analysis
-                    .symbols
-                    .characters
-                    .get(&object.target.id)
-                    .map(|character| &character.properties),
-                "world" => content
-                    .analysis
-                    .world
-                    .as_ref()
-                    .map(|world| &world.properties),
-                _ => None,
-            };
-            if let Some(properties) = properties {
-                objects.insert(object.target.clone(), properties.clone());
-            }
-        }
-    }
-    objects
-        .into_iter()
-        .map(|(target, properties)| {
-            let mut fields = Vec::new();
-            for (template, template_state) in &templates {
-                for field in flatten_fields(template).into_values() {
-                    let Some(key) = field.key.as_ref() else {
-                        continue;
-                    };
-                    let value = properties.get(key).cloned();
-                    let type_matches = value.as_ref().map(|value| {
-                        property_matches_type(value, &field, &content.analysis.catalog)
-                    });
-                    let state = match value.as_ref() {
-                        None => ProjectTemplateValueState::Missing,
-                        Some(PropertyValue::Str(text)) if text.trim().is_empty() => {
-                            ProjectTemplateValueState::Empty
-                        }
-                        Some(value)
-                            if field
-                                .default
-                                .as_ref()
-                                .is_some_and(|default| property_matches_json(value, default)) =>
-                        {
-                            ProjectTemplateValueState::Default
-                        }
-                        Some(_) if type_matches == Some(true) => ProjectTemplateValueState::Set,
-                        Some(_) => ProjectTemplateValueState::TypeMismatch,
-                    };
-                    if check_integrity && state == ProjectTemplateValueState::TypeMismatch {
-                        let object = content.analysis.catalog.object(&target);
-                        diagnostics.push(Diagnostic::warning(
-                            "TPL006",
-                            object.map_or("", |object| object.file.as_str()),
-                            Span::new(object.map_or(1, |object| object.line), 1, 1),
-                            format!(
-                                "{} `{}` 的字段 `{key}` 与{}模板类型不匹配；预览不会转换实例值",
-                                target.kind,
-                                target.id,
-                                if *template_state == "current" {
-                                    "当前"
-                                } else {
-                                    "新"
-                                }
-                            ),
-                        ));
-                    }
-                    fields.push(ProjectTemplateFieldImpact {
-                        field_id: field.id.clone(),
-                        template_state: (*template_state).into(),
-                        key: key.clone(),
-                        state,
-                        type_matches,
-                        value,
-                    });
-                }
-            }
-            ProjectTemplateInstanceImpact { target, fields }
-        })
-        .collect()
 }
 
 fn property_matches_type(

@@ -25,6 +25,9 @@
 | 终端演练 | `wl play DIR` | 人类选择序号从 1 起 |
 | 脚本演练 | `wl play DIR --json` | 输入使用输出给出的 index，从 0 起 |
 | 多轮机器会话 | `wl-agent` | 每行一个 JSON-RPC 请求，保持进程存活 |
+| 模板草稿和影响事务 | `wl template draft\|preview\|apply DIR --request-json DTO --json` | core唯一模板模型；apply需摘要，保存须显式`--save` |
+| 完整范围书稿查询 | `wl manuscript-query DIR --query-json DTO --json` | core同快照筛选分页；可显式提供`--drafts-json` |
+| 当前实际状态检查 | 试玩选择输入`inspect`或`inspect JSON`；RPC `session.inspect` | 有类型首次/前次/当前观测，查询不推进 |
 | Rust 结构编辑 | `Project::edit` 与各 draft 方法 | 全工程校验，失败回滚 |
 
 JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不意味着输出无法解析。每个子命令的 JSON 形状不同，完整方法、字段、错误码和示例见 [agent-protocol.md](../spec/agent-protocol.md)。CLI 当前没有通用 `--help` 子命令；无参数会输出用法并返回 2。

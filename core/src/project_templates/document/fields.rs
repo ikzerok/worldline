@@ -1,7 +1,7 @@
 use super::*;
 mod impacts;
 
-fn parse_template_document(
+pub(in crate::project_templates) fn parse_template_document(
     bytes: &[u8],
     file: &str,
     registered_id: &str,

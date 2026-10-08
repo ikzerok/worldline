@@ -54,6 +54,7 @@ pub mod source_config;
 pub mod source_coordinates;
 pub mod source_lifecycle;
 pub mod source_outline;
+pub mod state_inspection_source;
 pub mod states;
 mod storage;
 pub mod svg_import;

@@ -57,6 +57,7 @@ impl<'p> Story<'p> {
                 .map_err(|message| RunError::new(format!("存档局部 `{name}` 无效：{message}")))?;
         }
         Ok(Some(Frame {
+            inspection_call_id: 0,
             stmts: &definition.body,
             idx: save.idx,
             node: None,

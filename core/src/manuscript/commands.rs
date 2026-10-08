@@ -305,7 +305,7 @@ fn validate_draft_shape(draft: &ManuscriptDraft) -> Result<(), String> {
     Ok(())
 }
 
-fn merge_draft_entries(
+pub(super) fn merge_draft_entries(
     previous: Vec<Value>,
     drafts: &[ManuscriptEntryDraft],
 ) -> Result<Vec<Value>, String> {

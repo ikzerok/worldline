@@ -29,3 +29,7 @@ PlayState 保存拥有型会话，重新开始显式替换旧会话；暂停、�
 验证构造成功/失败与频繁替换后的owner释放，移动包装器后仍安全；不把allocator
 保留内存误报为存活owner。以同一1000对象原生负载复测首次+20+20重启的RSS斜率，
 同时验证换工程与关闭。native与WASM构建分别检查，不声称单平台测量覆盖所有平台。
+
+工具0.31增加`inspection_stamp()`与`inspect_state(&StateInspectionQuery)`只读代理，
+返回与借用Story相同的typed状态页；契约见[state-inspection.md](state-inspection.md)。
+基线和调用身份随拥有者释放，换工程/重新开始不得复用上一会话的检查页和来源请求。

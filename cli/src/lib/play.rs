@@ -67,6 +67,8 @@ pub(super) fn cmd_play(
 
 #[path = "play/exchange_output.rs"]
 mod exchange_output;
+#[path = "play/inspection.rs"]
+mod inspection;
 
 pub(super) fn cmd_replay(args: &ReplayArgs, out: &mut impl Write) -> Result<i32, String> {
     let Some(snapshot) = compile_or_fail(&args.path, args.language_version, out) else {
@@ -183,8 +185,7 @@ pub(super) fn play_human(
         }
         write!(out, "> ").map_err(|e| e.to_string())?;
         out.flush().map_err(|e| e.to_string())?;
-        buf.clear();
-        if input.read_line(&mut buf).map_err(|e| e.to_string())? == 0 {
+        if !inspection::read_input(story, &mut buf, out, input)? {
             writeln!(out).map_err(|e| e.to_string())?;
             writeln!(out, "(输入结束,退出)").map_err(|e| e.to_string())?;
             break 0;
@@ -291,8 +292,7 @@ pub(super) fn play_json(
             continue;
         }
         out.flush().map_err(|e| e.to_string())?;
-        buf.clear();
-        if input.read_line(&mut buf).map_err(|e| e.to_string())? == 0 {
+        if !inspection::read_input(story, &mut buf, out, input)? {
             let payload = json!({ "type": "eof", "state": story.state_view() });
             writeln!(out, "{payload}").map_err(|e| e.to_string())?;
             break 0;

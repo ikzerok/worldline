@@ -1,12 +1,19 @@
 # worldline（世界线）
 
-世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.30 候选补齐书稿新章原子计划、可信空正文插入槽与统一对象筛选分页；配对 worldedit 重做共用 Rust/egui 工作台。全部语义、来源与保护由 core/runtime 提供。
+世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.31 候选提供模板结构草稿与完整影响计划、同快照书稿查询、真实运行状态检查；配对 worldedit 使用同一 core/runtime 的结果完成作者操作。
 
-工作分支不表示正式发行。范围和验证边界见配对编辑器[0.30版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.30.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
+工作分支不表示正式发行。范围和验证边界见配对编辑器[0.31版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.31.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
 
-升级边界：0.29 及更早运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在 0.30 重放、比较或生成已验证审阅，应重新录制。合法路径 JSON 只读导入成功不代表可执行；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。
+升级边界：0.30 及更早运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在 0.31 重放、比较或生成已验证审阅，应重新录制。合法路径 JSON 只读导入成功不代表可执行；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。
 
 应用与源码发行包不附带样例工程或规范演示文件。新建作品从仅含起点与结束的空白骨架开始；必要测试、可选产品字段模板与既有作品能力保持。
+
+## 0.31 作者契约
+
+- [模板设计与影响](spec/templates.md)：稳定字段身份、结构编辑、未知扩展保留、真实适用范围与完整性、原子应用
+- [书稿查询](spec/manuscript-query.md)：同一不可变快照全范围检索、路径和完整数量、有界分页、草稿与外部变化保护
+- [真实状态检查](spec/state-inspection.md)：当前值与确实记录的首次/前次观测，类型、不可比较状态、检索与分页
+- [机器协议](spec/agent-protocol.md)：模板 draft/preview/apply、书稿 query、session.inspect 共用核心，不隐式保存或推进
 
 ## 0.30 作者契约
 

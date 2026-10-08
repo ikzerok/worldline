@@ -83,6 +83,9 @@ impl<'p> Story<'p> {
         limits: ReplayBudget,
         cancellation: &ReplayCancellation,
     ) -> Result<BoundedContinuation, RunError> {
+        if !self.is_paused() && !self.is_ended() {
+            self.inspection.advancing();
+        }
         let started = MonotonicInstant::now();
         let mut budget = ReplayExecutionBudget {
             limits,
@@ -95,7 +98,13 @@ impl<'p> Story<'p> {
             comparison_limit: None,
             output_usage: None,
         };
-        let result = self.continue_story_inner(&mut budget)?;
+        let result = match self.continue_story_inner(&mut budget) {
+            Ok(result) => result,
+            Err(error) => {
+                self.inspection.status = crate::InspectionStatus::Failed;
+                return Err(error);
+            }
+        };
         let outcome = match result.stop {
             Some(ReplayStop::Status(ReplayStatus::Cancelled)) => ContinuationOutcome::Cancelled,
             Some(ReplayStop::Status(ReplayStatus::TimeBudgetExceeded)) => {
@@ -104,6 +113,13 @@ impl<'p> Story<'p> {
             Some(_) => ContinuationOutcome::StepBudgetExceeded,
             None if self.is_paused() => ContinuationOutcome::Choice,
             None => ContinuationOutcome::Ended,
+        };
+        self.inspection.status = match outcome {
+            ContinuationOutcome::Choice => crate::InspectionStatus::Choice,
+            ContinuationOutcome::Ended => crate::InspectionStatus::Ended,
+            ContinuationOutcome::StepBudgetExceeded => crate::InspectionStatus::StepBudgetExceeded,
+            ContinuationOutcome::TimeBudgetExceeded => crate::InspectionStatus::TimeBudgetExceeded,
+            ContinuationOutcome::Cancelled => crate::InspectionStatus::Cancelled,
         };
         self.continuation_outputs
             .extend(result.outputs.iter().cloned());

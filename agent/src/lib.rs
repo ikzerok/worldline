@@ -34,6 +34,8 @@ mod entities;
 mod localization;
 #[path = "lib/manuscript_chapter.rs"]
 mod manuscript_chapter;
+#[path = "lib/manuscript_query.rs"]
+mod manuscript_query;
 #[path = "lib/manuscript_review.rs"]
 mod manuscript_review;
 #[path = "lib/markdown_import.rs"]
@@ -70,6 +72,10 @@ mod sessions;
 mod source_edit;
 #[path = "lib/source_lifecycle.rs"]
 mod source_lifecycle;
+#[path = "lib/state_inspection.rs"]
+mod state_inspection;
+#[path = "lib/template_authoring.rs"]
+mod template_authoring;
 #[path = "lib/world_context.rs"]
 mod world_context;
 
@@ -231,7 +237,12 @@ impl Server {
         match method {
             "manuscript.chapter.preview" => self.manuscript_chapter(params, false),
             "manuscript.chapter.apply" => self.manuscript_chapter(params, true),
+            "manuscript.query" => self.manuscript_query(params),
             "world.objects.search" => self.object_search(params),
+            "session.inspect" => self.session_inspect(params),
+            "template.draft" => self.template_draft(params),
+            "template.preview" => self.template_mutation(params, false),
+            "template.apply" => self.template_mutation(params, true),
             "initialize" => Ok(json!({
                 "protocol": PROTOCOL,
                 "server": "wl-agent",
@@ -240,7 +251,10 @@ impl Server {
                     "authoring.problems.v1",
                     "catalog_import_v1",
                     "authoring.manuscript_chapter.v1",
+                    "authoring.manuscript_query.v1",
                     "authoring.object_search.v1",
+                    worldline_runtime::STATE_INSPECTION_CAPABILITY,
+                    worldline_core::project_templates::protocol::TEMPLATE_AUTHORING_CAPABILITY,
                     worldline_core::problems::PROBLEM_SOURCE_CONTEXT_CAPABILITY,
                     worldline_runtime::CHOICE_PRESENTATION_CAPABILITY,
                     worldline_runtime::BOUNDED_CONTINUE_CAPABILITY,

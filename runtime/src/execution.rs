@@ -175,6 +175,7 @@ impl<'p> Story<'p> {
                             self.frames[fi].idx += 1;
                             let stmt_idx = self.frames[fi].idx - 1;
                             self.frames.push(Frame {
+                                inspection_call_id: 0,
                                 stmts: &i.branches[k].1,
                                 idx: 0,
                                 node: None,
@@ -200,6 +201,7 @@ impl<'p> Story<'p> {
                     *self.visits.entry(full.clone()).or_insert(0) += 1;
                     self.frames[fi].idx += 1;
                     self.frames.push(Frame {
+                        inspection_call_id: 0,
                         stmts: &s.body,
                         idx: 0,
                         node: Some(full),
@@ -315,6 +317,7 @@ impl<'p> Story<'p> {
                 self.taken_once.push(id);
             }
         }
+        self.inspection.advancing();
         self.turns += 1;
         // 组结束位置 = 选择体落回点(隐式汇聚)
         self.frames[fi].idx = start + group_len;
@@ -323,6 +326,7 @@ impl<'p> Story<'p> {
             stmt: start + offset,
         };
         self.frames.push(Frame {
+            inspection_call_id: 0,
             stmts: body,
             idx: 0,
             node: None,
@@ -350,6 +354,7 @@ impl<'p> Story<'p> {
 
     /// 从头开始(多周目)。
     pub fn restart(&mut self) -> Result<(), RunError> {
+        self.inspection = Default::default();
         self.failed_explanations = None;
         self.continuation_outputs.clear();
         self.interrupted_outputs.clear();

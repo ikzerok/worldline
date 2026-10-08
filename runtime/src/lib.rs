@@ -23,11 +23,13 @@ mod owned_story;
 mod persistence;
 mod playthrough_report;
 mod random;
+mod recording;
 mod replay;
 mod replay_exchange;
 mod replay_runner;
 mod route_comparison;
 mod state_actions;
+mod state_inspection;
 mod util;
 mod variable_validation;
 mod variable_writes;
@@ -56,6 +58,7 @@ pub use replay_exchange::{
 pub use replay_runner::ReplaySession;
 pub use route_comparison::*;
 pub use state_actions::{StateActionEvidence, StateActionRecord};
+pub use state_inspection::*;
 use util::{expression_source, initial_states, normalize_seed, seed_now};
 pub use variable_writes::{VariableWriteEvidence, VariableWriteRecord};
 
@@ -64,6 +67,7 @@ pub use variable_writes::{VariableWriteEvidence, VariableWriteRecord};
 // ---------------------------------------------------------------------------
 
 struct Frame<'p> {
+    inspection_call_id: u64,
     fragment: Option<String>,
     locals: BTreeMap<String, Value>,
     stmts: &'p [Stmt],
@@ -89,6 +93,7 @@ struct Pause {
 
 /// 故事实例:消费 Program,持全部可变状态。
 pub struct Story<'p> {
+    inspection: state_inspection::InspectionHistory,
     program: &'p Program,
     symbols: &'p worldline_core::Symbols,
     catalog: &'p worldline_core::Catalog,
@@ -147,6 +152,7 @@ impl<'p> Story<'p> {
             .unwrap_or_else(|| "main".into());
         let initial_states = initial_states(analysis);
         let mut story = Story {
+            inspection: Default::default(),
             program,
             symbols: &analysis.symbols,
             catalog: &analysis.catalog,
@@ -210,6 +216,7 @@ impl<'p> Story<'p> {
     fn node_frames(&self, event_idx: usize, scenes: &[String]) -> Vec<Frame<'p>> {
         let event = &self.program.events[event_idx];
         let mut frames = vec![Frame {
+            inspection_call_id: 0,
             stmts: &event.body,
             idx: 0,
             node: Some(event.name.clone()),
@@ -232,6 +239,7 @@ impl<'p> Story<'p> {
             frames.last_mut().expect("根帧必然存在").idx = pos + 1;
             prefix = format!("{prefix}.{leaf}");
             frames.push(Frame {
+                inspection_call_id: 0,
                 stmts: &sc.body,
                 idx: 0,
                 node: Some(prefix.clone()),
@@ -374,9 +382,11 @@ impl<'p> Story<'p> {
     pub fn start_trace_from_here(&mut self) -> Result<(), RunError> {
         let checkpoint = self.checkpoint()?;
         self.trace = ReplayTrace::checkpoint(checkpoint);
+        self.inspection.reset_trace();
         self.continuation_outputs.clear();
         if self.paused.is_some() {
             self.trace.initial_observation = Some(self.observation(&[]));
+            self.inspection_record();
         }
         Ok(())
     }
@@ -507,86 +517,5 @@ impl<'p> Story<'p> {
             offset += 1;
         }
         Ok(explanations)
-    }
-
-    fn observation(&self, outputs: &[Output]) -> ReplayObservation {
-        let choices = self
-            .paused
-            .as_ref()
-            .into_iter()
-            .flat_map(|pause| pause.explanations.iter())
-            .filter(|explanation| explanation.available)
-            .map(|explanation| explanation.choice.clone())
-            .collect();
-        ReplayObservation {
-            outputs: outputs
-                .iter()
-                .map(|output| serde_json::to_value(output).unwrap_or(serde_json::Value::Null))
-                .collect(),
-            choices,
-            choice_presentation: if choices::uses_presentation(self.program) {
-                self.choice_presentations()
-                    .iter()
-                    .map(|v| serde_json::to_value(v).unwrap())
-                    .collect()
-            } else {
-                Vec::new()
-            },
-            state: self.state_view(),
-        }
-    }
-
-    fn record_continuation(&mut self, outputs: &[Output]) {
-        let observation = self.observation(outputs);
-        if self.trace.initial_observation.is_none() {
-            self.trace.initial_observation = Some(observation.clone());
-        } else if let Some(step) = self.trace.steps.last_mut() {
-            if step.observation.is_none() {
-                step.observation = Some(observation);
-            }
-        }
-        self.trace.complete = self.is_ended();
-    }
-
-    /// 创建绑定 runtime/schema 与程序 fingerprint 的调试检查点。
-    pub fn checkpoint(&self) -> Result<ReplayCheckpoint, RunError> {
-        let mut state: serde_json::Value = serde_json::from_str(&self.save()?)
-            .map_err(|error| RunError::new(format!("检查点状态编码失败:{error}")))?;
-        // 暂停组条件和标签的随机表达式在初次呈现时已消耗 RNG；恢复时从组开始状态
-        // 重算，保证同一个检查点重新呈现同一组选择。
-        if let Some(pause) = &self.paused {
-            state["rng"] = serde_json::json!(pause.rng_before);
-        }
-        let state = serde_json::to_string(&state)
-            .map_err(|error| RunError::new(format!("检查点序列化失败:{error}")))?;
-        Ok(ReplayCheckpoint {
-            schema_version: REPLAY_SCHEMA_VERSION,
-            runtime_version: env!("CARGO_PKG_VERSION").into(),
-            fingerprint: self.fingerprint,
-            seed: self.seed,
-            state,
-        })
-    }
-
-    /// 从严格匹配版本和 fingerprint 的检查点恢复 Story。
-    pub fn from_checkpoint(
-        program: &'p Program,
-        analysis: &'p Analysis,
-        checkpoint: &ReplayCheckpoint,
-    ) -> Result<Self, RunError> {
-        if checkpoint.schema_version != REPLAY_SCHEMA_VERSION {
-            return Err(RunError::new("检查点 schema_version 不兼容"));
-        }
-        if checkpoint.runtime_version != env!("CARGO_PKG_VERSION") {
-            return Err(RunError::new("检查点 runtime_version 不兼容"));
-        }
-        if checkpoint.fingerprint != analysis.fingerprint {
-            return Err(RunError::new("检查点程序 fingerprint 不匹配"));
-        }
-        let story = Self::load(program, analysis, &checkpoint.state)?;
-        if story.seed != normalize_seed(checkpoint.seed) {
-            return Err(RunError::new("检查点 seed 与 runtime 状态不一致"));
-        }
-        Ok(story)
     }
 }

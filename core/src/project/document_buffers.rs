@@ -103,6 +103,8 @@ impl Project {
                 document.saved = current.saved.clone();
             }
         }
+        // 外部元数据观测不属于作者撤销；旧快照不能恢复旧附件可用性。
+        previous.query_observation = self.query_observation.clone();
         *self = previous;
         true
     }

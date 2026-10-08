@@ -185,6 +185,7 @@ impl<'p> Story<'p> {
                 .map_err(|error| RunError::new(format!("存档序列化失败:{error}")))?,
         };
         let mut story = Story {
+            inspection: Default::default(),
             program,
             symbols: &analysis.symbols,
             catalog: &analysis.catalog,
@@ -217,6 +218,11 @@ impl<'p> Story<'p> {
             interrupted_outputs: Vec::new(),
         };
         story.frames = story.rebuild_frames(&saved_frames, analysis)?;
+        for frame in &mut story.frames {
+            if frame.fragment.is_some() {
+                frame.inspection_call_id = story.inspection.call_id();
+            }
+        }
         if restore_pause {
             let _ = story.continue_story()?;
             if !story.is_paused() {
@@ -285,6 +291,7 @@ impl<'p> Story<'p> {
                             unreachable!()
                         };
                         frames.push(Frame {
+                            inspection_call_id: 0,
                             stmts: &sc.body,
                             idx: sv.idx,
                             node: Some(name.clone()),
@@ -336,6 +343,7 @@ impl<'p> Story<'p> {
                         _ => return Err(RunError::new("存档与程序结构不符(帧来源不匹配)")),
                     };
                     frames.push(Frame {
+                        inspection_call_id: 0,
                         stmts,
                         idx: sv.idx,
                         node: None,

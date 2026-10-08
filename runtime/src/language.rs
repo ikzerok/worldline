@@ -74,6 +74,7 @@ impl<'p> Story<'p> {
                 let stmt = self.frames[fi].idx;
                 self.frames[fi].idx += 1;
                 self.frames.push(Frame {
+                    inspection_call_id: self.inspection.call_id(),
                     stmts: &fragment.body,
                     idx: 0,
                     node: None,

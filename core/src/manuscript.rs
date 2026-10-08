@@ -8,6 +8,8 @@ mod creation;
 pub use creation::*;
 mod index;
 mod organization;
+mod query;
+pub use query::*;
 mod reading;
 mod review;
 pub use review::{
@@ -28,7 +30,7 @@ use crate::catalog::TargetRef;
 use crate::presentation_commands::Revision;
 use crate::Diagnostic;
 pub use reading::{reading_projection, ReadingPart, ReadingProjection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 pub use writing::{WritingBlock, WritingBlockKind, WritingBuffer, WritingProjection};
@@ -39,7 +41,7 @@ pub const MANUSCRIPT_SCHEMA_VERSION: u64 = 1;
 pub const MANUSCRIPT_REQUIRED_FEATURE: &str = "presentation.manuscripts.v1";
 pub const MAX_MANUSCRIPT_PAGE_SIZE: usize = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ManuscriptEntryKind {
     Section,
@@ -145,9 +147,13 @@ pub struct ManuscriptIndex {
     source_bytes: Vec<u8>,
     source_document: Option<Value>,
     chapter_order: Vec<(usize, Vec<String>)>,
+    original_parents: Vec<Option<String>>,
+    original_parent_valid: Vec<bool>,
+    original_id_counts: std::collections::BTreeMap<String, usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManuscriptEntryDraft {
     pub id: String,
     pub kind: ManuscriptEntryKind,
@@ -160,7 +166,8 @@ pub struct ManuscriptEntryDraft {
     pub target_ref: Option<TargetRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ManuscriptDraft {
     pub id: String,
     pub title: String,
