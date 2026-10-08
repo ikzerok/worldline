@@ -4,6 +4,9 @@ use super::*;
 
 #[test]
 fn recoverable_save_replays_all_document_kinds_after_a_replacement_failure() {
+    if save_failure_process::parent_completed() {
+        return;
+    }
     let temp = Temp::new();
     let root = temp.0.join("world");
     fs::create_dir_all(root.join(".world/maps")).unwrap();
@@ -54,6 +57,9 @@ fn recoverable_save_replays_all_document_kinds_after_a_replacement_failure() {
 
 #[test]
 fn recovery_keeps_third_party_values_and_blocks_export_until_resolved() {
+    if save_failure_process::parent_completed() {
+        return;
+    }
     let temp = Temp::new();
     let root = temp.0.join("world");
     fs::create_dir_all(root.join(".world/maps")).unwrap();
@@ -93,6 +99,9 @@ fn recovery_keeps_third_party_values_and_blocks_export_until_resolved() {
 
 #[test]
 fn every_save_failure_stage_leaves_a_recoverable_transaction() {
+    if save_failure_process::parent_completed() {
+        return;
+    }
     for phase in [
         "prepare", "temp", "first", "middle", "last", "commit", "cleanup",
     ] {
@@ -225,6 +234,9 @@ fn recovery_distinguishes_missing_from_empty_files() {
 
 #[test]
 fn refresh_reconciles_a_journal_recovered_in_the_same_project() {
+    if save_failure_process::parent_completed() {
+        return;
+    }
     let temp = Temp::new();
     let root = temp.0.join("world");
     fs::create_dir_all(&root).unwrap();
@@ -306,6 +318,7 @@ impl Drop for SaveFailureGuard {
 }
 
 fn set_save_failure(phase: &str) -> SaveFailureGuard {
+    save_failure_process::assert_child();
     let lock = SAVE_FAILURE_LOCK.get_or_init(|| Mutex::new(()));
     let guard = lock.lock().unwrap();
     std::env::set_var("WORLDLINE_SAVE_FAIL_PHASE", phase);
@@ -314,4 +327,65 @@ fn set_save_failure(phase: &str) -> SaveFailureGuard {
         format!("{:?}", std::thread::current().id()),
     );
     SaveFailureGuard { _lock: guard }
+}
+
+mod save_failure_process {
+    use std::{env, process::Command};
+
+    const CHILD: &str = "WORLDLINE_TEST_SAVE_RECOVERY_CHILD";
+    const PHASE: &str = "WORLDLINE_SAVE_FAIL_PHASE";
+    const THREAD: &str = "WORLDLINE_SAVE_FAIL_THREAD";
+
+    // 故障变量属于整个进程；只覆盖注入者的锁不能隔离其它并行保存测试。
+    // 父测试继续并行，只有当前故障测试在独立进程内执行全部原断言。
+    pub(super) fn parent_completed() -> bool {
+        if env::var_os(CHILD).is_some() {
+            assert_child();
+            return false;
+        }
+        let thread = std::thread::current();
+        let name = thread.name().expect("故障注入只能从具名测试调用");
+        assert!(name.starts_with("recovery::"));
+        let before = [env::var_os(PHASE), env::var_os(THREAD)];
+        let output = Command::new(env::current_exe().unwrap())
+            .args([
+                "--exact",
+                name,
+                "--format",
+                "pretty",
+                "--color",
+                "never",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CHILD, format!("{}:{name}", std::process::id()))
+            .env_remove(PHASE)
+            .env_remove(THREAD)
+            .output()
+            .unwrap();
+        assert_eq!(before, [env::var_os(PHASE), env::var_os(THREAD)]);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "独立故障测试 {name} 失败：{}\n{stdout}\n{stderr}",
+            output.status
+        );
+        let completed = format!("test {name} ... ok");
+        assert!(
+            stdout.lines().any(|line| line == completed)
+                && stdout.lines().any(|line| {
+                    line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;")
+                }),
+            "必须实际执行唯一目标测试，不能将零匹配或忽略当作成功：\n{stdout}"
+        );
+        true
+    }
+
+    pub(super) fn assert_child() {
+        let marker = env::var(CHILD).expect("保存故障注入必须先隔离到独立测试进程");
+        let (parent, name) = marker.split_once(':').unwrap();
+        assert_ne!(parent.parse::<u32>().unwrap(), std::process::id());
+        assert_eq!(std::thread::current().name(), Some(name));
+    }
 }
