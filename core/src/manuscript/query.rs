@@ -1,5 +1,6 @@
 //! 不可变、全书筛选后分页的只读查询；不授权任何导航或提交。
 mod build;
+mod content;
 #[cfg(test)]
 mod draft_tests;
 mod hierarchy;
@@ -92,6 +93,13 @@ pub enum ManuscriptQuerySource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ManuscriptQueryWritingInput {
+    pub file: String,
+    pub generation: u64,
+    pub source_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ManuscriptSectionPath {
     pub id: String,
     pub title: String,
@@ -168,6 +176,11 @@ struct SearchBook {
 #[derive(Debug, Clone)]
 pub struct ManuscriptQuerySnapshot {
     key: String,
+    pub(super) input_key: String,
+    pub(super) content: content::QueryContent,
+    pub(super) unique_writing_paths: bool,
+    pub(super) writing_inputs: Vec<ManuscriptQueryWritingInput>,
+    pub(super) fresh_observation: Result<String, String>,
     indices: BTreeMap<String, ManuscriptIndex>,
     applied_indices: BTreeMap<String, ManuscriptIndex>,
     books: BTreeMap<String, SearchBook>,

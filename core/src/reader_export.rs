@@ -8,6 +8,8 @@ mod maps;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 mod native_rename;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use native_rename::rename_new;
 mod paths;
 pub(crate) mod plan;
 mod profile;

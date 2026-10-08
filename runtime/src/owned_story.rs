@@ -149,6 +149,16 @@ impl OwnedStory {
         self.0
             .with_dependent_mut(|_, story| story.continue_story_bounded(budget, cancellation))
     }
+    pub(crate) fn continue_draft_bounded(
+        &mut self,
+        budget: ReplayBudget,
+        cancellation: &ReplayCancellation,
+        limits: &mut crate::draft_rehearsal::DraftRehearsalLimits,
+    ) -> Result<BoundedContinuation, RunError> {
+        self.0.with_dependent_mut(|_, story| {
+            story.continue_draft_bounded(budget, cancellation, limits)
+        })
+    }
     pub fn start_trace_from_here(&mut self) -> Result<(), RunError> {
         self.0
             .with_dependent_mut(|_, story| story.start_trace_from_here())

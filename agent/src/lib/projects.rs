@@ -29,6 +29,7 @@ impl Server {
                 entry,
                 scene_revision: Default::default(),
                 problems_report: None,
+                reconciliation: Default::default(),
             },
         );
         Ok(response)

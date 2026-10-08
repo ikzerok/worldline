@@ -13,6 +13,9 @@ impl Project {
     ) -> Result<ManuscriptQuerySnapshot, ManuscriptQueryError> {
         let baseline = self.content_baseline();
         let key = self.manuscript_query_key(buffers, drafts);
+        let observed_before = self
+            .problems_observation_key()
+            .map_err(|error| error.to_string());
         let mut candidate = self.clone();
         let mut writing_paths = BTreeMap::new();
         for buffer in buffers.iter().filter(|buffer| buffer.is_changed()) {
@@ -148,7 +151,11 @@ impl Project {
             .map(|(id, index)| (id.clone(), hierarchy::build_book(index, &displays)))
             .collect();
         let mut diagnostics = self.authoring_diagnostics().to_vec();
-        for diagnostic in registry.diagnostics.into_iter().chain(content.diagnostics) {
+        for diagnostic in registry
+            .diagnostics
+            .into_iter()
+            .chain(content.diagnostics.iter().cloned())
+        {
             if !diagnostics.iter().any(|old| {
                 old.code == diagnostic.code
                     && old.file == diagnostic.file
@@ -173,12 +180,29 @@ impl Project {
                 "工程仍有保存恢复冲突，查询只表示当前已载入缓冲",
             ));
         }
+        let observed_after = self
+            .problems_observation_key()
+            .map_err(|error| error.to_string());
+        let fresh_observation = match (observed_before, observed_after) {
+            (Ok(before), Ok(after)) if before == after => Ok(after),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            _ => Err("生成查询时外部库存或可读性变化，请刷新并重新生成".into()),
+        };
+        if let Err(error) = &fresh_observation {
+            diagnostics.push(Diagnostic::error(
+                "MAN004",
+                &self.entry.to_string_lossy(),
+                crate::Span::new(1, 1, 1),
+                format!("审稿外部观察未确认完整：{error}"),
+            ));
+        }
         let complete = diagnostics
             .iter()
             .all(|diagnostic| diagnostic.severity != crate::Severity::Error);
         // 缓存失效key只读Project观测；游标还绑定本次真正生成的诊断、来源和附件状态。
         let mut snapshot_key = super::key::Key::new("worldline-manuscript-snapshot-v2");
         snapshot_key.bytes(key.as_bytes());
+        snapshot_key.bytes(&serde_json::to_vec(&fresh_observation).expect("只读观察可序列化"));
         snapshot_key.bytes(&serde_json::to_vec(&diagnostics).expect("诊断可序列化"));
         snapshot_key
             .bytes(&serde_json::to_vec(&content.analysis.catalog.assets).expect("附件可序列化"));
@@ -189,8 +213,32 @@ impl Project {
                     .expect("章节投影可序列化"),
             );
         }
+        let mut writing_inputs: Vec<_> = buffers
+            .iter()
+            .filter(|buffer| buffer.is_changed())
+            .map(|buffer| ManuscriptQueryWritingInput {
+                file: buffer
+                    .path()
+                    .strip_prefix(&self.root)
+                    .unwrap_or(buffer.path())
+                    .to_string_lossy()
+                    .into_owned(),
+                generation: buffer.generation(),
+                source_bytes: buffer.source().len(),
+            })
+            .collect();
+        writing_inputs.sort_by(|left, right| left.file.cmp(&right.file));
         Ok(ManuscriptQuerySnapshot {
             key: snapshot_key.finish(),
+            input_key: self.manuscript_query_key_refs(
+                buffers.iter().filter(|buffer| buffer.is_changed()),
+                drafts,
+            ),
+            content: super::content::QueryContent(std::sync::Arc::new(content)),
+            unique_writing_paths: writing_paths.len()
+                == buffers.iter().filter(|buffer| buffer.is_changed()).count(),
+            writing_inputs,
+            fresh_observation,
             indices,
             applied_indices,
             books,

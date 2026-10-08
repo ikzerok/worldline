@@ -273,7 +273,8 @@ impl BufRead for MutatingReader {
     fn consume(&mut self, n: usize) {
         self.inner.consume(n);
     }
-    fn read_line(&mut self, buffer: &mut String) -> std::io::Result<usize> {
+    fn read_until(&mut self, delimiter: u8, buffer: &mut Vec<u8>) -> std::io::Result<usize> {
+        // stdio现按原始字节分帧；外改仍发生在第二条请求实际读取之前。
         if self.line == 1 {
             std::fs::write(
                 &self.path,
@@ -281,7 +282,7 @@ impl BufRead for MutatingReader {
             )?;
         }
         self.line += 1;
-        self.inner.read_line(buffer)
+        self.inner.read_until(delimiter, buffer)
     }
 }
 #[test]

@@ -358,7 +358,14 @@ stdio 收发**行分帧 JSON-RPC 2.0**,驱动 编译 → 检查 → 试玩 → �
 
 ### 3.1 分帧与处理模型
 
-- 每行一个 JSON 消息;空行忽略;以 EOF 或 `shutdown` 结束,退出码 0。
+- 每行一个 UTF-8 JSON 消息；空行忽略；正常 EOF 或 `shutdown` 结束，退出码 0。
+- 工具0.32起按原始字节读取完整行，再验证UTF-8。无效UTF-8单行返回
+  `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,…}}`，不解释该行、不执行其中
+  任何方法、不推进既有Project或Story；随后继续消费下一合法行。错误响应不回显坏字节。
+- 真正的底层读取IO错误不能当作EOF，终止并返回退出码2；Interrupted按原行继续重试。
+  对端关闭输出导致writer写入失败时，沿用正常结束/退出码0的既有行为。
+- 以上修复仅改变分帧错误处理；原有各方法DTO/结果预算保持，不新增或扩大stdio全局
+  行大小预算承诺，也不把方法级预算冒充读取整行之前的配额。
 - **单线程顺序处理**:上一请求响应完成后才处理下一请求;无并发交错。
 - `id` 必须回显;通知(无 id)不响应。
 - stdout 上只写协议消息;日志一律走 stderr(当前实现不主动输出日志)。
@@ -890,3 +897,35 @@ checkpoint、Story Save、state_view及旧方法的fingerprint编码不变。
 CLI普通或JSON试玩在等待选择输入时接收 `inspect` 或 `inspect {query JSON}`，只输出
 状态检查结果并继续等待同一选择，不执行continue/choose。首次/上一基线仅来自真实
 已记录观测，缺失和省略不能补0/false/空值，声明定位不能冒称最后写入的原因。
+
+## 工具 0.32：同一稿的协调、试演、审稿与巡检
+
+协议仍为1；新增以下能力和入口，不改变旧方法形状，不自动升级作品语言或schema。
+
+| 能力 | RPC | CLI | 真源契约 |
+|---|---|---|---|
+| `authoring.workspace_reconciliation.v1` | `reconciliation.capture/preview/apply` | `wl reconciliation capture/preview/apply/save` | [普通外改](workspace-reconciliation.md) |
+| `authoring.draft_rehearsal.v1` | `project.draft_rehearsal` | `wl draft-rehearsal` | [隔离草稿试演](draft-rehearsal.md) |
+| `authoring.manuscript_delivery.v1` | `manuscript.delivery` | `wl manuscript-delivery` | [同范围作者审稿本](manuscript-delivery.md) |
+| `catalog.scope.v1` | `catalog.scope` | `wl catalog-scope` | [查询范围巡检](catalog-scope.md) |
+
+外改 RPC 只操作已打开 Project，capture/preview 不采纳，apply 只采纳内存；下一次明确
+`project.save` 仍独立校验外改。CLI需要明确真实旧基线和本地字节材料；apply的短命内存
+不能当作编辑器已改，独立save重建同一计划并核摘要。`null`缺失与空字节数组不同。
+候选完整序列化预算在采纳前检查，不能在写入之后才发现响应过大并伪称零修改。
+
+草稿试演使用明确的正文覆盖、完整当前基线、文件代次和真实选择ID；不会从另一进程
+提取编辑器输入。CLI支持有界请求文件或内联JSON二选一。结果中的实际输出、状态和
+条件来自独立真实运行，不产生正式轨迹、存档或检查点，亦不修改普通运行会话。
+
+书稿交付输入包含同一书稿查询及可选稳定章ID；保留全部匹配出现和重复正文、错误及
+不完整边界。RPC只返回报告和同一core Markdown；CLI仅显式`--output`导出工作区外的
+全新`.md`。这份作者材料不经过读者白名单，不应作为公开阅读包。
+
+查询巡检的RPC接受`path`与`project_id`二选一；只读路径不恢复事务。完整typed范围、
+当前页和可选正式关系都来自一次不可变快照；外部消费者须核来源身份，不得与新稿拼接。
+
+四个入口拒绝未知字段、重复键和非法形状。参数错误走JSON-RPC error，合法请求的
+过期、预算、保护和编译失败走`ok:false`。各能力的输入、结果、完整外壳与换行预算
+不同，以链接契约为准；新适配器的编码预算不声称改变既有stdio首次读行/JSON解析器
+的全局资源边界。CLI还受宿主命令行长度限制，大正文试演宜使用`--request`文件。

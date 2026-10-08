@@ -17,6 +17,7 @@ pub const SAVED_QUERY_REQUIRED_FEATURE: &str = "catalog.saved_queries.v1";
 mod filters;
 mod pagination;
 mod saved;
+pub(crate) mod snapshot;
 mod sorting;
 mod todos;
 
@@ -28,6 +29,10 @@ pub use pagination::{
     CatalogQueryCursor, CatalogQueryMatch, CatalogQueryOptions, CatalogQueryPage, QuerySource,
 };
 pub use saved::{SavedQueryDocument, SavedQueryDraft, SavedQueryIndex};
+pub use snapshot::{
+    CatalogQuerySnapshot, CatalogScopeDiagnostic, CatalogSnapshotPage, MAX_CATALOG_SNAPSHOT_BYTES,
+    MAX_CATALOG_SNAPSHOT_DIAGNOSTICS,
+};
 pub use sorting::{CatalogQuerySort, CatalogSortDirection, CatalogSortField};
 pub use todos::{TodoItem, TodoKind, TodoProjection};
 
