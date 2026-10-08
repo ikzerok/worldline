@@ -31,6 +31,27 @@ fn manuscript_query_metadata_refresh_invalidates_cache_without_breaking_noop_or_
     let baseline = project.content_baseline();
     let undo_generation = project.search_refresh_generation();
     let independent_previous = Project::open_read_only(&project.root).unwrap();
+    assert_eq!(independent_previous.content_baseline(), baseline);
+    assert_eq!(
+        independent_previous.language_version(),
+        project.language_version()
+    );
+    assert_eq!(
+        independent_previous.source_selection(),
+        project.source_selection()
+    );
+    assert_eq!(
+        serde_json::to_value(independent_previous.authoring_diagnostics()).unwrap(),
+        serde_json::to_value(project.authoring_diagnostics()).unwrap(),
+    );
+    let readonly = |project: &Project| {
+        project
+            .authoring_documents
+            .iter()
+            .map(|(path, document)| (path.clone(), document.is_read_only()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    assert_eq!(readonly(&independent_previous), readonly(&project));
     let staged_candidate = project.clone();
     let before_key = project.manuscript_query_key(&[], &[]);
     let before = project.manuscript_query_snapshot(&[], &[]).unwrap();
@@ -90,6 +111,25 @@ fn manuscript_query_metadata_refresh_invalidates_cache_without_breaking_noop_or_
     assert!(project.restore(staged_candidate));
     assert_eq!(project.manuscript_observation_key(), current_observation);
     std::fs::remove_dir_all(&project.root).unwrap();
+}
+
+#[test]
+fn manuscript_query_key_keeps_equivalent_tracked_path_spelling() {
+    let project = fixture(vec![chapter("one", None)]);
+    let mut equivalent = project.clone();
+    let path = project.root.join(".world/manuscripts/novel.json");
+    let alias = project.root.join(".world//manuscripts/./novel.json");
+    assert_eq!(path, alias);
+    assert_ne!(
+        path.as_os_str().as_encoded_bytes(),
+        alias.as_os_str().as_encoded_bytes()
+    );
+    let document = equivalent.authoring_documents.remove(&path).unwrap();
+    equivalent.authoring_documents.insert(alias, document);
+    assert_eq!(
+        equivalent.manuscript_query_key(&[], &[]),
+        project.manuscript_query_key(&[], &[]),
+    );
 }
 
 #[test]

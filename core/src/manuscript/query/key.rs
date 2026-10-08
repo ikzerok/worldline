@@ -1,7 +1,7 @@
 use super::ManuscriptQueryDraft;
 use crate::manuscript::WritingBuffer;
 use crate::project::Project;
-use std::path::Path;
+use std::path::{Component, Path, Prefix};
 
 impl Project {
     /// 所有已载入依赖及全部草稿的只读指纹；不访问磁盘或重新编译。
@@ -128,9 +128,144 @@ impl Key {
         }
     }
     fn path(&mut self, path: &Path) {
-        self.bytes(path.as_os_str().as_encoded_bytes());
+        // 与文档映射的本机路径分量一致；不能为每帧 key 调用 canonicalize。
+        // 数量和逐项长度共同分隔路径，保留父目录分量和非 Windows 的字面反斜线。
+        self.bytes(&(path.components().count() as u64).to_le_bytes());
+        for component in path.components() {
+            match component {
+                Component::Prefix(prefix) => {
+                    self.bytes(b"prefix");
+                    self.prefix(prefix.kind());
+                }
+                Component::RootDir => self.bytes(b"root"),
+                Component::CurDir => self.bytes(b"current"),
+                Component::ParentDir => self.bytes(b"parent"),
+                Component::Normal(value) => {
+                    self.bytes(b"normal");
+                    self.bytes(value.as_encoded_bytes());
+                }
+            }
+        }
+    }
+    fn prefix(&mut self, prefix: Prefix<'_>) {
+        // UNC 的原始前缀也可能使用混合分隔符；按解析后的种类和原始名字编码。
+        match prefix {
+            Prefix::Disk(drive) => self.bytes(&[0, drive]),
+            Prefix::VerbatimDisk(drive) => self.bytes(&[1, drive]),
+            Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+                let kind = if matches!(prefix, Prefix::UNC(..)) {
+                    2
+                } else {
+                    3
+                };
+                self.bytes(&[kind]);
+                self.bytes(server.as_encoded_bytes());
+                self.bytes(share.as_encoded_bytes());
+            }
+            Prefix::DeviceNS(value) | Prefix::Verbatim(value) => {
+                let kind = if matches!(prefix, Prefix::DeviceNS(..)) {
+                    4
+                } else {
+                    5
+                };
+                self.bytes(&[kind]);
+                self.bytes(value.as_encoded_bytes());
+            }
+        }
     }
     pub(super) fn finish(self) -> String {
         format!("{:016x}{:016x}", self.first, self.second)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path_key(path: impl AsRef<Path>) -> String {
+        let mut key = Key::new("query-path-test");
+        key.path(path.as_ref());
+        key.finish()
+    }
+
+    #[test]
+    fn query_key_path_preserves_component_identity_and_boundaries() {
+        for (left, right) in [
+            (
+                "work/.world/manuscripts/book.json",
+                "work//.world/./manuscripts/book.json",
+            ),
+            ("work/.world/", "work/.world"),
+        ] {
+            assert_eq!(Path::new(left), Path::new(right));
+            assert_ne!(left.as_bytes(), right.as_bytes());
+            assert_eq!(path_key(left), path_key(right));
+        }
+        for (left, right) in [
+            ("work/ab/c", "work/a/bc"),
+            ("work/a/../b", "work/b"),
+            ("work/a", "/work/a"),
+            ("", "."),
+        ] {
+            assert_ne!(Path::new(left), Path::new(right));
+            assert_ne!(path_key(left), path_key(right));
+        }
+    }
+
+    #[test]
+    fn query_key_path_obeys_native_separator_semantics() {
+        let portable = "work/.world/manuscripts/book.json";
+        let native = r"work\.world\manuscripts\book.json";
+        if cfg!(windows) {
+            assert_eq!(Path::new(portable), Path::new(native));
+            assert_eq!(path_key(portable), path_key(native));
+        } else {
+            assert_ne!(Path::new(portable), Path::new(native));
+            assert_ne!(path_key(portable), path_key(native));
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn query_key_path_keeps_non_utf8_components() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let left = Path::new(OsStr::from_bytes(b"work/\xff/book.json"));
+        let equal = Path::new(OsStr::from_bytes(b"work//\xff/./book.json"));
+        let distinct = Path::new(OsStr::from_bytes(b"work/\xfe/book.json"));
+        assert_eq!(left, equal);
+        assert_eq!(path_key(left), path_key(equal));
+        assert_ne!(left, distinct);
+        assert_ne!(path_key(left), path_key(distinct));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn query_key_path_windows_prefixes_keep_identity() {
+        for (left, right) in [
+            (r"C:\work\.world/book.json", "C:/work/.world/book.json"),
+            (
+                r"\\server\share\work/book.json",
+                "//server/share/work/book.json",
+            ),
+        ] {
+            assert_eq!(Path::new(left), Path::new(right));
+            assert_eq!(path_key(left), path_key(right));
+        }
+        for (left, right) in [
+            (r"C:\work\book.json", r"D:\work\book.json"),
+            (r"C:work\book.json", r"C:\work\book.json"),
+            (r"C:\work\book.json", r"\\?\C:\work\book.json"),
+            (r"\\server\share\book.json", r"\\server\other\book.json"),
+            (
+                r"\\server\share\book.json",
+                r"\\?\UNC\server\share\book.json",
+            ),
+            (r"\\.\device\book.json", r"\\?\device\book.json"),
+        ] {
+            assert_ne!(Path::new(left), Path::new(right));
+            assert_ne!(path_key(left), path_key(right));
+        }
     }
 }
