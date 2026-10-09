@@ -15,7 +15,11 @@
 多个章节共享同一 WritingBuffer，
 不会按章节重复覆盖。路径别名、非活动源、删除源和工作区外文件均拒绝。
 
-Rust 的 `DraftRehearsalRequest::from_writing_buffers` 从现有缓冲捕获这些字段；
+Rust 的 `Project::open_source_writing_buffer` 先按工作区边界解析输入路径，返回的
+WritingBuffer 保存 Project 已载入的规范路径身份；桌面目录别名或相对路径拼写不会
+成为另一份草稿身份。这不允许遍历工作区中的链接、不接管未载入文件，也不放宽
+上述相对 DTO 对路径别名、非活动源、删除源或越界文件的拒绝。
+`DraftRehearsalRequest::from_writing_buffers` 从现有缓冲捕获这些字段；
 机器接口消费同一 DTO。反序列化不是写入授权。`excluded_inputs` 的 `kind` 与
 `source` 仅解释宿主未提交的表单，不送入编译器；宿主负责列全实际未提交输入。
 已登记书稿的排序和正文引用不成为执行入口。待新建事件、表单、导入候选、

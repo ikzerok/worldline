@@ -32,7 +32,7 @@ impl Workspace {
             fs::write(root.join(".world/project.json"), manifest).unwrap();
         }
         let project = Project::open(&root).unwrap();
-        (Self(root), project)
+        (Self(project.root.clone()), project)
     }
 }
 impl Drop for Workspace {

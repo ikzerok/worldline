@@ -27,7 +27,10 @@ fn fixture() -> Fixture {
     .unwrap();
     fs::write(root.join(".world/project.json"), br#"{"schema_version":1,"language_version":"1.13","required_features":["content.localization.v1"]}"#).unwrap();
     let project = Project::open(&root).unwrap();
-    Fixture { root, project }
+    Fixture {
+        root: project.root.clone(),
+        project,
+    }
 }
 
 #[test]
@@ -168,7 +171,7 @@ fn clone_preflight_counts_saved_and_deleted_payload_before_any_compilation() {
     project
         .set_text(&project.entry.clone(), "X".into())
         .unwrap();
-    let bytes = root.as_os_str().as_encoded_bytes().len()
+    let bytes = project.root.as_os_str().as_encoded_bytes().len()
         + project.entry.as_os_str().as_encoded_bytes().len() * 2
         + original
         + 1;

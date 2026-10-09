@@ -48,7 +48,10 @@ pub fn fixture(name: &str, source: &str, ids: &[&str]) -> Fixture {
     )
     .unwrap();
     let project = Project::open(&root).unwrap();
-    let mut fixture = Fixture { root, project };
+    let mut fixture = Fixture {
+        root: project.root.clone(),
+        project,
+    };
     let compiled = fixture.project.compile();
     assert!(!compiled.has_errors(), "{:?}", compiled.diagnostics);
     if !ids.is_empty() {
@@ -58,6 +61,10 @@ pub fn fixture(name: &str, source: &str, ids: &[&str]) -> Fixture {
 }
 
 impl Fixture {
+    pub fn path(&self, relative: &str) -> PathBuf {
+        worldline_core::file_access::within(&self.root, &self.root.join(relative)).unwrap()
+    }
+
     pub fn populate(&mut self, ids: &[&str]) {
         let selection = LocalizationSelection {
             schema_version: 1,

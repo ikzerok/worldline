@@ -19,6 +19,7 @@ mod writing_authoring {
     use super::*;
     mod guards;
     mod migration;
+    mod paths;
 }
 
 const SOURCE: &str = "event start\n  你看见林😀。\n  -> END\n";
@@ -44,7 +45,7 @@ impl Workspace {
             fs::write(root.join(".world/project.json"), manifest).unwrap();
         }
         let project = Project::open(&root).unwrap();
-        (Self(root), project)
+        (Self(project.root.clone()), project)
     }
 
     fn bytes(&self) -> BTreeMap<PathBuf, Vec<u8>> {

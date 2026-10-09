@@ -1,5 +1,5 @@
 use super::*;
-use std::fs;
+use std::{fs, path::Path};
 use worldline_core::{
     ast::Stmt,
     evidence_source::{
@@ -76,11 +76,7 @@ fn included_text_say_choice_scene_and_fragment_share_real_relative_link_targets(
     let original = source.continue_story().unwrap();
     let translated = localized.continue_story().unwrap();
     assert_eq!(source.state_view(), localized.state_view());
-    let target = f
-        .root
-        .join("chapters/target.wl")
-        .to_string_lossy()
-        .into_owned();
+    let target = f.path("chapters/target.wl").to_string_lossy().into_owned();
     for (before, after) in original.iter().zip(&translated) {
         let (
             Output::Text { links: before, .. },
@@ -122,31 +118,28 @@ fn included_text_say_choice_scene_and_fragment_share_real_relative_link_targets(
     else {
         panic!("fragment translation")
     };
-    let target = f
-        .root
-        .join("fragments/target.wl")
-        .to_string_lossy()
-        .into_owned();
+    let target = f.path("fragments/target.wl").to_string_lossy().into_owned();
     assert_eq!(before[0].target.id, target);
     assert_eq!(after[0].target.id, target);
     assert_eq!(meta.source.file, "fragments/lines.wl");
     assert_eq!(source.state_view(), localized.state_view());
     for link in &c.analysis.catalog.text_links {
-        let expected = if link.file.ends_with("chapters/body.wl") {
+        let expected = if Path::new(&link.file) == f.path("chapters/body.wl") {
             "chapters/target.wl"
         } else {
+            assert_eq!(Path::new(&link.file), f.path("fragments/lines.wl"));
             "fragments/target.wl"
         };
-        assert_eq!(link.target.id, f.root.join(expected).to_string_lossy());
+        assert_eq!(link.target.id, f.path(expected).to_string_lossy());
     }
     let Stmt::Scene(scene) = &c.program.events[0].body[0] else {
         panic!("scene")
     };
     let index = RuntimeOutputSourceIndex::new(&c.program);
-    assert!(index
-        .get(&scene.body[0])
-        .unwrap()
-        .ends_with("chapters/body.wl"));
+    assert_eq!(
+        index.get(&scene.body[0]).unwrap(),
+        f.path("chapters/body.wl").to_string_lossy()
+    );
     assert!(
         index.get(&scene.body[0].clone()).is_none(),
         "cloned statements cannot reuse pointer identity"
@@ -174,9 +167,11 @@ fn included_link_diagnostics_use_actual_file_and_do_not_accept_a_root_namesake()
         .expect("child-relative missing target");
     assert_eq!(
         diagnostic.file,
-        f.root.join("chapters/body.wl").to_string_lossy()
+        f.path("chapters/body.wl").to_string_lossy()
     );
-    assert!(diagnostic.message.contains("chapters/absent.wl"));
+    assert!(diagnostic
+        .message
+        .contains(f.path("chapters/absent.wl").to_string_lossy().as_ref()));
     assert!(c.has_errors());
     assert!(f
         .project
@@ -299,17 +294,17 @@ fn included_choice_evidence_roundtrips_scalar_batch_and_report_in_events_scenes_
                 .source
                 .as_ref()
                 .expect("actual choice source");
-            assert_eq!(source.file, f.root.join(file).to_string_lossy());
+            assert_eq!(source.file, f.path(file).to_string_lossy());
             assert_eq!(source.line, 1);
             assert_eq!(
                 source.owner,
                 EvidenceSourceOwner::Choice { node: node.into() }
             );
             let target = resolve_evidence_source(&c, source).unwrap();
-            assert_eq!(target.path, f.root.join(file));
+            assert_eq!(target.path, f.path(file));
             assert!(c.sources[&target.path][target.range.clone()].starts_with("choice \""));
             let mut wrong_file_source = source.clone();
-            wrong_file_source.file = f.root.join(wrong_file).to_string_lossy().into_owned();
+            wrong_file_source.file = f.path(wrong_file).to_string_lossy().into_owned();
             let mut wrong_node_source = source.clone();
             wrong_node_source.owner = EvidenceSourceOwner::Choice {
                 node: wrong_node.into(),
@@ -362,7 +357,7 @@ fn included_choice_evidence_roundtrips_scalar_batch_and_report_in_events_scenes_
             assert_eq!(position.file, file);
             assert_eq!(position.line, 1);
             let source = EvidenceSource {
-                file: f.root.join(&position.file).to_string_lossy().into_owned(),
+                file: f.path(&position.file).to_string_lossy().into_owned(),
                 line: position.line,
                 owner: EvidenceSourceOwner::Choice {
                     node: choice.node.clone(),
@@ -371,7 +366,7 @@ fn included_choice_evidence_roundtrips_scalar_batch_and_report_in_events_scenes_
             assert_eq!(choice.node, node);
             assert_eq!(
                 resolve_evidence_source(&c, &source).unwrap().path,
-                f.root.join(file)
+                f.path(file)
             );
         }
     }
@@ -489,7 +484,7 @@ fn ambiguous_choice_origins_remain_playable_but_evidence_and_report_never_guess(
         .iter()
         .all(|choice| choice.source.is_none()));
     let guesses = ["a.wl", "b.wl", "world.wl"].map(|file| EvidenceSource {
-        file: f.root.join(file).to_string_lossy().into_owned(),
+        file: f.path(file).to_string_lossy().into_owned(),
         line: 1,
         owner: EvidenceSourceOwner::Choice {
             node: "start".into(),

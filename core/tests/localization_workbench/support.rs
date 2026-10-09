@@ -56,7 +56,10 @@ pub fn fixture(name: &str, source: &str, sidecar: Option<serde_json::Value>) -> 
     )
     .unwrap();
     let project = Project::open(&root).unwrap();
-    Fixture { root, project }
+    Fixture {
+        root: project.root.clone(),
+        project,
+    }
 }
 
 pub fn sidecar(entries: serde_json::Value) -> serde_json::Value {
