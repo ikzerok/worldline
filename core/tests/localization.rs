@@ -1,3 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "localization/save_refresh_history.rs"]
+mod save_refresh_history;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
