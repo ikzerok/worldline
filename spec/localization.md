@@ -1,7 +1,7 @@
 # 本地化字符串交换
 
 **版本：**1（`content.localization.v1`）  
-**状态：**CAP-09B 批准范围 A。此契约交换作者明确选择的台词/选择译文，不提供 runtime locale、自动回退、机器翻译或引擎适配。
+**状态：**工具 0.33 在既有明确选择交换之上增加译文制作、状态巡检与只读 locale 展示快照。机器翻译、网络上传、引擎适配及独立可玩发布不在此契约内。
 
 ## 1. 身份与源码注记
 
@@ -76,7 +76,7 @@ UTF-8 JSON 交换文件版本为 `1`，未知字段和重复 JSON 对象键均�
 }
 ```
 
-非空 `localizations` 必须声明 `content.localization.v1`；路径须工作区内、`.json` 扩展名，且不得与清单或其他注册文档共用。首次导入使用 `.world/localization/<target_locale>.json`；已登记 locale 沿用清单原路径。sidecar schema 为 `1`，包含 `required_features`、`source_locale`、`target_locale` 及按 ID 索引的 `entries`；每项持久化 `source_revision` 与 `translation_parts`。它是作者文件，进入 Project content baseline 与工程备份，但不参与运行 fingerprint，也不由 runtime 读取。未知格式/能力遵守 Project 注册文档的只读保护。
+非空 `localizations` 必须声明 `content.localization.v1`；路径须工作区内、`.json` 扩展名，且不得与清单或其他注册文档共用。首次导入使用 `.world/localization/<target_locale>.json`；已登记 locale 沿用清单原路径。sidecar schema 为 `1`，包含 `required_features`、`source_locale`、`target_locale` 及按 ID 索引的 `entries`；每项持久化 `source_revision` 与 `translation_parts`。它是作者文件，进入 Project content baseline 与工程备份，但不参与运行 fingerprint。runtime 不直接读取 sidecar；工具 0.33 只接收 core 从当前已应用 Project 缓冲验证并冻结的展示快照（§7）。未知格式/能力遵守 Project 注册文档的只读保护。
 
 ## 5. Project / CLI / RPC seams
 
@@ -97,3 +97,132 @@ CLI 与 JSON-RPC 只解码、传入同一 core DTO、序列化 core plan/result�
 计划重建、只读保护和 locale sidecar 原子应用，旧稳定 ID 不随正文移动自动改变。
 
 静态人物引用的 `content.character_refs.v1` 能力开启时纳入本地化 source_baseline，能力变更使旧交换包过期；缺少该新能力时保留原baseline字节编码，不为旧工程添加恒false字段。该检查不改变runtime fingerprint。
+
+## 6. 工具 0.33 译文制作与状态巡检
+
+### 6.1 目录、状态与有界查询
+
+`Project::query_localization_catalog` 只读当前已应用的活动源码缓冲和选定 locale 的
+注册文档；不读取未应用的正文 WritingBuffer，不保存、不刷新、不沿引用扩大范围。
+尚未启用本地化的合法作品仍可查看可翻译单元，写入须先经既有能力预览显式启用
+`content.localization.v1`；不自动创建清单、提升语言版本或生成 ID。
+
+目录包含正文、say 正文、choice 标签及 fragment 中同类声明，每个 AST 声明只计一次。
+沿用工作区同一物理文件只合并一次的 include 规则，重复 include 不生成新的译文单位或 ID patch；
+fragment call 也不展开。不同物理文件中相同文字仍是不同来源，不按文字内容合并。
+来源从正式 parser 的 statement provenance 取得，不能拿 event/fragment 声明文件猜
+include 片段实际来源；同一根声明下同位置/种类跨 include 来源有歧义时整次返回
+`INVALID_SOURCE`，不提供伪精确导航或 ID 修改。
+每项含相对来源 `file/line/kind`、临时定位键、可空稳定 ID、源修订、源 typed parts、
+可空译文 typed parts、目标 sidecar 路径/JSON Pointer 与派生状态。临时定位键只在当前
+源码快照有效，不是持久字符串身份。source parts 继续隐藏表达式及链接目标；此目录
+是作者查询，不会自动扩大译者交换的明确 ID 白名单。
+
+状态由 core 唯一计算，按下列优先级归类：`missing_id`、`duplicate_id`、
+`invalid_translation`（含坏 locale 文档/坏条目结构或受保护 token 失配）、
+`stale_source`、`missing_translation`、`translated`。选定 locale 中没有任何当前源
+ID 的旧条目另列 `orphan_translation`；不会自动删除或猜测新身份。源修订不匹配
+不能通过人工“完成”标志消除。只读属性与状态正交，未知格式按原字节保留。
+目录 `read_only` 表示此 locale 的 typed 操作是否可写；坏 JSON/重复键或无效文档头也
+将它设为 true，不能安全合并译文。Project 既有原始字节修复入口不因此被锁死。
+
+查询接受可选 locale、相对来源前缀、kind、精确 ID 白名单、大小写保留的文字查询、至多 7 项且不重复的状态集合及 offset/limit。
+core 按来源路径、行、kind、ID 稳定排序，孤立译文在源条目后按 ID 排序；返回匹配
+范围内准确 `total`、全目录 `all_total` 和状态计数、当前 `content_baseline/source_baseline`、
+当前页与下一 offset。第一页以后必须提交前一页 source/content 基线，任一失配拒绝
+续页，不把不同快照拼成一个列表。只读查询不把不完整结果标成精确总数。
+
+下列预算只约束工具 0.33 新增目录、ID、typed 编辑、候选导入及展示快照 API；既有
+导出/立即持久化导入接口保持兼容。所有阈值按 UTF-8 字节/实际条目数检查，native
+与 WASM 相同：
+
+- 单份交换 JSON、工程清单或 locale sidecar 至多 8 MiB，解析前检查；重复 JSON 对象键拒绝
+- 新准备/候选及后台复制前，全部已跟踪文档（含 inactive、墓碑）至多 4,096 份；current、saved 与路径字节合计至多 256 MiB，工作区诊断至多 200 条
+- 活动源码总计至多 32 MiB、200,000 物理行，编译前先检查；可翻译 AST 单元及 sidecar 条目各至多 50,000
+  物理行按 LF 分界，CRLF 只算一行，末尾 LF 不产生额外空行，空文件为零行
+- 单个源或译文 typed parts 的内容总计至多 64 KiB、parts 至多 4,096
+- 单次候选导入、typed 编辑或 ID 分配至多 1,000 个明确选中项
+- 单页 limit 为 1–200；core 目录/计划 DTO 序列化输出至多 2 MiB（不含协议外层）
+- 来源记录及完整目录条目各至多 64 MiB 序列化 payload，逐项借用计数后才能复制路径、parts 与元数据
+- 只读运行展示快照的整个公开 DTO 至多 64 MiB，包括来源路径、sidecar 路径与 JSON Pointer；诊断至多 200 条
+- 搜索字符串至多 1,024 字节，ID/locale 至多 128 字节
+
+越界返回 `BUDGET_EXCEEDED` 错误，整次失败且零修改；不静默截断源文、译文或
+诊断后仍宣称可应用。预算在复制/解析大型输入前先检查，已有更小的工作区保护仍生效。
+`Project::check_localization_budget` 是 UI/native worker 复制前的同源廉价预检，只借用
+当前/保存字节长度与路径长度，不编译、解析 JSON、复制内容或访问存储。此复制边界
+只约束新 A1/A2 准备/候选和新后台宿主，不改变普通 Project.clone 或旧接口行为。
+新译文候选在 preview 中还以同一借用计数器投影 manifest/sidecar 的最终 current、saved、
+路径与文档数，超过边界即拒绝，不先发出可应用计划或复制完整候选；apply 提交前再次检查最终缓冲。
+这些是序列化/内容 payload 上限，不承诺进程总堆内存等于字节上限；解析 AST、受限输入及
+候选事务可能同时存在。展示快照复用已排序 entry 做二分定位，不建立逐条路径副本
+索引；条目数另受 50,000 上限保护。来源记录构造前先预算新路径的序列化字节，目录
+复制前计入完整条目，最终完整公开快照再核预算，不能只计算不含位置的 digest 元组。
+
+### 6.2 显式稳定 ID 计划
+
+`LocalizationIdDraft` 带 schema 1、当前 source baseline 和一组明确来源、源修订、
+预期旧 ID（缺 ID 为 null）、作者提供的新 ID。`preview_localization_ids` 检查来源
+仍是同一活动 AST 单元，新 ID 合法且最终全工程唯一；重复现有 ID 必须由作者明确
+选中要改的声明，不自动选择保留项。预览列出精确前后源码、受影响文件、diagnostics、
+content/source baseline 与 plan digest。注记仅改选定语句行尾，保留其它源码字节，
+再次编译证明运行 fingerprint、正文修订与受保护内容未变。
+
+`apply_localization_ids` 重建计划并验证 digest、当前基线和外部保存基线，在私有
+Project 候选中一次提交全部源码修改。失败保持原缓冲与磁盘；成功仍为未保存。
+ID 随语句持久保存，位置和文本哈希不成为 ID。新分配/更换 ID 改变 source baseline，
+所有旧交换包须重新导出；更换 ID 不迁移、改写或删除旧 ID 的译文。
+
+### 6.3 Typed 编辑与跨平台候选导入
+
+`LocalizationEditDraft` 带 schema 1、source/target locale、当前 source baseline 与
+明确的 `id/source_revision/translation_parts` 列表。core 从同一快照补齐受保护 source
+parts 后复用交换导入的选择、修订和 token 多重集校验。译文始终是 typed 数据，不把
+文字重新解析成 DSL。空 parts 仅对无受保护 token 的源文有效。
+
+`preview_localization_edit` 与 `apply_localization_edit` 用 plan digest 绑定完整请求
+和 content/source baseline；不以旧译文内容推断作者已复核新源文。只应用明确选择的
+ID，保留未选译文及 manifest/sidecar/条目未知可选字段。
+
+`preview_localization_import_candidate` 与 `apply_localization_import_candidate` 提供
+同样的一次内存事务给桌面和 WASM：允许已经应用到 Project 的未保存源码/展示缓冲，
+拒绝外部冲突、未知必需能力、未知格式、坏 JSON、过期计划、缺译、重复 ID 或 token
+错误。所有受影响文档在候选全部验证后一次替换；调用方以一个 Project 快照使用既有
+`restore` 做一次撤销/重做。预览和应用均不保存、不建立目录、不写 sidecar、不修改
+WASM 已挂载快照；保存/下载属于另外的显式动作。重复提交旧 digest 必须拒绝。
+
+既有 `preview_localization_import` 继续拒绝 dirty Project；既有 native
+`apply_localization_import` 继续刷新、重新验证并立即通过可恢复保存事务持久化，
+成功才替换 Project。旧 CLI/RPC 不被候选接口静默改成只改内存。
+旧交换提取/导入同时纠正 include 正文来源，使用同一 parser provenance。旧包若仍带
+错误的声明文件位置，报告 `SOURCE_MISMATCH`、真实来源及“重新导出交换包”修复提示，
+整批零写并保留输入；不静默重定位到另一个文件，也不保留既有错误来源以伪装兼容。
+
+## 7. 工具 0.33 只读 locale 展示快照
+
+`Project::prepare_localization_presentation` 从当前已应用 Project 缓冲构造验证后的
+不可变 `LocalizationPresentationSnapshot`，不执行表达式、不消费 RNG、不更新源码、
+译文或保存基线。快照含目标 locale、显式策略、程序 fingerprint、source baseline、
+独立 presentation digest（内容元组排序后计算，不因来源遍历顺序变化而改变）
+与每个正文/say/choice AST 单元的来源、稳定 ID、源修订、
+源 parts、合法译文 parts、状态及 sidecar 精确 JSON Pointer。不得由 UI 重写校验规则。
+
+`strict` 策略要求全部可翻译单元有唯一 ID、有效当前译文，任一缺译、过期、重复 ID
+或 token 无效即拒绝；`source_fallback` 必须显式选择，对每个失败单元保留真实状态
+并使用源文，不静默宣称已译。不存在 locale 与不支持的 sidecar 格式整体拒绝；
+没有可翻译单元的合法作品可以准备空快照。快照绑定整个源程序、来源和译文内容，
+不能与另一源码程序混用。未知可选字段不会成为运行指令。
+
+runtime 只消费此只读快照；表达式仍按原 source parts 顺序各求值一次，再按译文
+token 顺序重组已物化值，并生成真实 UTF-8 链接范围。choice 身份、执行状态、随机流、
+访问记录、glue 与暂停规则由原程序决定。人物名、禁用理由和其它无 ID 展示字段仍
+为源文。presentation digest 与运行 fingerprint 分离，locale/译文变化的会话重放
+匹配和检查点规则由 runtime 契约明确；本地化不改变源运行语义。
+
+
+草稿试演的 locale 准备使用 `Project::prepare_draft_localization_presentation`，先核对
+原工程、已应用 content baseline、刷新代次及编译能力，再从该不可变草稿实际编译
+源码建立私有候选。任何未应用草稿都不被提交或保存；源文变化正常派生需复核状态。
+`DraftRehearsalSnapshot::localization_source` 只定位实际草稿 AST 中唯一的正文/say/choice
+声明，返回精确 UTF-8 语句/头部范围及 draft 标记；不包含缩进和尾部注释，不声称
+表达式级精度。单次来源片段至多 64 KiB，超限拒绝；回源时仍需已有当前稿/导航守卫。

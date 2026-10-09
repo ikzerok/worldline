@@ -143,6 +143,7 @@ fn cancel_zero_budget_resumption_errors_and_changed_draft_do_not_hot_replace() {
 fn machine_runner_classifies_parameters_and_domain_errors_without_persistent_trace() {
     let (project, buffer) = fixture("event start\n  当前机读草稿\n  choice \"完成\"\n    -> END\n");
     let mut request = DraftRehearsalRunRequest {
+        presentation: None,
         input: DraftRehearsalRequest::from_writing_buffers(&project, &[buffer], vec![], false)
             .unwrap(),
         seed: 7,
@@ -177,6 +178,7 @@ fn per_statement_output_gate_stops_before_unbounded_accumulation() {
         "字".repeat(1024)
     ));
     let mut request = DraftRehearsalRunRequest {
+        presentation: None,
         input: DraftRehearsalRequest::from_writing_buffers(&project, &[buffer], vec![], false)
             .unwrap(),
         seed: 1,
@@ -203,6 +205,7 @@ fn machine_runtime_failure_clears_old_outcome_but_unknown_choice_keeps_real_wait
         "    当前计算 {1 / divisor}\n    -> END\n",
     ));
     let mut request = DraftRehearsalRunRequest {
+        presentation: None,
         input: DraftRehearsalRequest::from_writing_buffers(&project, &[buffer], vec![], false)
             .unwrap(),
         seed: 17,
@@ -246,6 +249,7 @@ fn machine_view_budget_failure_clears_prior_choice_and_omits_oversized_evidence(
         "字".repeat(MAX_DRAFT_REHEARSAL_OUTPUT_BYTES / 3 + 1),
     ));
     let mut request = DraftRehearsalRunRequest {
+        presentation: None,
         input: DraftRehearsalRequest::from_writing_buffers(&project, &[buffer], vec![], false)
             .unwrap(),
         seed: 17,

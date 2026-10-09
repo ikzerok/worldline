@@ -19,7 +19,7 @@ fn main() -> ExitCode {
             eprintln!("wl: {msg}");
             eprintln!("      wl problems <目录或入口> [--query-json JSON] [--cursor-json JSON] [--limit N] [--options-json JSON] [--related ID] [--json]");
             eprintln!("用法: wl check <文件.wl> [--json]");
-            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--trace-output=文件.json [--trace-exchange]] [--choice-presentation] [--json]");
+            eprintln!("      wl play <文件.wl> [--load=存档.json] [--save=存档.json] [--seed N] [--locale 目标语言 [--locale-fallback source]] [--trace-output=文件.json [--trace-exchange]] [--choice-presentation] [--json]");
             eprintln!("      --trace-exchange显式生成4MiB/20,000步内可重新导入的紧凑JSON，目标必须不存在；普通trace-output保持原pretty输出/覆盖");
             eprintln!("      wl replay <入口.wl> --trace-json '<DTO>' [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl route-compare <目录或入口> --left-trace-json DTO --right-trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
@@ -39,6 +39,10 @@ fn main() -> ExitCode {
             eprintln!("      wl scene preview|apply <工程目录> --request-json '<SceneBatch>' [apply: --baseline 基线 --plan-digest 摘要] [--json]");
             eprintln!("      wl scene export <工程目录> --map-id ID [--json]");
             eprintln!("      wl localization export preview <工程目录> --selection-json '<JSON DTO>' --json");
+            eprintln!(
+                "      wl localization catalog <工程目录> --request-json '<目录查询DTO>' [--json]"
+            );
+            eprintln!("      wl localization ids|edit|import-candidate preview|apply <工程目录> --request-json '<DTO>' [apply: --plan-digest 摘要] [--save] [--json]（未加--save仅内存）");
             eprintln!("      wl localization export apply <工程目录> --selection-json '<JSON DTO>' --plan-digest 摘要 --out 新包.json --json");
             eprintln!("      wl localization import preview <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --json");
             eprintln!("      wl localization import apply <工程目录> --selection-json '<JSON DTO>' --package 交换包.json --plan-digest 摘要 --json");

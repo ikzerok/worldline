@@ -14,7 +14,12 @@ impl<'p> Story<'p> {
     /// 序列化当前状态为 JSON(规范 semantics.md §7)。
     pub fn save(&self) -> Result<String, RunError> {
         let state = SaveState {
-            required_features: required_features(self.program),
+            presentation: self.presentation_identity().cloned(),
+            presentation_pause_rng: self
+                .presentation
+                .as_ref()
+                .and_then(|_| self.paused.as_ref().map(|pause| pause.rng_before)),
+            required_features: required_features(self.program, self.presentation.is_some()),
             fingerprint: self.fingerprint,
             vars: self.vars.clone(),
             visits: self.visits.clone(),
@@ -53,6 +58,18 @@ impl<'p> Story<'p> {
         analysis: &'p Analysis,
         json: &str,
     ) -> Result<Self, RunError> {
+        Self::load_with_context(program, analysis, json, None)
+    }
+
+    pub(crate) fn load_with_context(
+        program: &'p Program,
+        analysis: &'p Analysis,
+        json: &str,
+        presentation: Option<super::localization::PresentationContext>,
+    ) -> Result<Self, RunError> {
+        if let Some(context) = &presentation {
+            context.validate(program, analysis)?;
+        }
         if program.events.is_empty() {
             return Err(RunError::new("工程没有可运行入口"));
         }
@@ -60,7 +77,13 @@ impl<'p> Story<'p> {
             .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
         let mut state: SaveState = serde_json::from_value(value)
             .map_err(|e| RunError::new(format!("存档解析失败:{e}")))?;
-        let mut required = required_features(program);
+        super::localization::require_identity(state.presentation.as_ref(), presentation.as_ref())?;
+        if state.presentation_pause_rng.is_some() != (presentation.is_some() && state.paused) {
+            return Err(RunError::new("存档译文暂停随机状态缺失或与暂停身份不符"));
+        }
+        let saved_rng = state.rng;
+        let restore_rng = state.presentation_pause_rng.unwrap_or(state.rng);
+        let mut required = required_features(program, presentation.is_some());
         let mut supplied = state.required_features.clone();
         required.sort();
         supplied.sort();
@@ -177,6 +200,7 @@ impl<'p> Story<'p> {
         let saved_frames = state.frames.clone();
         let restore_pause = state.paused;
         let checkpoint = ReplayCheckpoint {
+            presentation: state.presentation.clone(),
             schema_version: REPLAY_SCHEMA_VERSION,
             runtime_version: env!("CARGO_PKG_VERSION").into(),
             fingerprint: analysis.fingerprint,
@@ -185,6 +209,8 @@ impl<'p> Story<'p> {
                 .map_err(|error| RunError::new(format!("存档序列化失败:{error}")))?,
         };
         let mut story = Story {
+            output_sources: super::localization::output_sources(program)?,
+            presentation,
             inspection: Default::default(),
             program,
             symbols: &analysis.symbols,
@@ -197,7 +223,7 @@ impl<'p> Story<'p> {
             frames: Vec::new(),
             glue_pending: state.glue_pending,
             paused: None,
-            rng: Cell::new(state.rng),
+            rng: Cell::new(restore_rng),
             seed,
             fingerprint: analysis.fingerprint,
             storyline: if state.storyline.is_empty() {
@@ -227,6 +253,9 @@ impl<'p> Story<'p> {
             let _ = story.continue_story()?;
             if !story.is_paused() {
                 return Err(RunError::new("存档标记为暂停，但无法重建选择组"));
+            }
+            if story.presentation.is_some() && story.rng.get() != saved_rng {
+                return Err(RunError::new("译文暂停组重建后的随机状态与存档不一致"));
             }
         }
         Ok(story)
@@ -375,8 +404,11 @@ impl<'p> Story<'p> {
     }
 }
 
-fn required_features(program: &Program) -> Vec<String> {
+fn required_features(program: &Program, localized: bool) -> Vec<String> {
     let mut features = Vec::new();
+    if localized {
+        features.push(super::LOCALIZATION_PRESENTATION_CAPABILITY.into());
+    }
     if worldline_core::language::uses_new_features(program) {
         features.push("runtime.language_1_11.v1".into());
     }

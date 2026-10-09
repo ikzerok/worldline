@@ -1,5 +1,5 @@
 //! 就地建档与稳定正文引用：候选工程验证后整体提交。
-use crate::authoring::EntityDraft;
+use crate::authoring::{CharacterDraft, EntityDraft};
 use crate::catalog::TargetRef;
 use crate::presentation_commands::{self, Command, CommandEnvelope, Revision};
 use crate::project::Project;
@@ -9,7 +9,14 @@ use std::path::{Path, PathBuf};
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum IntentTarget {
     Existing(TargetRef),
-    CreateEntity { path: PathBuf, draft: EntityDraft },
+    CreateEntity {
+        path: PathBuf,
+        draft: EntityDraft,
+    },
+    CreateCharacter {
+        path: PathBuf,
+        draft: CharacterDraft,
+    },
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -99,6 +106,7 @@ impl Project {
         let target = match &intent.target {
             IntentTarget::Existing(target) => target.clone(),
             IntentTarget::CreateEntity { draft, .. } => TargetRef::new("entity", &draft.id),
+            IntentTarget::CreateCharacter { draft, .. } => TargetRef::new("character", &draft.id),
         };
         let selection = match &intent.selection {
             Some(selection) => {
@@ -108,8 +116,11 @@ impl Project {
             }
             None => None,
         };
-        let create_entity_path = match &intent.target {
-            IntentTarget::CreateEntity { path, .. } => Some(require_active_source(self, path)?),
+        let create_path = match &intent.target {
+            IntentTarget::CreateEntity { path, .. }
+            | IntentTarget::CreateCharacter { path, .. } => {
+                Some(require_active_source(self, path)?)
+            }
             IntentTarget::Existing(_) => None,
         };
         let mut candidate = self.clone();
@@ -131,10 +142,26 @@ impl Project {
             // 先替换正文，避免在同一文件创建实体后使原始字节位置偏移。
             candidate.set_text(&selection.path, replacement)?;
         }
-        if let (IntentTarget::CreateEntity { draft, .. }, Some(path)) =
-            (&intent.target, &create_entity_path)
-        {
-            candidate.write_entity(path, None, draft)?;
+        match (&intent.target, &create_path) {
+            (IntentTarget::CreateEntity { draft, .. }, Some(path)) => {
+                candidate.write_entity(path, None, draft)?;
+            }
+            (IntentTarget::CreateCharacter { draft, .. }, Some(path)) => {
+                if draft.display.trim().is_empty() {
+                    return Err("人物显示名不能为空".into());
+                }
+                if self
+                    .compile_current()
+                    .analysis
+                    .catalog
+                    .object(&target)
+                    .is_some()
+                {
+                    return Err("人物 ID 已存在".into());
+                }
+                candidate.write_character(path, None, draft)?;
+            }
+            _ => {}
         }
         let compiled = candidate.compile();
         if let Some(diagnostic) = compiled

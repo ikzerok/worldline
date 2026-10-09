@@ -51,6 +51,31 @@ pub struct DraftRehearsalSnapshot {
 }
 
 impl DraftRehearsalSnapshot {
+    /// 本地化只读准备必须绑定同一工程、已应用稿、刷新代次与编译能力。
+    pub(crate) fn verify_localization_project(&self, project: &Project) -> Result<(), String> {
+        if self.root != project.root
+            || self.refresh_generation != project.search_refresh_generation()
+            || self.compiled.options != project.compile_options()
+            || self.scope.content_baseline != project.content_baseline()
+        {
+            return Err("草稿试演的工程或已应用来源已变化，请明确重新试演".into());
+        }
+        Ok(())
+    }
+
+    /// 精确定位本次草稿 AST 中的可翻译正文；调用者回源前仍须验证当前稿与导航守卫。
+    pub fn localization_source(
+        &self,
+        source: &crate::localization::LocalizationSource,
+    ) -> Result<crate::search_replace::SearchMatch, String> {
+        let draft = self
+            .request
+            .drafts
+            .iter()
+            .any(|draft| draft.path == std::path::Path::new(&source.file));
+        crate::localization::localization_source_hit(&self.compiled, &self.root, source, draft)
+    }
+
     pub fn compiled(&self) -> &CompileResult {
         &self.compiled
     }

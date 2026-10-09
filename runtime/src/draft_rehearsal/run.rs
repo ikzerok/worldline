@@ -13,6 +13,8 @@ use worldline_core::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DraftRehearsalRunRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<worldline_core::localization::LocalizationPresentationRequest>,
     pub input: DraftRehearsalRequest,
     pub seed: u64,
     #[serde(default)]
@@ -50,6 +52,8 @@ impl DraftRehearsalRunRequest {
 
 #[derive(Debug, Serialize)]
 pub struct DraftRehearsalRunResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
     pub ok: bool,
     pub scope: Option<DraftRehearsalScope>,
     pub seed: u64,
@@ -73,6 +77,7 @@ pub fn run_draft_rehearsal(
 ) -> Result<DraftRehearsalRunResult, String> {
     request.validate()?;
     let mut result = DraftRehearsalRunResult {
+        presentation: None,
         ok: true,
         scope: None,
         seed: request.seed,
@@ -87,6 +92,12 @@ pub fn run_draft_rehearsal(
         inspection: None,
         error: None,
     };
+    if request.presentation.is_some() {
+        if let Err(error) = project.check_localization_budget() {
+            fail(&mut result, error.to_string());
+            return Ok(result);
+        }
+    }
     let snapshot = match project.compile_draft_rehearsal(&request.input) {
         Ok(snapshot) => snapshot,
         Err(error) => {
@@ -95,13 +106,32 @@ pub fn run_draft_rehearsal(
         }
     };
     result.scope = Some(snapshot.scope().clone());
-    let mut session = match DraftRehearsal::new(snapshot, request.seed) {
+    let presentation = match &request.presentation {
+        Some(request) => {
+            match project.prepare_draft_localization_presentation(&snapshot, request) {
+                Ok(presentation) => Some(presentation),
+                Err(error) => {
+                    fail(&mut result, error.to_string());
+                    return Ok(result);
+                }
+            }
+        }
+        None => None,
+    };
+    let session = match &presentation {
+        Some(presentation) => {
+            DraftRehearsal::new_with_presentation(snapshot, request.seed, presentation)
+        }
+        None => DraftRehearsal::new(snapshot, request.seed),
+    };
+    let mut session = match session {
         Ok(session) => session,
         Err(error) => {
             fail(&mut result, error.to_string());
             return Ok(result);
         }
     };
+    result.presentation = session.presentation_identity().cloned();
     let started = crate::execution::MonotonicInstant::now();
     loop {
         let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);

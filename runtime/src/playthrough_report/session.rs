@@ -3,7 +3,8 @@ use crate::{
     action_capture::ActionCapture,
     execution::{MonotonicInstant, ReplayExecutionBudget},
     replay_runner::{
-        replay_story, run_replay_slice, validate_replay_trace, ReplayCursor, ReplayProgress,
+        replay_story_with_context, run_replay_slice, validate_replay_trace, ReplayCursor,
+        ReplayProgress,
     },
     route_comparison::{check_story, encoded_size, OutputUsage},
     ReplayCancellation, ReplayCheckpoint, ReplayOrigin, ReplayStatus, ReplayTrace, Story,
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 use worldline_core::CompileResult;
 
 pub struct PlaythroughReportSession {
+    presentation: Option<crate::localization::PresentationContext>,
     trace: ReplayTrace,
     options: PlaythroughReportOptions,
     cancellation: ReplayCancellation,
@@ -38,7 +40,25 @@ impl PlaythroughReportSession {
         options: PlaythroughReportOptions,
         cancellation: ReplayCancellation,
     ) -> Result<Self, PlaythroughReportError> {
+        Self::new_with_context(snapshot, trace, options, cancellation, None)
+    }
+    pub(crate) fn new_with_context(
+        snapshot: &CompileResult,
+        trace: ReplayTrace,
+        options: PlaythroughReportOptions,
+        cancellation: ReplayCancellation,
+        presentation: Option<crate::localization::PresentationContext>,
+    ) -> Result<Self, PlaythroughReportError> {
         options.validate()?;
+        if let Some(context) = &presentation {
+            context
+                .validate(&snapshot.program, &snapshot.analysis)
+                .map_err(|error| {
+                    PlaythroughReportError::new("invalid_presentation", error.message)
+                })?;
+        }
+        crate::localization::require_identity(trace.presentation.as_ref(), presentation.as_ref())
+            .map_err(|error| PlaythroughReportError::new("invalid_presentation", error.message))?;
         if snapshot.has_errors() {
             return Err(PlaythroughReportError::new(
                 "invalid_snapshot",
@@ -50,6 +70,7 @@ impl PlaythroughReportSession {
         let sources = sources::Sources::new(snapshot, options.max_output_bytes)?;
         encoded_size(&sources.manifest, options.max_output_bytes)?;
         Ok(Self {
+            presentation,
             trace,
             options,
             cancellation,
@@ -100,10 +121,18 @@ impl PlaythroughReportSession {
             return Ok(None);
         }
         let restored = match &self.checkpoint {
-            Some(checkpoint) => {
-                Story::from_checkpoint(&snapshot.program, &snapshot.analysis, checkpoint)
-            }
-            None => replay_story(&snapshot.program, &snapshot.analysis, &self.trace),
+            Some(checkpoint) => Story::from_checkpoint_with_context(
+                &snapshot.program,
+                &snapshot.analysis,
+                checkpoint,
+                self.presentation.clone(),
+            ),
+            None => replay_story_with_context(
+                &snapshot.program,
+                &snapshot.analysis,
+                &self.trace,
+                self.presentation.clone(),
+            ),
         };
         let mut story = match restored {
             Ok(story) => story,
@@ -235,6 +264,10 @@ impl PlaythroughReportSession {
             },
         };
         let mut report = PlaythroughReport {
+            presentation: self
+                .presentation
+                .as_ref()
+                .map(|context| context.identity.clone()),
             schema_version: PLAYTHROUGH_REPORT_SCHEMA_VERSION,
             runtime_version: env!("CARGO_PKG_VERSION").into(),
             compile_options: snapshot.options,

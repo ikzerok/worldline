@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::{Expr, Stmt, TextPart, UnOp};
+use crate::ast::{Expr, Program, TextPart, UnOp};
 use crate::project::Project;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -18,29 +18,14 @@ impl Project {
         }
 
         let mut compiled_project = self.clone();
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        source::record_compilation();
         let compiled = compiled_project.compile();
         if compiled.has_errors() {
             return Err("工程有编译错误，无法安全提取本地化字符串".into());
         }
 
-        let mut all = BTreeMap::<String, Vec<SourceUnit>>::new();
-        for (event_index, event) in compiled.program.events.iter().enumerate() {
-            let file = compiled
-                .program
-                .event_files
-                .get(event_index)
-                .ok_or("事件缺少源码文件映射")?;
-            collect_units(&event.body, Path::new(file), &self.root, &mut all)?;
-        }
-
-        for fragment in &compiled.program.fragments {
-            collect_units(
-                &fragment.body,
-                Path::new(&fragment.file),
-                &self.root,
-                &mut all,
-            )?;
-        }
+        let all = collect_program_units(&compiled.program, &self.root)?;
         let source_baseline = source_baseline(self)?;
         let mut diagnostics = Vec::new();
         let mut entries = Vec::with_capacity(selection.string_ids.len());
@@ -180,58 +165,20 @@ pub(super) fn normalize_selection(
     })
 }
 
-pub(super) fn collect_units(
-    statements: &[Stmt],
-    file: &Path,
+pub(super) fn collect_program_units(
+    program: &Program,
     root: &Path,
-    out: &mut BTreeMap<String, Vec<SourceUnit>>,
-) -> Result<(), String> {
-    for statement in statements {
-        match statement {
-            Stmt::Text(text) => {
-                if let Some(id) = &text.localization_id {
-                    let source = source_reference(root, file, text.loc.line, "text")?;
-                    out.entry(id.clone()).or_default().push(SourceUnit {
-                        source,
-                        parts: source_parts(&text.parts),
-                        source_revision: source_revision("text", &text.parts, text.glue),
-                    });
-                }
-            }
-            Stmt::Say(say) => {
-                if let Some(id) = &say.text.localization_id {
-                    let source = source_reference(root, file, say.loc.line, "say")?;
-                    out.entry(id.clone()).or_default().push(SourceUnit {
-                        source,
-                        parts: source_parts(&say.text.parts),
-                        source_revision: source_revision("say", &say.text.parts, say.text.glue),
-                    });
-                }
-            }
-            Stmt::Choice(choice) => {
-                if let Some(id) = &choice.localization_id {
-                    let source = source_reference(root, file, choice.loc.line, "choice")?;
-                    out.entry(id.clone()).or_default().push(SourceUnit {
-                        source,
-                        parts: source_parts(&choice.label),
-                        source_revision: source_revision("choice", &choice.label, false),
-                    });
-                }
-                collect_units(&choice.body, file, root, out)?;
-            }
-            Stmt::If(statement) => {
-                for (_, branch) in &statement.branches {
-                    collect_units(branch, file, root, out)?;
-                }
-            }
-            Stmt::Scene(scene) => collect_units(&scene.body, file, root, out)?,
-            _ => {}
+) -> Result<BTreeMap<String, Vec<SourceUnit>>, String> {
+    let mut units = BTreeMap::<String, Vec<SourceUnit>>::new();
+    for record in source::collect_annotated(program, root)? {
+        if let Some(id) = record.id {
+            units.entry(id).or_default().push(record.unit);
         }
     }
-    Ok(())
+    Ok(units)
 }
 
-fn source_reference(
+pub(super) fn source_reference(
     root: &Path,
     file: &Path,
     line: u32,
@@ -251,7 +198,7 @@ fn source_reference(
     })
 }
 
-fn source_parts(parts: &[TextPart]) -> Vec<LocalizationPart> {
+pub(super) fn source_parts(parts: &[TextPart]) -> Vec<LocalizationPart> {
     let mut placeholders = 0usize;
     let mut links = 0usize;
     parts
@@ -275,7 +222,7 @@ fn source_parts(parts: &[TextPart]) -> Vec<LocalizationPart> {
         .collect()
 }
 
-fn source_revision(kind: &str, parts: &[TextPart], glue: bool) -> String {
+pub(super) fn source_revision(kind: &str, parts: &[TextPart], glue: bool) -> String {
     let mut bytes = Vec::new();
     append_field(&mut bytes, b"kind", kind.as_bytes());
     for part in parts {

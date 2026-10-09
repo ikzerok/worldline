@@ -19,6 +19,7 @@ pub(super) fn compile_input(
                 result,
                 read_only: !workspace_diagnostics.is_empty(),
                 workspace_diagnostics,
+                project: Some(project),
             });
         }
         return Ok(CompileSnapshot::plain(result));
@@ -33,6 +34,7 @@ pub(super) fn compile_input(
             result,
             read_only: !workspace_diagnostics.is_empty(),
             workspace_diagnostics,
+            project: Some(project),
         });
     }
     compile_path(path).map(CompileSnapshot::plain)

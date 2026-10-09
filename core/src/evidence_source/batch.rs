@@ -1,7 +1,10 @@
 //! 一次调用内按文件复用正式词法结果；身份验证与单项入口完全共用。
 use super::state_actions::{self, StateActionSource};
 use super::variable_writes::{self, VariableWriteSource};
-use super::{EvidenceSource, EvidenceSourceOwner, EvidenceSourcePrecision, EvidenceSourceTarget};
+use super::{
+    EvidenceSource, EvidenceSourceOwner, EvidenceSourcePrecision, EvidenceSourceTarget,
+    RuntimeOutputSourceIndex,
+};
 use crate::lexer::{Line, LineKind};
 use crate::{CompileOptions, CompileResult, Diagnostic};
 use std::collections::{BTreeMap, BTreeSet};
@@ -69,6 +72,7 @@ struct Prepared<'a> {
 fn prepare<'a>(
     snapshot: &'a CompileResult,
     source: &'a EvidenceSource,
+    output_sources: Option<&RuntimeOutputSourceIndex<'_>>,
 ) -> Result<Prepared<'a>, String> {
     if source.line == 0 || source.file.is_empty() {
         return Err("证据没有有效的声明来源".into());
@@ -81,8 +85,11 @@ fn prepare<'a>(
     let action = state_actions::find(&snapshot.program, source.line, &source.owner);
     let variable_write = variable_writes::find(&snapshot.program, source.line, &source.owner);
     let valid = match &source.owner {
-        EvidenceSourceOwner::Choice { node } => super::choice_body(snapshot, &source.file, node)
-            .is_some_and(|body| super::count_choices(body, source.line) == 1),
+        EvidenceSourceOwner::Choice { node } => output_sources.is_some_and(|sources| {
+            super::choice_body(snapshot, node).is_some_and(|body| {
+                super::count_choices(body, source.line, &source.file, sources) == 1
+            })
+        }),
         EvidenceSourceOwner::Rule { name } => {
             snapshot
                 .program
@@ -180,11 +187,16 @@ fn resolve_inner(
     sources: &[&EvidenceSource],
     lex: LexSource,
 ) -> Vec<Result<EvidenceSourceTarget, String>> {
+    // 同一次单项/批量定位只建一次真实来源索引；不为每个 choice 重走整棵 AST。
+    let output_sources = sources
+        .iter()
+        .any(|source| matches!(source.owner, EvidenceSourceOwner::Choice { .. }))
+        .then(|| RuntimeOutputSourceIndex::new(&snapshot.program));
     let mut prepared = Vec::with_capacity(sources.len());
     let mut results: Vec<Option<Result<EvidenceSourceTarget, String>>> = vec![None; sources.len()];
     let mut files: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (index, source) in sources.iter().enumerate() {
-        match prepare(snapshot, source) {
+        match prepare(snapshot, source, output_sources.as_ref()) {
             Ok(value) => {
                 files.entry(source.file.as_str()).or_default().push(index);
                 prepared.push(Some(value));

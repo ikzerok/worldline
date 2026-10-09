@@ -8,6 +8,7 @@ use worldline_runtime::{
 
 fn minimal() -> ReplayTrace {
     ReplayTrace {
+        presentation: None,
         schema_version: REPLAY_SCHEMA_VERSION,
         runtime_version: env!("CARGO_PKG_VERSION").into(),
         fingerprint: 1,

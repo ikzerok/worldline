@@ -39,6 +39,11 @@ pub(super) struct ReplayExecutionBudget<'a> {
 }
 
 impl ReplayExecutionBudget<'_> {
+    /// 检查点恢复不可抢占；片时钟从真正恢复后开始，总时钟与总步数保持。
+    pub(crate) fn resume_slice_after_restore(&mut self) {
+        self.slice_started = MonotonicInstant::now();
+    }
+
     pub(super) fn consume_step(&mut self) -> Option<ReplayStop> {
         if self.cancellation.is_cancelled() {
             return Some(ReplayStop::Status(ReplayStatus::Cancelled));
@@ -115,18 +120,20 @@ impl<'p> Story<'p> {
                     self.execute_language(fi, &mut out)?;
                 }
                 Stmt::Text(t) => {
-                    let (content, links) = self.render_parts(&t.parts)?;
+                    let rendered =
+                        self.render_statement(&self.frames[fi].stmts[self.frames[fi].idx])?;
                     let tags = t.tags.clone();
                     let new_line = !self.glue_pending;
                     self.glue_pending = false;
-                    if !content.is_empty() {
+                    if !rendered.content.is_empty() || rendered.localization.is_some() {
                         self.capture_report_output(fi);
                         out.push(Output::Text {
                             speaker: None,
-                            content,
+                            content: rendered.content,
                             new_line,
                             tags,
-                            links,
+                            links: rendered.links,
+                            localization: rendered.localization.map(Box::new),
                         });
                     }
                     if t.glue {
@@ -375,6 +382,7 @@ impl<'p> Story<'p> {
         self.init_vars()?;
         self.enter_event(&self.program.entry)?;
         self.trace = ReplayTrace::entry(self.fingerprint, self.seed);
+        self.trace.presentation = self.presentation_identity().cloned();
         Ok(())
     }
 

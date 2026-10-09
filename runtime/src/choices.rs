@@ -26,7 +26,8 @@ impl<'p> Story<'p> {
         while let Some(Stmt::Choice(c)) = stmts.get(start + offset) {
             let mut identity = self.choice_identity(fi, start, offset, c.label_raw.clone());
             let source = self
-                .current_source_file()
+                .output_sources
+                .get(&stmts[start + offset])
                 .zip(self.current_node())
                 .and_then(|(file, node)| {
                     (file.len() <= 2048 && node.len() <= 2048).then(|| {
@@ -149,7 +150,7 @@ impl<'p> Story<'p> {
             let enabled = enable_condition
                 .as_ref()
                 .is_none_or(|e| e.result == Some(true));
-            let (label, links) = match self.render_parts(&c.label) {
+            let rendered = match self.render_statement(&stmts[start + offset]) {
                 Ok(rendered) => rendered,
                 Err(error) => {
                     explanations.push(ChoiceExplanation {
@@ -164,9 +165,15 @@ impl<'p> Story<'p> {
                     return Err(error);
                 }
             };
-            identity.label = label.clone();
+            identity.label = rendered.source_content().into();
+            let super::localization::RenderedText {
+                content: label,
+                links,
+                localization,
+            } = rendered;
             let index = enabled.then_some(choices.len());
             presentations.push(ChoicePresentation {
+                localization: localization.clone(),
                 id: identity.id.clone(),
                 label: label.clone(),
                 links: links.clone(),
@@ -182,6 +189,7 @@ impl<'p> Story<'p> {
             });
             if enabled {
                 choices.push(ChoiceView {
+                    localization,
                     id: identity.id.clone(),
                     label,
                     links,

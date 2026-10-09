@@ -1,6 +1,12 @@
 use crate::{ChoiceIdentity, Story};
 use worldline_core::ast::Stmt;
 
+type CapturedChoice = (
+    ChoiceIdentity,
+    Option<RawSource>,
+    Option<worldline_core::localization::LocalizationStatus>,
+);
+
 #[derive(Clone)]
 pub(crate) struct RawSource {
     pub file: String,
@@ -43,12 +49,7 @@ impl Story<'_> {
             Stmt::Choice(choice) => choice.loc,
             _ => return None,
         };
-        let node = self.current_node()?;
-        let file = worldline_core::evidence_source::runtime_output_source_file(
-            self.program,
-            &node,
-            statement,
-        )?;
+        let file = self.output_sources.get(statement)?;
         if file.len() > 8192 {
             return None;
         }
@@ -58,10 +59,7 @@ impl Story<'_> {
             column: loc.column,
         })
     }
-    pub(crate) fn report_choice(
-        &self,
-        identity: &ChoiceIdentity,
-    ) -> Option<(ChoiceIdentity, Option<RawSource>)> {
+    pub(crate) fn report_choice(&self, identity: &ChoiceIdentity) -> Option<CapturedChoice> {
         let pause = self.paused.as_ref()?;
         let actual = pause
             .explanations
@@ -69,7 +67,15 @@ impl Story<'_> {
             .find(|c| c.available && c.choice.id == identity.id)?;
         let source =
             self.report_statement_source(pause.frame_depth, pause.start + actual.choice.offset);
-        Some((actual.choice.clone(), source))
+        let mut choice = actual.choice.clone();
+        let mut status = None;
+        if self.presentation.is_some() {
+            if let Some(display) = pause.choices.iter().find(|display| display.id == choice.id) {
+                choice.label.clone_from(&display.label);
+                status = display.localization.as_ref().map(|value| value.status);
+            }
+        }
+        Some((choice, source, status))
     }
 }
 impl OutputSources {

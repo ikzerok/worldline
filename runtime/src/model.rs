@@ -65,6 +65,9 @@ fn format_number(number: f64) -> String {
 pub enum Output {
     /// 一行文本;`new_line=false` 表示粘接(不换行)。
     Text {
+        /// 仅 locale 输出分配完整元数据，source-only 保持指针大小的可选槽。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        localization: Option<Box<crate::LocalizedPresentation>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         speaker: Option<worldline_core::catalog::TargetRef>,
         content: String,
@@ -80,6 +83,8 @@ pub enum Output {
 /// 暂停时的可选选择。
 #[derive(Debug, Clone, Serialize)]
 pub struct ChoiceView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localization: Option<crate::LocalizedPresentation>,
     /// 与行号无关的重放身份；选择索引只用于当前暂停呈现。
     pub id: String,
     pub label: String,
@@ -94,6 +99,8 @@ pub struct ChoiceView {
 /// 显式消费者使用的全部可见选择；index 始终指向旧的可选数组。
 #[derive(Debug, Clone, Serialize)]
 pub struct ChoicePresentation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localization: Option<crate::LocalizedPresentation>,
     pub id: String,
     pub label: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -232,6 +239,10 @@ fn default_change_kind() -> worldline_core::ast::ChangeKind {
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct SaveState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation_pause_rng: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_features: Vec<String>,
     pub fingerprint: u64,

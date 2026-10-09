@@ -95,17 +95,18 @@ impl<'p> Story<'p> {
                 self.frames.truncate(index);
             }
             Stmt::Say(s) => {
-                let (content, links) = self.render_parts(&s.text.parts)?;
+                let rendered = self.render_statement(stmt)?;
                 self.capture_report_output(fi);
                 out.push(Output::Text {
                     speaker: Some(worldline_core::catalog::TargetRef {
                         kind: "character".into(),
                         id: s.speaker.clone(),
                     }),
-                    content,
+                    content: rendered.content,
+                    localization: rendered.localization.map(Box::new),
                     new_line: !self.glue_pending,
                     tags: s.text.tags.clone(),
-                    links,
+                    links: rendered.links,
                 });
                 self.glue_pending = s.text.glue;
                 self.frames[fi].idx += 1;
@@ -163,19 +164,6 @@ impl<'p> Story<'p> {
             }
         }
         Some(format!("{id}:{start}:{offset}"))
-    }
-    pub(super) fn current_source_file(&self) -> Option<&str> {
-        if let Some(name) = self.frames.iter().rev().find_map(|f| f.fragment.as_deref()) {
-            return self
-                .program
-                .fragments
-                .iter()
-                .find(|f| f.name == name)
-                .map(|f| f.file.as_str());
-        }
-        let event = self.current_event_name()?;
-        let path = self.symbols.events.get(&event)?;
-        self.program.event_files.get(path.event).map(String::as_str)
     }
     pub(super) fn call_view(&self) -> Vec<serde_json::Value> {
         self.frames.iter().enumerate().filter_map(|(i,f)| {

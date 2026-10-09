@@ -89,6 +89,8 @@ pub struct PlaythroughSourceFile {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlaythroughChoice {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub localization_status: Option<worldline_core::localization::LocalizationStatus>,
     pub id: String,
     pub node: String,
     pub label: String,
@@ -96,6 +98,8 @@ pub struct PlaythroughChoice {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlaythroughText {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub localization_status: Option<worldline_core::localization::LocalizationStatus>,
     pub content: String,
     pub new_line: bool,
     pub speaker: Option<worldline_core::TargetRef>,
@@ -113,6 +117,8 @@ pub struct PlaythroughObservation {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlaythroughReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
     pub schema_version: u32,
     pub runtime_version: String,
     pub compile_options: CompileOptions,

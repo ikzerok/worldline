@@ -34,7 +34,8 @@ pub struct EffectDraft {
     pub actions: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct CharacterDraft {
     pub id: String,
     pub display: String,

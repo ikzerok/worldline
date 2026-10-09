@@ -1,3 +1,6 @@
+use crate::replay_semantics::observations_match;
+#[cfg(test)]
+use crate::replay_semantics::semantic_state;
 use std::collections::BTreeMap;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,8 +13,8 @@ use worldline_core::Analysis;
 
 use super::execution::{ReplayExecutionBudget, ReplayStop};
 use super::{
-    Output, ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayObservation, ReplayOrigin,
-    ReplayResult, ReplayStatus, ReplayTrace, RunError, Story, REPLAY_SCHEMA_VERSION,
+    Output, ReplayBudget, ReplayCancellation, ReplayCheckpoint, ReplayOrigin, ReplayResult,
+    ReplayStatus, ReplayTrace, RunError, Story, REPLAY_SCHEMA_VERSION,
 };
 
 #[cfg(test)]
@@ -66,6 +69,7 @@ pub(crate) struct ReplayEnd {
 /// Reuse the same program and analysis for every `advance` call. `Ok(None)` means the
 /// replay yielded; `Ok(Some(result))` is its final structured status, including cancellation.
 pub struct ReplaySession {
+    presentation: Option<crate::localization::PresentationContext>,
     trace: ReplayTrace,
     limits: ReplayBudget,
     cancellation: ReplayCancellation,
@@ -83,8 +87,19 @@ impl ReplaySession {
         limits: ReplayBudget,
         cancellation: ReplayCancellation,
     ) -> Result<Self, RunError> {
+        Self::new_with_context(trace, limits, cancellation, None)
+    }
+
+    pub(crate) fn new_with_context(
+        trace: ReplayTrace,
+        limits: ReplayBudget,
+        cancellation: ReplayCancellation,
+        presentation: Option<crate::localization::PresentationContext>,
+    ) -> Result<Self, RunError> {
         validate_replay_trace(&trace)?;
+        crate::localization::require_identity(trace.presentation.as_ref(), presentation.as_ref())?;
         Ok(Self {
+            presentation,
             trace,
             limits,
             cancellation,
@@ -119,9 +134,22 @@ impl ReplaySession {
             output_usage: None,
         };
         let mut story = match &self.checkpoint {
-            Some(checkpoint) => Story::from_checkpoint(program, analysis, checkpoint)?,
-            None => replay_story(program, analysis, &self.trace)?,
+            Some(checkpoint) => Story::from_checkpoint_with_context(
+                program,
+                analysis,
+                checkpoint,
+                self.presentation.clone(),
+            )?,
+            None => replay_story_with_context(
+                program,
+                analysis,
+                &self.trace,
+                self.presentation.clone(),
+            )?,
         };
+        if self.presentation.is_some() {
+            budget.resume_slice_after_restore();
+        }
         let cursor = self.cursor.get_or_insert_with(|| ReplayCursor::new(&story));
         let progress = run_replay_slice(&self.trace, cursor, &mut story, &mut budget);
         let executed_steps = budget.steps;
@@ -165,8 +193,19 @@ impl ReplayTrace {
         limits: ReplayBudget,
         cancellation: &ReplayCancellation,
     ) -> Result<ReplayResult, RunError> {
+        Self::replay_with_context(program, analysis, trace, limits, cancellation, None)
+    }
+
+    pub(crate) fn replay_with_context(
+        program: &Program,
+        analysis: &Analysis,
+        trace: &ReplayTrace,
+        limits: ReplayBudget,
+        cancellation: &ReplayCancellation,
+        presentation: Option<crate::localization::PresentationContext>,
+    ) -> Result<ReplayResult, RunError> {
         validate_replay_trace(trace)?;
-        let mut story = replay_story(program, analysis, trace)?;
+        let mut story = replay_story_with_context(program, analysis, trace, presentation)?;
         let started = MonotonicInstant::now();
         let mut budget = ReplayExecutionBudget {
             limits,
@@ -207,19 +246,26 @@ pub(crate) fn validate_replay_trace(trace: &ReplayTrace) -> Result<(), RunError>
         if checkpoint.fingerprint != trace.fingerprint {
             return Err(RunError::new("trace 与检查点 fingerprint 不一致"));
         }
+        if checkpoint.presentation != trace.presentation {
+            return Err(RunError::new("trace 与检查点的译文展示身份不一致"));
+        }
     }
     Ok(())
 }
 
-pub(crate) fn replay_story<'p>(
+pub(crate) fn replay_story_with_context<'p>(
     program: &'p Program,
     analysis: &'p Analysis,
     trace: &ReplayTrace,
+    presentation: Option<crate::localization::PresentationContext>,
 ) -> Result<Story<'p>, RunError> {
+    crate::localization::require_identity(trace.presentation.as_ref(), presentation.as_ref())?;
     match &trace.origin {
-        ReplayOrigin::Entry { seed } => Story::new_with_seed(program, analysis, *seed),
+        ReplayOrigin::Entry { seed } => {
+            Story::new_with_context(program, analysis, *seed, presentation)
+        }
         ReplayOrigin::Checkpoint { checkpoint } => {
-            Story::from_checkpoint(program, analysis, checkpoint)
+            Story::from_checkpoint_with_context(program, analysis, checkpoint, presentation)
         }
     }
 }
@@ -389,8 +435,10 @@ pub(crate) fn run_replay_slice(
                     initial_state: cursor.initial_state.clone(),
                 });
             }
-            if let (Some(report), Some((choice, source))) = (&mut cursor.report, report_choice) {
-                if let Err(error) = report.selected(choice, source) {
+            if let (Some(report), Some((choice, source, status))) =
+                (&mut cursor.report, report_choice)
+            {
+                if let Err(error) = report.selected(choice, source, status) {
                     return ReplayProgress::Rejected(error);
                 }
             }
@@ -481,64 +529,6 @@ fn comparison_stop(budget: &ReplayExecutionBudget<'_>) -> Option<ReplayStatus> {
     } else {
         None
     }
-}
-
-fn observations_match(expected: &ReplayObservation, actual: &ReplayObservation) -> bool {
-    expected.outputs == actual.outputs
-        && presentation_semantics(&expected.choice_presentation)
-            == presentation_semantics(&actual.choice_presentation)
-        && expected
-            .choices
-            .iter()
-            .map(|choice| (&choice.id, &choice.label))
-            .eq(actual
-                .choices
-                .iter()
-                .map(|choice| (&choice.id, &choice.label)))
-        && semantic_state(&expected.state) == semantic_state(&actual.state)
-}
-
-fn presentation_semantics(presentation: &[serde_json::Value]) -> Vec<serde_json::Value> {
-    presentation
-        .iter()
-        .map(|item| {
-            let mut item = item.clone();
-            if let Some(object) = item.as_object_mut() {
-                object.remove("line");
-            }
-            item
-        })
-        .collect()
-}
-
-fn semantic_state(value: &serde_json::Value) -> serde_json::Value {
-    let mut value = value.clone();
-    if let Some(calls) = value
-        .get_mut("calls")
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        for call in calls {
-            if let Some(call) = call.as_object_mut() {
-                // Only these frame-level fields are source metadata. Keep all
-                // semantic/unknown fields, including locals named file or line.
-                call.remove("file");
-                call.remove("line");
-            }
-        }
-    }
-    if let Some(choices) = value
-        .get_mut("coverage")
-        .and_then(serde_json::Value::as_object_mut)
-        .and_then(|coverage| coverage.get_mut("selected_choices"))
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        for choice in choices {
-            if let Some(choice) = choice.as_object_mut() {
-                choice.remove("line");
-            }
-        }
-    }
-    value
 }
 
 fn make_replay_result(

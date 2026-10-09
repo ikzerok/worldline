@@ -19,19 +19,45 @@ pub(super) fn cmd_play(
     {
         eprintln!("{diagnostic}");
     }
+    let presentation = match localization_session::for_play(f, &snapshot) {
+        Ok(value) => value,
+        Err(message) => return play_start_failure(f, out, message),
+    };
     let mut story = match f.load.as_deref() {
         Some(p) => {
             let save = std::fs::read_to_string(p)
                 .map_err(|e| format!("无法读取存档 {}: {e}", p.display()))?;
-            match Story::load(&result.program, &result.analysis, &save) {
+            let loaded = match &presentation {
+                Some(presentation) => Story::load_with_presentation(
+                    &result.program,
+                    &result.analysis,
+                    &save,
+                    presentation,
+                ),
+                None => Story::load(&result.program, &result.analysis, &save),
+            };
+            match loaded {
                 Ok(story) => story,
                 Err(error) => return play_start_failure(f, out, format!("存档载入失败:{error}")),
             }
         }
-        None => match f.seed.map_or_else(
-            || Story::new(&result.program, &result.analysis),
-            |seed| Story::new_with_seed(&result.program, &result.analysis, seed),
-        ) {
+        None => match match &presentation {
+            Some(presentation) => f.seed.map_or_else(
+                || Story::new_localized(&result.program, &result.analysis, presentation),
+                |seed| {
+                    Story::new_with_presentation(
+                        &result.program,
+                        &result.analysis,
+                        seed,
+                        presentation,
+                    )
+                },
+            ),
+            None => f.seed.map_or_else(
+                || Story::new(&result.program, &result.analysis),
+                |seed| Story::new_with_seed(&result.program, &result.analysis, seed),
+            ),
+        } {
             Ok(story) => story,
             Err(error) => return play_start_failure(f, out, format!("故事启动失败:{error}")),
         },
@@ -80,14 +106,34 @@ pub(super) fn cmd_replay(args: &ReplayArgs, out: &mut impl Write) -> Result<i32,
     }
     let trace: ReplayTrace = serde_json::from_str(&args.trace_json)
         .map_err(|error| format!("trace DTO 无效:{error}"))?;
-    let replay = ReplayTrace::replay(
-        &result.program,
-        &result.analysis,
-        &trace,
-        args.budget,
-        &worldline_runtime::ReplayCancellation::new(),
-    )
-    .map_err(|error| format!("重放请求无效:{error}"))?;
+    let presentation = match localization_session::for_trace(snapshot.project.as_ref(), &trace) {
+        Ok(value) => value,
+        Err(message) => return replay_locale_failure(args.json, &message, out),
+    };
+    let outcome = match &presentation {
+        Some(presentation) => ReplayTrace::replay_with_presentation(
+            &result.program,
+            &result.analysis,
+            &trace,
+            args.budget,
+            &worldline_runtime::ReplayCancellation::new(),
+            presentation,
+        ),
+        None => ReplayTrace::replay(
+            &result.program,
+            &result.analysis,
+            &trace,
+            args.budget,
+            &worldline_runtime::ReplayCancellation::new(),
+        ),
+    };
+    let replay = match outcome {
+        Ok(value) => value,
+        Err(error) if presentation.is_some() => {
+            return replay_locale_failure(args.json, &error.to_string(), out)
+        }
+        Err(error) => return Err(format!("重放请求无效:{error}")),
+    };
     let failed = !matches!(replay.status, ReplayStatus::Replayed { .. });
     if args.json {
         writeln!(out, "{}", json!(replay)).map_err(|error| error.to_string())?;
@@ -95,6 +141,20 @@ pub(super) fn cmd_replay(args: &ReplayArgs, out: &mut impl Write) -> Result<i32,
         writeln!(out, "{:?}", replay.status).map_err(|error| error.to_string())?;
     }
     Ok(if failed { 1 } else { 0 })
+}
+
+fn replay_locale_failure(
+    json_mode: bool,
+    message: &str,
+    out: &mut impl Write,
+) -> Result<i32, String> {
+    if json_mode {
+        writeln!(out, "{}", json!({"ok":false,"replay":null,"error":{"code":"LOCALIZATION_REPLAY_REJECTED","message":message}}))
+            .map_err(|error| error.to_string())?;
+    } else {
+        writeln!(out, "译文重放失败：{message}").map_err(|error| error.to_string())?;
+    }
+    Ok(1)
 }
 
 pub(super) fn play_start_failure(
@@ -249,6 +309,9 @@ pub(super) fn play_json(
                     "choices": choices_json(story),
                     "state": story.state_view(),
                 });
+                if let Some(identity) = story.presentation_identity() {
+                    payload["presentation"] = json!(identity);
+                }
                 if choice_presentation {
                     payload["choice_presentation"] = json!(story.choice_presentations());
                 }

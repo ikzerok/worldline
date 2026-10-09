@@ -1,20 +1,14 @@
-use super::export::{collect_units, digest, normalize_selection, source_baseline};
+use super::export::{collect_program_units, digest, normalize_selection, source_baseline};
 use super::*;
 use crate::project::Project;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
-/// sidecar 字节只由原生应用路径消费；wasm32 仅提供预览，因此这些字段在该目标下未被读取。
-#[cfg_attr(
-    target_arch = "wasm32",
-    allow(dead_code, reason = "wasm32 only previews; native apply reads these")
-)]
-struct PreparedImport {
-    plan: LocalizationImportPlan,
-    sidecar_path: PathBuf,
-    manifest_bytes: Option<Vec<u8>>,
-    sidecar_bytes: Option<Vec<u8>>,
-    create_sidecar: bool,
+pub(super) struct PreparedImport {
+    pub plan: LocalizationImportPlan,
+    pub sidecar_path: PathBuf,
+    pub manifest_bytes: Option<Vec<u8>>,
+    pub sidecar_bytes: Option<Vec<u8>>,
+    pub create_sidecar: bool,
 }
 
 impl Project {
@@ -24,7 +18,7 @@ impl Project {
         selection: &LocalizationSelection,
         exchange: &LocalizationExchange,
     ) -> Result<LocalizationImportPlan, String> {
-        Ok(prepare_import(self, selection, exchange)?.plan)
+        Ok(prepare_import(self, selection, exchange, None)?.plan)
     }
 
     /// Revalidate and persist the complete locale update before replacing this Project buffer.
@@ -43,7 +37,7 @@ impl Project {
         if !conflicts.is_empty() {
             return Err("工程存在外部刷新冲突，不能应用本地化译文".into());
         }
-        let prepared = prepare_import(&refreshed, selection, exchange)?;
+        let prepared = prepare_import(&refreshed, selection, exchange, None)?;
         if prepared.plan.plan_digest != expected_plan_digest {
             return Err("本地化导入预览已过期，请重新预览".into());
         }
@@ -90,11 +84,13 @@ impl Project {
     }
 }
 
-fn prepare_import(
+pub(super) fn prepare_import(
     project: &Project,
     requested_selection: &LocalizationSelection,
     exchange: &LocalizationExchange,
+    records: Option<&[source::Record]>,
 ) -> Result<PreparedImport, String> {
+    let candidate = records.is_some();
     let selection = normalize_selection(requested_selection)?;
     let content_baseline = project.content_baseline();
     let source_baseline = source_baseline(project)?;
@@ -148,7 +144,7 @@ fn prepare_import(
             "工程存在工作区诊断，只能只读查看",
         );
     }
-    if project.is_dirty() {
+    if !candidate && project.is_dirty() {
         diagnostic(
             &mut diagnostics,
             "DIRTY_PROJECT",
@@ -158,40 +154,34 @@ fn prepare_import(
         );
     }
 
-    let mut compile_project = project.clone();
-    let compiled = compile_project.compile();
-    if compiled.has_errors() {
-        diagnostic(
-            &mut diagnostics,
-            "COMPILE_ERROR",
-            None,
-            None,
-            "工程存在编译错误，不能验证本地化导入",
-        );
-    } else {
-        for (event_index, event) in compiled.program.events.iter().enumerate() {
-            let file = compiled
-                .program
-                .event_files
-                .get(event_index)
-                .ok_or("事件缺少源码文件映射")?;
-            collect_units(
-                &event.body,
-                Path::new(file),
-                &project.root,
-                &mut current_units,
-            )?;
+    if let Some(records) = records {
+        // New candidate callers already checked this exact source snapshot and every unit budget.
+        // Keep only the explicit batch here; unselected units never expand the import scope.
+        for record in records {
+            if let Some(id) = &record.id {
+                if selection.string_ids.binary_search(id).is_ok() {
+                    current_units
+                        .entry(id.clone())
+                        .or_default()
+                        .push(record.unit.clone());
+                }
+            }
         }
-    }
-
-    if !compiled.has_errors() {
-        for fragment in &compiled.program.fragments {
-            collect_units(
-                &fragment.body,
-                Path::new(&fragment.file),
-                &project.root,
-                &mut current_units,
-            )?;
+    } else {
+        let mut compile_project = project.clone();
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        source::record_compilation();
+        let compiled = compile_project.compile();
+        if compiled.has_errors() {
+            diagnostic(
+                &mut diagnostics,
+                "COMPILE_ERROR",
+                None,
+                None,
+                "工程存在编译错误，不能验证本地化导入",
+            );
+        } else {
+            current_units = collect_program_units(&compiled.program, &project.root)?;
         }
     }
     if exchange.source_baseline != source_baseline {
@@ -271,7 +261,7 @@ fn prepare_import(
                 "SOURCE_MISMATCH",
                 Some(id),
                 Some(&unit.source),
-                "交换包的源引用或受保护源片段与当前工程不匹配",
+                "交换包的源引用或受保护源片段与当前工程不匹配；请按诊断中的真实来源重新导出交换包，原输入未修改",
             );
         }
         match &entry.translation_parts {
@@ -297,7 +287,13 @@ fn prepare_import(
     let mut sidecar_bytes = None;
     let mut create_sidecar = false;
     if diagnostics.is_empty() {
-        match prepare_sidecar(project, &sidecar_path, sidecar_registered, exchange) {
+        match super::sidecar::prepare_sidecar(
+            project,
+            &sidecar_path,
+            sidecar_registered,
+            exchange,
+            candidate,
+        ) {
             Ok(sidecar) => {
                 manifest_bytes = sidecar.manifest_bytes;
                 sidecar_bytes = Some(sidecar.bytes);
@@ -305,6 +301,9 @@ fn prepare_import(
             }
             Err(message) => diagnostic(&mut diagnostics, "SIDECAR_INVALID", None, None, message),
         }
+    }
+    if candidate {
+        limits::budget(diagnostics.len() <= limits::MAX_DIAGNOSTICS, "诊断数")?;
     }
     let can_apply = diagnostics.is_empty();
     let plan_digest = import_plan_digest(
@@ -349,7 +348,10 @@ fn diagnostic(
     });
 }
 
-fn protected_tokens_match(source: &[LocalizationPart], translation: &[LocalizationPart]) -> bool {
+pub(super) fn protected_tokens_match(
+    source: &[LocalizationPart],
+    translation: &[LocalizationPart],
+) -> bool {
     fn tokens(parts: &[LocalizationPart]) -> (BTreeMap<String, usize>, BTreeMap<String, usize>) {
         let mut placeholders = BTreeMap::new();
         let mut links = BTreeMap::new();
@@ -383,133 +385,6 @@ fn localization_sidecar_path(project: &Project, locale: &str) -> Result<(PathBuf
     let relative = format!(".world/localization/{locale}.json");
     let path = crate::workspace_documents::registered_path(&project.root, &relative)?;
     Ok((path, false))
-}
-
-struct PreparedSidecar {
-    manifest_bytes: Option<Vec<u8>>,
-    bytes: Vec<u8>,
-    create: bool,
-}
-
-fn prepare_sidecar(
-    project: &Project,
-    path: &Path,
-    registered: bool,
-    exchange: &LocalizationExchange,
-) -> Result<PreparedSidecar, String> {
-    let manifest_path = crate::workspace_documents::manifest_path(&project.root);
-    let manifest_bytes = if registered {
-        None
-    } else {
-        Some(register_localization_path(
-            project,
-            &manifest_path,
-            path,
-            &exchange.target_locale,
-        )?)
-    };
-
-    let current = project
-        .authoring_documents
-        .get(path)
-        .filter(|document| !document.is_deleted());
-    if current.is_some_and(|document| document.is_read_only()) {
-        return Err("目标 locale sidecar 是只读文档".into());
-    }
-    let create_sidecar = current.is_none();
-    let mut sidecar = if let Some(document) = current {
-        crate::workspace_documents::parse_unique_json(document.bytes())
-            .map_err(|error| format!("locale sidecar JSON 无法解析：{error}"))?
-    } else {
-        let files = crate::file_access::workspace_files(&project.root)
-            .map_err(|error| format!("无法读取工作区文件清单：{error}"))?;
-        if files.iter().any(|file| file.as_path() == path) {
-            return Err("目标 locale sidecar 已存在但未注册，拒绝覆盖".into());
-        }
-        serde_json::json!({
-            "schema_version": 1,
-            "required_features": [LOCALIZATION_REQUIRED_FEATURE],
-            "source_locale": exchange.source_locale,
-            "target_locale": exchange.target_locale,
-            "entries": {}
-        })
-    };
-    super::document::validate_header(
-        &sidecar,
-        &exchange.target_locale,
-        Some(&exchange.source_locale),
-    )?;
-    let object = sidecar
-        .as_object_mut()
-        .ok_or("locale sidecar 顶层必须是 JSON 对象")?;
-    let entries = object
-        .get_mut("entries")
-        .and_then(serde_json::Value::as_object_mut)
-        .ok_or("locale sidecar entries 必须是对象")?;
-    for entry in &exchange.entries {
-        let value = entries
-            .entry(entry.id.clone())
-            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-        let fields = value
-            .as_object_mut()
-            .ok_or_else(|| format!("sidecar 条目 `{}` 不是对象", entry.id))?;
-        fields.insert(
-            "source_revision".into(),
-            serde_json::Value::String(entry.source_revision.clone()),
-        );
-        fields.insert(
-            "translation_parts".into(),
-            serde_json::to_value(&entry.translation_parts)
-                .map_err(|error| format!("无法序列化译文：{error}"))?,
-        );
-    }
-    let bytes = serde_json::to_vec(&sidecar)
-        .map_err(|error| format!("无法序列化 locale sidecar：{error}"))?;
-    Ok(PreparedSidecar {
-        manifest_bytes,
-        bytes,
-        create: create_sidecar,
-    })
-}
-
-fn register_localization_path(
-    project: &Project,
-    manifest_path: &Path,
-    sidecar_path: &Path,
-    locale: &str,
-) -> Result<Vec<u8>, String> {
-    let document = project
-        .authoring_documents
-        .get(manifest_path)
-        .filter(|document| !document.is_deleted())
-        .ok_or("本地化需要已载入的工程清单")?;
-    let mut manifest = crate::workspace_documents::parse_unique_json(document.bytes())
-        .map_err(|error| format!("工程清单 JSON 无法解析：{error}"))?;
-    let object = manifest
-        .as_object_mut()
-        .ok_or("工程清单顶层必须是 JSON 对象")?;
-    let relative = sidecar_path
-        .strip_prefix(&project.root)
-        .map_err(|_| "locale sidecar 路径越出工作区")?
-        .to_str()
-        .ok_or("locale sidecar 路径不是 UTF-8")?
-        .replace('\\', "/");
-    let localizations = object
-        .entry("localizations")
-        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
-        .as_object_mut()
-        .ok_or("工程清单 localizations 必须是对象")?;
-    if let Some(existing) = localizations
-        .get(locale)
-        .and_then(serde_json::Value::as_str)
-    {
-        if existing.replace('\\', "/") != relative {
-            return Err("目标 locale 已登记到其他 sidecar 路径".into());
-        }
-    } else {
-        localizations.insert(locale.into(), serde_json::Value::String(relative));
-    }
-    serde_json::to_vec(&manifest).map_err(|error| format!("无法序列化工程清单：{error}"))
 }
 
 fn import_plan_digest(

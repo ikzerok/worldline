@@ -2,6 +2,10 @@
 
 **协议版本:** 1（语言 v1.10 entity 字段扩展）
 
+0.33 新增本地化目录、稳定身份、译文内存候选及真实 locale 会话，详见
+[本地化机器工作流](localization-machine.md)。旧 import apply 立即持久化语义保持；
+新候选 apply 与保存明确分开，旧 source-only 输出保持原有形状。
+
 0.15 的原生矢量预览、原子应用和安全SVG交换见 [scene-protocol.md](scene-protocol.md)，能力为 `authoring.vector_scene.v1`；语言默认版本与runtime不因此改变。
 
 CAP-01A 的[就地建档组合意图](authoring-intents.md)由 core Project API、CLI 与 agent RPC
@@ -346,7 +350,7 @@ wl localization import apply <工程目录> --selection-json '<DTO>' --package �
 
 selection 使用 core `LocalizationSelection` DTO：`{schema_version:1, source_locale, target_locale, string_ids}`。export preview 调用 `Project::preview_localization_export`，只读返回 `{ok:true, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；plan 包含带选中源文与受保护 token 的 versioned UTF-8 `exchange`、`source_baseline`、`plan_digest`、diagnostics 与 `can_export`。export apply 重算计划并调用 `Project::export_localization`，只写入工作区外不存在的新 JSON 文件；返回 `{ok:true, operation:"apply", plan, baseline, output, workspace_diagnostics, read_only}`。
 
-import 读取 `LocalizationExchange` JSON，并要求调用方重复提供导出时的相同 selection；不允许交换包扩大 ID 白名单。preview 调用 `Project::preview_localization_import`，只读返回 `{ok:true, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；plan 含目标 locale、受影响 ID、诊断、`plan_digest` 与 `can_apply`。即使 `can_apply:false`，preview 仍是成功的审阅结果，不写盘。apply 调用 `Project::apply_localization_import`，重验 package 版本/selection/source revision/source baseline、token 完整性、Project content baseline 与 digest，然后在单一可恢复事务中注册并更新 locale sidecar；成功返回 `{ok:true, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`。locale sidecar 不参与 runtime 输出。
+import 读取 `LocalizationExchange` JSON，并要求调用方重复提供导出时的相同 selection；不允许交换包扩大 ID 白名单。preview 调用 `Project::preview_localization_import`，只读返回 `{ok:true, operation:"preview", plan, baseline, workspace_diagnostics, read_only}`；plan 含目标 locale、受影响 ID、诊断、`plan_digest` 与 `can_apply`。即使 `can_apply:false`，preview 仍是成功的审阅结果，不写盘。apply 调用 `Project::apply_localization_import`，重验 package 版本/selection/source revision/source baseline、token 完整性、Project content baseline 与 digest，然后在单一可恢复事务中注册并更新 locale sidecar；成功返回 `{ok:true, operation:"apply", plan, changed_files, baseline, new_baseline, workspace_diagnostics, read_only}`。runtime 不直接读取 sidecar；默认源文输出不变，显式 locale 会话使用 core 从 sidecar 验证并冻结的展示快照，详见 [本地化运行契约](localization-runtime.md)。
 
 apply 验证失败时 CLI 退出码为 1 并返回稳定 `error.code`、中文 `message` 及诊断；输出文件/包读取等 IO 错误退出码为 2。CLI/RPC 只转发 core DTO 和结果，不解析 `.wl`、不自行校验 token。JSON-RPC 方法的确切映射见 §3.3。
 

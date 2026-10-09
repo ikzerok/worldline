@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     action_capture::ActionCapture,
     execution::ReplayExecutionBudget,
-    replay_runner::{replay_story, run_replay_slice, ReplayCursor, ReplayProgress},
+    replay_runner::{replay_story_with_context, run_replay_slice, ReplayCursor, ReplayProgress},
     AccessCoverage, ReplayCheckpoint, ReplayOrigin, ReplayTrace, Story,
 };
 use worldline_core::CompileResult;
@@ -33,6 +33,7 @@ impl Side {
         snapshot: &CompileResult,
         options: RouteComparisonOptions,
         budget: &mut ReplayExecutionBudget<'_>,
+        presentation: Option<crate::localization::PresentationContext>,
     ) -> Result<(), RouteComparisonError> {
         if self.result.is_some() {
             return Ok(());
@@ -46,10 +47,18 @@ impl Side {
             return Ok(());
         }
         let restored = match &self.checkpoint {
-            Some(checkpoint) => {
-                Story::from_checkpoint(&snapshot.program, &snapshot.analysis, checkpoint)
-            }
-            None => replay_story(&snapshot.program, &snapshot.analysis, &self.trace),
+            Some(checkpoint) => Story::from_checkpoint_with_context(
+                &snapshot.program,
+                &snapshot.analysis,
+                checkpoint,
+                presentation.clone(),
+            ),
+            None => replay_story_with_context(
+                &snapshot.program,
+                &snapshot.analysis,
+                &self.trace,
+                presentation,
+            ),
         };
         let mut story = match restored {
             Ok(story) => story,
@@ -83,7 +92,7 @@ impl Side {
         }
         let cursor = self.cursor.as_mut().expect("比较游标已建立");
         // 恢复本身不可抢占；重新开始执行片的时钟，避免大检查点在每次恢复后零推进让出。
-        budget.slice_started = crate::execution::MonotonicInstant::now();
+        budget.resume_slice_after_restore();
         let start_steps = budget.steps;
         let progress = run_replay_slice(&self.trace, cursor, &mut story, budget);
         self.steps += budget.steps - start_steps;

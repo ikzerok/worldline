@@ -136,7 +136,7 @@ v1.6:世界观、人物属性和关系是静态作者资料;不改变运行期�
 `period` / `during` / `follows` 描述世界时间关系,不改变执行状态、不参与运行存档指纹。
 `tag` / `asset` / `mark` / `attach` / `anchor_def` / `anchor_link` 是创作目录元数据,同样不参与运行存档指纹;正文原有 `#标签` 的输出契约不变。
 
-启用 `content.localization.v1` 后的 `#wl-localization:<id>` 是文本身份元数据：core 从 Program 暴露其 ID，但不把它写入 `Output.tags`、可见文字或运行 fingerprint。locale sidecar 保存翻译，不改变当前 runtime 输出。
+启用 `content.localization.v1` 后的 `#wl-localization:<id>` 是文本身份元数据：core 从 Program 暴露其 ID，但不把它写入 `Output.tags`、可见文字或运行 fingerprint。默认运行仍输出源文；显式译文快照、原序单次求值、源译对照和独立持久身份见 [localization-runtime.md](localization-runtime.md)。
 
 未使用新元数据的旧故事保留原指纹策略,注释与文件移动不影响指纹。
 
@@ -243,3 +243,8 @@ choice/once/if/enable上下文、divert/drift类别及重复出现次数，不�
 验收要求：以旧版本无预算触发的图为oracle，逐边核对来源/顺序/上下文/重复数；
 共享return DAG应不再指数展开；含真实转场的极端DAG须明确超限；调用环、未知callee、
 中文条件、嵌套scene、重复不同上下文、跨文件来源和runtime语义继续验证。
+
+工具0.33纠正 include 拼接正文的来源：正文、say、choice 的相对 file 链接、目录引用
+和诊断均按 parser 记录的真实语句文件解析，不使用事件或片段声明文件代替。来源缺失
+或有歧义时明确不可定位；相对文件链接在运行初始化前拒绝。正文显示及源译运行共用
+该目标，普通同文件路径、指纹及重放版本守卫不变，见 [localization-runtime.md](localization-runtime.md)。

@@ -52,12 +52,26 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
             out,
         );
     }
-    match generate_playthrough_report(
-        &snapshot,
-        &args.trace,
-        args.options,
-        &ReplayCancellation::new(),
-    ) {
+    let presentation = match localization_session::for_trace(Some(&project), &args.trace) {
+        Ok(value) => value,
+        Err(message) => return failure(args.json, "LOCALIZATION_PREPARE_FAILED", &message, 1, out),
+    };
+    let outcome = match &presentation {
+        Some(presentation) => worldline_runtime::generate_playthrough_report_with_presentation(
+            &snapshot,
+            &args.trace,
+            args.options,
+            &ReplayCancellation::new(),
+            presentation,
+        ),
+        None => generate_playthrough_report(
+            &snapshot,
+            &args.trace,
+            args.options,
+            &ReplayCancellation::new(),
+        ),
+    };
+    match outcome {
         Ok(report) => {
             let ok = report.status == RouteStatus::Replayed;
             // runtime 在构造 DTO 前已检查其 1 MiB 上限；这里只加有界机器外壳。

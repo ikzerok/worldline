@@ -2,7 +2,13 @@
 
 - [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 
-本文档对应 0.32.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+本文档对应 0.33.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+
+## 0.33 译文与正文关联
+
+- [译文制作与运行接入](localization-workbench.md)：core 目录、typed 草稿、显式保存与真实 locale
+- [运行展示契约](../spec/localization-runtime.md)：求值顺序、回退、身份与重放
+- [正文关联创作契约](../spec/manuscript-authoring.md)：缓冲选区、复合计划和迁移
 
 ## 0.32 同一当前稿的作者闭环
 

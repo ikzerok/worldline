@@ -203,13 +203,43 @@ impl Server {
                 response_budget,
             ));
         }
-        match compare_routes(
-            &snapshot,
-            &left,
-            &right,
-            options,
-            &ReplayCancellation::new(),
-        ) {
+        let trace = if left.presentation.is_some() {
+            &left
+        } else {
+            &right
+        };
+        let presentation = match localization_session::for_trace(Some(&unit.project), trace) {
+            Ok(value) => value,
+            Err(error) => {
+                return Ok(failure(
+                    error["error"]["code"]
+                        .as_str()
+                        .unwrap_or("LOCALIZATION_PREPARE_FAILED"),
+                    error["error"]["message"]
+                        .as_str()
+                        .unwrap_or("译文展示准备失败"),
+                    response_budget,
+                ))
+            }
+        };
+        let outcome = match &presentation {
+            Some(presentation) => worldline_runtime::compare_routes_with_presentation(
+                &snapshot,
+                &left,
+                &right,
+                options,
+                &ReplayCancellation::new(),
+                presentation,
+            ),
+            None => compare_routes(
+                &snapshot,
+                &left,
+                &right,
+                options,
+                &ReplayCancellation::new(),
+            ),
+        };
+        match outcome {
             Ok(comparison) => {
                 let ok = comparison.left.status == RouteStatus::Replayed
                     && comparison.right.status == RouteStatus::Replayed;

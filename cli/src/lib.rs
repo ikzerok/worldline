@@ -35,6 +35,8 @@ struct FileArgs {
     bounded_continue: bool,
     continuation_budget: ReplayBudget,
     language_version: Option<LanguageVersion>,
+    locale: Option<String>,
+    locale_fallback: bool,
 }
 
 struct ReplayArgs {
@@ -292,6 +294,7 @@ struct CompileSnapshot {
     result: CompileResult,
     workspace_diagnostics: Vec<Diagnostic>,
     read_only: bool,
+    project: Option<Project>,
 }
 
 impl CompileSnapshot {
@@ -300,6 +303,7 @@ impl CompileSnapshot {
             result,
             workspace_diagnostics: Vec::new(),
             read_only: false,
+            project: None,
         }
     }
 }
@@ -320,6 +324,10 @@ mod draft_rehearsal;
 mod entity;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/localization_session.rs"]
+mod localization_session;
+#[path = "lib/localization_workbench.rs"]
+mod localization_workbench;
 #[path = "lib/manuscript_chapter.rs"]
 mod manuscript_chapter;
 #[path = "lib/manuscript_delivery.rs"]
@@ -428,6 +436,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "schema-preview" => source_edit::schema_command(rest, out, false),
         "schema-apply" => source_edit::schema_command(rest, out, true),
         "reader-export" => reader_export::cmd_reader_export(&reader_export::parse_reader_export_args(rest)?, out),
+        "localization" if rest.first().is_some_and(|arg| matches!(arg.as_str(), "catalog" | "ids" | "edit" | "import-candidate")) => localization_workbench::command(rest, out),
         "localization" => localization::cmd_localization(&localization::parse_localization_args(rest)?, out),
         "markdown" => markdown_import::cmd_markdown_import(&markdown_import::parse_markdown_import_args(rest)?, out),
         "authoring-intent" => {
