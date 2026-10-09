@@ -125,7 +125,9 @@ impl Project {
                 .get(path)
                 .is_some_and(|bytes| crate::workspace_documents::document_read_only(bytes, false));
             if !registered && !document.is_dirty() {
-                return false;
+                // 自身保存删除后的缺失基线仍供撤销/重做使用，不能因取消注册丢失。
+                // 外部同路径重建则解除跟踪，不能隐式接管未注册的普通文件。
+                return document.deleted && !disk_authoring.contains_key(path);
             }
             if document.deleted {
                 if document.is_dirty() {
