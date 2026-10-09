@@ -51,13 +51,33 @@ pub(super) fn command(args: &[String], out: &mut impl Write) -> Result<i32, Stri
             out,
         );
     }
-    match compare_routes(
-        &snapshot,
-        &args.left,
-        &args.right,
-        args.options,
-        &ReplayCancellation::new(),
-    ) {
+    let trace = if args.left.presentation.is_some() {
+        &args.left
+    } else {
+        &args.right
+    };
+    let presentation = match localization_session::for_trace(Some(&project), trace) {
+        Ok(value) => value,
+        Err(message) => return failure(args.json, "LOCALIZATION_PREPARE_FAILED", &message, 1, out),
+    };
+    let outcome = match &presentation {
+        Some(presentation) => worldline_runtime::compare_routes_with_presentation(
+            &snapshot,
+            &args.left,
+            &args.right,
+            args.options,
+            &ReplayCancellation::new(),
+            presentation,
+        ),
+        None => compare_routes(
+            &snapshot,
+            &args.left,
+            &args.right,
+            args.options,
+            &ReplayCancellation::new(),
+        ),
+    };
+    match outcome {
         Ok(comparison) => {
             let ok = comparison.left.status == RouteStatus::Replayed
                 && comparison.right.status == RouteStatus::Replayed;

@@ -23,7 +23,9 @@ pub use review::{
 mod reading_tests;
 mod source;
 mod writing;
+mod writing_authoring;
 mod writing_insertion;
+pub use writing_authoring::*;
 pub use writing_insertion::WritingProseInsertion;
 
 #[cfg(test)]

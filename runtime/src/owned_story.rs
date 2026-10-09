@@ -26,6 +26,62 @@ self_cell::self_cell! {
 pub struct OwnedStory(StoryCell);
 
 impl OwnedStory {
+    pub fn new_localized(
+        program: Program,
+        analysis: Analysis,
+        snapshot: &worldline_core::localization::LocalizationPresentationSnapshot,
+    ) -> Result<Self, RunError> {
+        Self::new_with_presentation(program, analysis, crate::util::seed_now(), snapshot)
+    }
+
+    pub fn new_with_presentation(
+        program: Program,
+        analysis: Analysis,
+        seed: u64,
+        snapshot: &worldline_core::localization::LocalizationPresentationSnapshot,
+    ) -> Result<Self, RunError> {
+        let presentation = crate::localization::PresentationContext::new(snapshot);
+        presentation.validate(&program, &analysis)?;
+        let owner = StoryOwner {
+            program,
+            analysis,
+            #[cfg(test)]
+            _probe: None,
+        };
+        StoryCell::try_new(owner, |owner| {
+            Story::new_with_context(&owner.program, &owner.analysis, seed, Some(presentation))
+        })
+        .map(Self)
+    }
+
+    pub fn from_checkpoint_with_presentation(
+        program: Program,
+        analysis: Analysis,
+        checkpoint: &ReplayCheckpoint,
+        snapshot: &worldline_core::localization::LocalizationPresentationSnapshot,
+    ) -> Result<Self, RunError> {
+        let presentation = crate::localization::PresentationContext::new(snapshot);
+        let owner = StoryOwner {
+            program,
+            analysis,
+            #[cfg(test)]
+            _probe: None,
+        };
+        StoryCell::try_new(owner, |owner| {
+            Story::from_checkpoint_with_context(
+                &owner.program,
+                &owner.analysis,
+                checkpoint,
+                Some(presentation),
+            )
+        })
+        .map(Self)
+    }
+
+    pub fn presentation_identity(&self) -> Option<&crate::RuntimeLocalizationIdentity> {
+        self.as_story().presentation_identity()
+    }
+
     pub fn new_with_seed(
         program: Program,
         analysis: Analysis,
@@ -127,6 +183,9 @@ impl OwnedStory {
     }
     pub fn explain_choices(&self) -> Result<Vec<ChoiceExplanation>, RunError> {
         self.as_story().explain_choices()
+    }
+    pub fn restart(&mut self) -> Result<(), RunError> {
+        self.0.with_dependent_mut(|_, story| story.restart())
     }
     pub fn choose(&mut self, index: usize) -> Result<(), RunError> {
         self.0.with_dependent_mut(|_, story| story.choose(index))

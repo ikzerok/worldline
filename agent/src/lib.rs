@@ -36,6 +36,10 @@ mod draft_rehearsal;
 mod entities;
 #[path = "lib/localization.rs"]
 mod localization;
+#[path = "lib/localization_session.rs"]
+mod localization_session;
+#[path = "lib/localization_workbench.rs"]
+mod localization_workbench;
 #[path = "lib/manuscript_chapter.rs"]
 mod manuscript_chapter;
 #[path = "lib/manuscript_delivery.rs"]
@@ -113,6 +117,7 @@ struct StoryUnit {
     program: &'static Program,
     analysis: &'static Analysis,
     language_version: LanguageVersion,
+    project: Option<Project>,
 }
 
 /// 一个进行中的故事实例。
@@ -147,6 +152,7 @@ struct ProjectUnit {
 struct CompileInput {
     result: CompileResult,
     workspace_diagnostics: Vec<Diagnostic>,
+    project: Option<Project>,
 }
 
 struct WorkspaceSnapshot {
@@ -162,6 +168,7 @@ impl CompileInput {
         Self {
             result,
             workspace_diagnostics: Vec::new(),
+            project: None,
         }
     }
 }
@@ -273,6 +280,17 @@ impl Server {
 
     fn call(&mut self, method: &str, params: &Value) -> Result<Value, ProtoError> {
         match method {
+            "localization.catalog" => self.localization_workbench(params, "catalog", false),
+            "localization.ids.preview" => self.localization_workbench(params, "ids", false),
+            "localization.ids.apply" => self.localization_workbench(params, "ids", true),
+            "localization.edit.preview" => self.localization_workbench(params, "edit", false),
+            "localization.edit.apply" => self.localization_workbench(params, "edit", true),
+            "localization.import_candidate.preview" => {
+                self.localization_workbench(params, "import", false)
+            }
+            "localization.import_candidate.apply" => {
+                self.localization_workbench(params, "import", true)
+            }
             "catalog.scope" => self.catalog_scope(params),
             "reconciliation.capture" => self.reconciliation(params, "capture"),
             "reconciliation.preview" => self.reconciliation(params, "preview"),
@@ -290,6 +308,8 @@ impl Server {
                 "server": "wl-agent",
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
+                    "authoring.localization_workbench.v1",
+                    "runtime.localization.v1",
                     "authoring.problems.v1",
                     "catalog_import_v1",
                     "authoring.manuscript_chapter.v1",

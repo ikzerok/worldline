@@ -200,7 +200,33 @@ impl Server {
                 response_budget,
             ));
         }
-        match generate_playthrough_report(&snapshot, &trace, options, &ReplayCancellation::new()) {
+        let presentation = match localization_session::for_trace(Some(&unit.project), &trace) {
+            Ok(value) => value,
+            Err(error) => {
+                return Ok(failure(
+                    error["error"]["code"]
+                        .as_str()
+                        .unwrap_or("LOCALIZATION_PREPARE_FAILED"),
+                    error["error"]["message"]
+                        .as_str()
+                        .unwrap_or("译文展示准备失败"),
+                    response_budget,
+                ))
+            }
+        };
+        let outcome = match &presentation {
+            Some(presentation) => worldline_runtime::generate_playthrough_report_with_presentation(
+                &snapshot,
+                &trace,
+                options,
+                &ReplayCancellation::new(),
+                presentation,
+            ),
+            None => {
+                generate_playthrough_report(&snapshot, &trace, options, &ReplayCancellation::new())
+            }
+        };
+        match outcome {
             Ok(report) => {
                 let ok = report.status == RouteStatus::Replayed;
                 // runtime 流式预检后的 DTO 最多 1 MiB；不复制或重推导其中的语义字段。

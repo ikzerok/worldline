@@ -2,7 +2,32 @@ use super::*;
 impl Server {
     pub(super) fn compile(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let options = compile_options(params)?;
-        let input = if let Some(p) = params.get("path").and_then(Value::as_str) {
+        let input = if let Some(value) = params.get("project_id") {
+            if params.get("path").is_some()
+                || params.get("source").is_some()
+                || params.get("file_name").is_some()
+                || params.get("language_version").is_some()
+                || params.get("options").is_some()
+            {
+                return Err(ProtoError::new(
+                    -32602,
+                    "project_id 编译不能同时指定其他源码或语言选项",
+                ));
+            }
+            let id = value
+                .as_str()
+                .ok_or_else(|| ProtoError::new(-32602, "project_id 必须是字符串"))?;
+            let unit = self
+                .projects
+                .get(id)
+                .ok_or_else(|| ProtoError::new(-32602, "未知 project_id"))?;
+            let mut project = unit.project.clone();
+            CompileInput {
+                result: project.compile(),
+                workspace_diagnostics: project.authoring_diagnostics().to_vec(),
+                project: Some(project),
+            }
+        } else if let Some(p) = params.get("path").and_then(Value::as_str) {
             match compile_path_input(Path::new(p), params, options) {
                 Ok(r) => r,
                 Err(e) => {
@@ -33,11 +58,15 @@ impl Server {
                 CompileInput::plain(compile_source(name, src))
             }
         } else {
-            return Err(ProtoError::new(-32602, "需要 `path` 或 `source` 参数"));
+            return Err(ProtoError::new(
+                -32602,
+                "需要 `project_id`、`path` 或 `source` 参数",
+            ));
         };
         let CompileInput {
             result,
             workspace_diagnostics,
+            project,
         } = input;
         let read_only = !workspace_diagnostics.is_empty();
         if result.has_errors() {
@@ -60,6 +89,7 @@ impl Server {
                 program,
                 analysis,
                 language_version: result.options.language_version,
+                project,
             },
         );
         Ok(json!({
@@ -89,6 +119,7 @@ impl Server {
 
     pub(super) fn session_open(&mut self, params: &Value) -> Result<Value, ProtoError> {
         let story_id = param_str(params, "story_id")?.to_string();
+        let localization = localization_session::requested(params)?;
         let choice_presentation = match params.get("capabilities") {
             None => false,
             Some(value) => {
@@ -127,13 +158,28 @@ impl Server {
         if seed.is_some() && params.get("save").and_then(Value::as_str).is_some() {
             return Err(ProtoError::new(-32602, "`seed` 不能与 `save` 同时使用"));
         }
-        let (program, analysis) = {
+        let (program, analysis, presentation) = {
             let unit = self.story(&story_id)?;
-            (unit.program, unit.analysis)
+            let presentation = match localization
+                .as_ref()
+                .map(|request| localization_session::prepare(unit.project.as_ref(), request))
+                .transpose()
+            {
+                Ok(value) => value,
+                Err(failure) => return Ok(failure),
+            };
+            (unit.program, unit.analysis, presentation)
         };
-        let opened = match params.get("save").and_then(Value::as_str) {
-            Some(save) => Story::load(program, analysis, save),
-            None => match seed {
+        let opened = match (&presentation, params.get("save").and_then(Value::as_str)) {
+            (Some(presentation), Some(save)) => {
+                Story::load_with_presentation(program, analysis, save, presentation)
+            }
+            (None, Some(save)) => Story::load(program, analysis, save),
+            (Some(presentation), None) => match seed {
+                Some(seed) => Story::new_with_presentation(program, analysis, seed, presentation),
+                None => Story::new_localized(program, analysis, presentation),
+            },
+            (None, None) => match seed {
                 Some(seed) => Story::new_with_seed(program, analysis, seed),
                 None => Story::new(program, analysis),
             },
@@ -144,6 +190,7 @@ impl Server {
         };
         story.set_continuation_budget(budget);
         let state = story.state_view();
+        let presentation_identity = story.presentation_identity().cloned();
         self.next_session += 1;
         let session_id = format!("c{}", self.next_session);
         self.sessions.insert(
@@ -157,6 +204,9 @@ impl Server {
             },
         );
         let mut response = json!({ "session_id": session_id, "state": state });
+        if let Some(identity) = presentation_identity {
+            response["presentation"] = json!(identity);
+        }
         if bounded_continue {
             response["execution_diagnostics"] = json!(
                 worldline_core::analysis::execution_diagnostics(program, analysis)
@@ -169,6 +219,9 @@ impl Server {
             }
             if bounded_continue {
                 capabilities.push(worldline_runtime::BOUNDED_CONTINUE_CAPABILITY);
+            }
+            if localization.is_some() {
+                capabilities.push(worldline_runtime::LOCALIZATION_PRESENTATION_CAPABILITY);
             }
             response["capabilities"] = json!(capabilities);
         }
@@ -188,14 +241,34 @@ impl Server {
         let max_steps = optional_u64(params, "max_steps")?.unwrap_or(defaults.max_steps);
         let time_budget_ms =
             optional_u64(params, "time_budget_ms")?.unwrap_or(defaults.time_budget_ms);
-        let replay = ReplayTrace::replay(
-            unit.program,
-            unit.analysis,
-            &trace,
-            ReplayBudget::new(max_steps, time_budget_ms),
-            &ReplayCancellation::new(),
-        )
-        .map_err(|error| ProtoError::new(-32602, format!("重放 DTO 不兼容:{error}")))?;
+        let presentation = match localization_session::for_trace(unit.project.as_ref(), &trace) {
+            Ok(value) => value,
+            Err(failure) => return Ok(failure),
+        };
+        let outcome = match &presentation {
+            Some(presentation) => ReplayTrace::replay_with_presentation(
+                unit.program,
+                unit.analysis,
+                &trace,
+                ReplayBudget::new(max_steps, time_budget_ms),
+                &ReplayCancellation::new(),
+                presentation,
+            ),
+            None => ReplayTrace::replay(
+                unit.program,
+                unit.analysis,
+                &trace,
+                ReplayBudget::new(max_steps, time_budget_ms),
+                &ReplayCancellation::new(),
+            ),
+        };
+        let replay = match outcome {
+            Ok(value) => value,
+            Err(error) if presentation.is_some() => {
+                return Ok(json!({"ok":false,"run_error":error}))
+            }
+            Err(error) => return Err(ProtoError::new(-32602, format!("重放 DTO 不兼容:{error}"))),
+        };
         Ok(json!({ "ok": true, "replay": replay }))
     }
 }
@@ -247,6 +320,7 @@ fn compile_path_input(
             return Ok(CompileInput {
                 result: project.compile(),
                 workspace_diagnostics: project.authoring_diagnostics().to_vec(),
+                project: Some(project),
             });
         }
     }
@@ -261,6 +335,7 @@ fn compile_path_input(
         return Ok(CompileInput {
             result,
             workspace_diagnostics: project.authoring_diagnostics().to_vec(),
+            project: Some(project),
         });
     }
     Ok(CompileInput::plain(result))

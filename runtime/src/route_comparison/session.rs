@@ -9,6 +9,7 @@ use worldline_core::{CompileOptions, CompileResult};
 
 /// 拥有恢复状态，不借用 CompileResult，适用于 native 与 WASM。
 pub struct RouteComparisonSession {
+    presentation: Option<crate::localization::PresentationContext>,
     left: side::Side,
     right: side::Side,
     options: RouteComparisonOptions,
@@ -31,7 +32,31 @@ impl RouteComparisonSession {
         options: RouteComparisonOptions,
         cancellation: ReplayCancellation,
     ) -> Result<Self, RouteComparisonError> {
+        Self::new_with_context(snapshot, left, right, options, cancellation, None)
+    }
+    pub(crate) fn new_with_context(
+        snapshot: &CompileResult,
+        left: ReplayTrace,
+        right: ReplayTrace,
+        options: RouteComparisonOptions,
+        cancellation: ReplayCancellation,
+        presentation: Option<crate::localization::PresentationContext>,
+    ) -> Result<Self, RouteComparisonError> {
         options.validate()?;
+        if let Some(context) = &presentation {
+            context
+                .validate(&snapshot.program, &snapshot.analysis)
+                .map_err(|error| {
+                    RouteComparisonError::new("invalid_presentation", error.message)
+                })?;
+        }
+        for trace in [&left, &right] {
+            crate::localization::require_identity(
+                trace.presentation.as_ref(),
+                presentation.as_ref(),
+            )
+            .map_err(|error| RouteComparisonError::new("invalid_presentation", error.message))?;
+        }
         if snapshot.has_errors() {
             return Err(RouteComparisonError::new(
                 "invalid_snapshot",
@@ -57,6 +82,7 @@ impl RouteComparisonSession {
             validate_trace(snapshot, trace, options)?;
         }
         Ok(Self {
+            presentation,
             left: side::Side::new(left),
             right: side::Side::new(right),
             options,
@@ -133,7 +159,12 @@ impl RouteComparisonSession {
                 comparison_limit: Some(self.options.max_output_bytes),
                 output_usage: Some(&mut self.outputs),
             };
-            if let Err(error) = side.advance(snapshot, self.options, &mut budget) {
+            if let Err(error) = side.advance(
+                snapshot,
+                self.options,
+                &mut budget,
+                self.presentation.clone(),
+            ) {
                 self.finished = true;
                 return Err(error);
             }
@@ -153,6 +184,10 @@ impl RouteComparisonSession {
             projection::differences(left.states.as_ref(), right.states.as_ref());
         let variable_differences = projection::differences(left.vars.as_ref(), right.vars.as_ref());
         let result = RouteComparisonResult {
+            presentation: self
+                .presentation
+                .as_ref()
+                .map(|context| context.identity.clone()),
             schema_version: ROUTE_COMPARISON_SCHEMA_VERSION,
             runtime_version: env!("CARGO_PKG_VERSION").into(),
             source_fingerprint: self.fingerprint,

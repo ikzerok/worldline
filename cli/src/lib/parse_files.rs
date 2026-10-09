@@ -17,9 +17,34 @@ pub(super) fn parse_file_args(
     let mut bounded_continue = false;
     let mut continuation_budget = worldline_runtime::DEFAULT_CONTINUATION_BUDGET;
     let mut language_version = None;
+    let mut locale = None;
+    let mut locale_fallback = None;
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
         match a.as_str() {
+            other
+                if session_flags
+                    && matches!(
+                        other.split('=').next(),
+                        Some("--locale" | "--locale-fallback")
+                    ) =>
+            {
+                let (key, inline) = other
+                    .split_once('=')
+                    .map_or((other, None), |(key, value)| (key, Some(value)));
+                let value = inline
+                    .map(str::to_owned)
+                    .or_else(|| iter.next().cloned())
+                    .ok_or("locale 参数需要值")?;
+                let slot = if key == "--locale" {
+                    &mut locale
+                } else {
+                    &mut locale_fallback
+                };
+                if value.is_empty() || slot.replace(value).is_some() {
+                    return Err(format!("{key} 不能为空或重复"));
+                }
+            }
             "--json" => json = true,
             "--trace-exchange" if session_flags => {
                 if trace_exchange {
@@ -100,6 +125,11 @@ pub(super) fn parse_file_args(
     if trace_exchange && trace_output.is_none() {
         return Err("`--trace-exchange` 必须搭配 `--trace-output`".into());
     }
+    if let Some(policy) = &locale_fallback {
+        if locale.is_none() || policy != "source" {
+            return Err("--locale-fallback 只接受 source，且必须同时提供 --locale".into());
+        }
+    }
     Ok(FileArgs {
         path,
         json,
@@ -112,6 +142,8 @@ pub(super) fn parse_file_args(
         bounded_continue,
         continuation_budget,
         language_version,
+        locale,
+        locale_fallback: locale_fallback.is_some(),
     })
 }
 

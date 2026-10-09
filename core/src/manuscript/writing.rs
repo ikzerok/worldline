@@ -142,7 +142,7 @@ impl Project {
         } else {
             self.root.join(path)
         };
-        crate::file_access::within(&self.root, &path)?;
+        let path = crate::file_access::within(&self.root, &path)?;
         let text = self.document(&path)?.to_owned();
         Ok(WritingBuffer {
             path,

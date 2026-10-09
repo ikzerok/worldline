@@ -56,6 +56,8 @@ pub struct AccessCoverage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReplayCheckpoint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
     pub schema_version: u32,
     pub runtime_version: String,
     pub fingerprint: u64,
@@ -98,6 +100,8 @@ pub struct ReplayStep {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReplayTrace {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
     pub schema_version: u32,
     pub runtime_version: String,
     pub fingerprint: u64,
@@ -111,6 +115,7 @@ pub struct ReplayTrace {
 impl ReplayTrace {
     pub(crate) fn entry(fingerprint: u64, seed: u64) -> Self {
         Self {
+            presentation: None,
             schema_version: REPLAY_SCHEMA_VERSION,
             runtime_version: env!("CARGO_PKG_VERSION").into(),
             fingerprint,
@@ -123,6 +128,7 @@ impl ReplayTrace {
 
     pub(crate) fn checkpoint(checkpoint: ReplayCheckpoint) -> Self {
         Self {
+            presentation: checkpoint.presentation.clone(),
             schema_version: REPLAY_SCHEMA_VERSION,
             runtime_version: env!("CARGO_PKG_VERSION").into(),
             fingerprint: checkpoint.fingerprint,

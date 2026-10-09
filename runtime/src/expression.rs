@@ -11,6 +11,7 @@ impl<'p> Story<'p> {
     pub(super) fn render_parts(
         &self,
         parts: &[TextPart],
+        source_file: Option<&str>,
     ) -> Result<(String, Vec<worldline_core::navigation::RenderedLink>), RunError> {
         let mut out = String::new();
         let mut links = Vec::new();
@@ -22,7 +23,7 @@ impl<'p> Story<'p> {
                     out.push_str(&link.label);
                     let mut target = link.target.clone();
                     if target.kind == "file" {
-                        if let Some(file) = self.current_source_file() {
+                        if let Some(file) = source_file {
                             target.id = worldline_core::catalog::resolved_asset(file, &target.id)
                                 .to_string_lossy()
                                 .into_owned();

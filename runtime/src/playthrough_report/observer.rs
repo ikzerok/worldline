@@ -33,9 +33,11 @@ impl ReportObserver {
         &mut self,
         choice: ChoiceIdentity,
         source: Option<RawSource>,
+        localization_status: Option<worldline_core::localization::LocalizationStatus>,
     ) -> Result<(), RouteComparisonError> {
         encoded_size(&choice, self.max_bytes.saturating_sub(self.bytes))?;
         self.pending_choice = Some(PlaythroughChoice {
+            localization_status,
             id: choice.id,
             node: choice.node,
             label: choice.label,
@@ -106,6 +108,10 @@ impl ReportObserver {
                 return Err(limit());
             }
             texts.push(PlaythroughText {
+                localization_status: output
+                    .get("localization")
+                    .and_then(|value| value.get("status"))
+                    .and_then(|value| serde_json::from_value(value.clone()).ok()),
                 content: output
                     .get("content")
                     .and_then(|v| v.as_str())

@@ -20,6 +20,7 @@ pub(crate) fn check_checkpoint(
 
     // 使用真实外壳模型，state 的两端引号已包含在此；不复制任何故事字符串。
     let wrapper = ReplayCheckpoint {
+        presentation: story.presentation_identity().cloned(),
         schema_version: REPLAY_SCHEMA_VERSION,
         runtime_version: env!("CARGO_PKG_VERSION").into(),
         fingerprint: story.fingerprint,
@@ -30,7 +31,11 @@ pub(crate) fn check_checkpoint(
         used: encoded_size(&wrapper, maximum)?,
         maximum,
     });
-    if let Some(pause) = &story.paused {
+    if let Some(pause) = story
+        .paused
+        .as_ref()
+        .filter(|_| story.presentation.is_none())
+    {
         state.rng = pause.rng_before;
     }
     state.vars.checkpoint = true;
@@ -90,6 +95,10 @@ impl Write for EscapedCounter {
 // 字段及省略规则与 model::SaveState 同步；perms 被其 skip_serializing 永远省略。
 #[derive(Serialize)]
 struct BorrowedSave<'a, 'p> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presentation: Option<&'a crate::RuntimeLocalizationIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presentation_pause_rng: Option<u64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     required_features: Vec<&'static str>,
     fingerprint: u64,
@@ -113,6 +122,9 @@ struct BorrowedSave<'a, 'p> {
 impl<'a, 'p> BorrowedSave<'a, 'p> {
     fn new(story: &'a Story<'p>) -> Self {
         let mut required_features = Vec::new();
+        if story.presentation.is_some() {
+            required_features.push(crate::LOCALIZATION_PRESENTATION_CAPABILITY);
+        }
         if worldline_core::language::uses_new_features(story.program) {
             required_features.push("runtime.language_1_11.v1");
         }
@@ -120,6 +132,11 @@ impl<'a, 'p> BorrowedSave<'a, 'p> {
             required_features.push(crate::CHOICE_PRESENTATION_CAPABILITY);
         }
         Self {
+            presentation: story.presentation_identity(),
+            presentation_pause_rng: story
+                .presentation
+                .as_ref()
+                .and_then(|_| story.paused.as_ref().map(|pause| pause.rng_before)),
             required_features,
             fingerprint: story.fingerprint,
             vars: BorrowedValues {

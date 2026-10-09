@@ -160,6 +160,8 @@ pub struct RouteValueDifference {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RouteComparisonResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<crate::RuntimeLocalizationIdentity>,
     pub schema_version: u32,
     pub runtime_version: String,
     pub source_fingerprint: u64,

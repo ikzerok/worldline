@@ -46,6 +46,10 @@ impl Document {
     pub fn is_deleted(&self) -> bool {
         self.deleted
     }
+
+    pub(crate) fn saved_byte_len(&self) -> usize {
+        self.saved.as_ref().map_or(0, String::len)
+    }
 }
 
 #[derive(Clone)]

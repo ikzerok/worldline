@@ -19,6 +19,7 @@ mod expression;
 mod language;
 mod language_expression;
 mod language_persistence;
+mod localization;
 mod model;
 mod owned_story;
 mod persistence;
@@ -28,6 +29,7 @@ mod recording;
 mod replay;
 mod replay_exchange;
 mod replay_runner;
+mod replay_semantics;
 mod route_comparison;
 mod state_actions;
 mod state_inspection;
@@ -41,6 +43,10 @@ pub use bounded::{
 };
 pub use choices::CHOICE_PRESENTATION_CAPABILITY;
 pub use evidence::{ConditionEvidence, EvidenceNode, EvidenceOutcome};
+pub use localization::{
+    compare_routes_with_presentation, generate_playthrough_report_with_presentation,
+    LocalizedPresentation, RuntimeLocalizationIdentity, LOCALIZATION_PRESENTATION_CAPABILITY,
+};
 use model::FrameSrc;
 pub use model::{
     AnchorKind, AnchorRecord, ChoicePresentation, ChoiceView, Output, RunError, StateRecord, Value,
@@ -94,6 +100,8 @@ struct Pause {
 
 /// 故事实例:消费 Program,持全部可变状态。
 pub struct Story<'p> {
+    output_sources: worldline_core::evidence_source::RuntimeOutputSourceIndex<'p>,
+    presentation: Option<localization::PresentationContext>,
     inspection: state_inspection::InspectionHistory,
     program: &'p Program,
     symbols: &'p worldline_core::Symbols,
@@ -136,9 +144,22 @@ impl<'p> Story<'p> {
         analysis: &'p Analysis,
         seed: u64,
     ) -> Result<Self, RunError> {
+        Self::new_with_context(program, analysis, seed, None)
+    }
+
+    pub(crate) fn new_with_context(
+        program: &'p Program,
+        analysis: &'p Analysis,
+        seed: u64,
+        presentation: Option<localization::PresentationContext>,
+    ) -> Result<Self, RunError> {
+        if let Some(context) = &presentation {
+            context.validate(program, analysis)?;
+        }
         if program.events.is_empty() {
             return Err(RunError::new("工程没有可运行入口"));
         }
+        let output_sources = localization::output_sources(program)?;
         let seed = normalize_seed(seed);
         let entry_idx = analysis
             .symbols
@@ -152,7 +173,13 @@ impl<'p> Story<'p> {
             .map(|e| e.storyline.clone())
             .unwrap_or_else(|| "main".into());
         let initial_states = initial_states(analysis);
+        let mut trace = ReplayTrace::entry(analysis.fingerprint, seed);
+        trace.presentation = presentation
+            .as_ref()
+            .map(|context| context.identity.clone());
         let mut story = Story {
+            output_sources,
+            presentation,
             inspection: Default::default(),
             program,
             symbols: &analysis.symbols,
@@ -179,7 +206,7 @@ impl<'p> Story<'p> {
             continuation_budget: DEFAULT_CONTINUATION_BUDGET,
             continuation_outputs: Vec::new(),
             interrupted_outputs: Vec::new(),
-            trace: ReplayTrace::entry(analysis.fingerprint, seed),
+            trace,
         };
         story.init_vars()?;
         story.enter_event(&program.entry)?;

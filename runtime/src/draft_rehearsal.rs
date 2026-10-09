@@ -37,6 +37,29 @@ impl DraftRehearsal {
             limits: DraftRehearsalLimits::new(),
         })
     }
+    pub fn new_with_presentation(
+        snapshot: DraftRehearsalSnapshot,
+        seed: u64,
+        presentation: &worldline_core::localization::LocalizationPresentationSnapshot,
+    ) -> Result<Self, RunError> {
+        let compiled = snapshot.compiled();
+        let story = OwnedStory::new_with_presentation(
+            compiled.program.clone(),
+            compiled.analysis.clone(),
+            seed,
+            presentation,
+        )?;
+        limits::view_guard(story.as_story())?;
+        Ok(Self {
+            snapshot,
+            story,
+            seed,
+            limits: DraftRehearsalLimits::new(),
+        })
+    }
+    pub fn presentation_identity(&self) -> Option<&crate::RuntimeLocalizationIdentity> {
+        self.story.presentation_identity()
+    }
     pub fn snapshot(&self) -> &DraftRehearsalSnapshot {
         &self.snapshot
     }

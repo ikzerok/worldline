@@ -1,6 +1,22 @@
 //! Explicitly selected localization exchange; see `spec/localization.md`.
 
+mod catalog;
 mod document;
+mod editing;
+mod ids;
+mod limits;
+mod presentation;
+mod sidecar;
+mod source;
+mod types;
+pub use limits::{
+    MAX_LOCALIZATION_BATCH, MAX_LOCALIZATION_CLONE_BYTES, MAX_LOCALIZATION_JSON_BYTES,
+    MAX_LOCALIZATION_PAGE_SIZE, MAX_LOCALIZATION_PARTS, MAX_LOCALIZATION_SOURCE_LINES,
+    MAX_LOCALIZATION_TRACKED_FILES, MAX_LOCALIZATION_UNITS, MAX_LOCALIZATION_UNIT_BYTES,
+};
+pub use presentation::*;
+pub use source::localization_source_hit;
+pub use types::*;
 mod export;
 mod import;
 use serde::{Deserialize, Serialize};
@@ -84,7 +100,7 @@ pub struct LocalizationExportPlan {
     pub can_export: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 struct SourceUnit {
     source: LocalizationSource,
     parts: Vec<LocalizationPart>,
@@ -111,3 +127,15 @@ pub struct LocalizationImportResult {
     pub baseline: String,
     pub new_baseline: String,
 }
+
+/// Stable source-owned AST revision; does not evaluate expressions.
+pub fn localization_source_revision(
+    kind: &str,
+    parts: &[crate::ast::TextPart],
+    glue: bool,
+) -> String {
+    export::source_revision(kind, parts, glue)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod compilation_tests;

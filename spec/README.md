@@ -1,6 +1,6 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.32.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.33.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
@@ -36,7 +36,9 @@
 | [manuscript-review.md](manuscript-review.md) | 可信全分支作者审稿、真实来源与预算 |
 | [templates.md](templates.md) | 内容模板与注册文档 |
 | [markdown-import.md](markdown-import.md) | 外部 Markdown 的预览、损失核对和应用 |
-| [localization.md](localization.md) | 显式本地化交换与原稿保护 |
+| [localization.md](localization.md) | 显式交换、来源目录、稳定身份、typed 译文与内存事务 |
+| [localization-runtime.md](localization-runtime.md) | 同次源文求值的译文展示、独立身份、保存与重放 |
+| [localization-machine.md](localization-machine.md) | 本地化 CLI/RPC、候选与保存、locale 能力协商 |
 
 地图与展示文档以 `presentation.md`、`vector-scene.md` 及其 [schemas](schemas/README.md) 为共同契约；[矢量场景 Schema](schemas/vector-scene.schema.json) 的形状检查不能替代引用、锁定、资源或事务验证。
 结构以各机器 Schema 为准，行为回归位于源码测试中；字段模板的产品单源为 [templates.catalog.json](templates.catalog.json)，其中没有故事实例值。

@@ -31,6 +31,8 @@ event arrival with lin after has(mood, calm)
 
 调试重放可附带每一步的状态观察与只读条件解释，检查点严格绑定 runtime/schema 与程序 fingerprint；这些是单次执行的证据，不替代 `state_history`，也不写入作者工程。重放覆盖只列出实际访问的节点与实际选择，不能据此声称其他分支不可达。完整 DTO 见 [replay.md](replay.md)。
 
+显式译文运行只改变展示；状态、RNG、访问与选择身份继续由源程序执行。locale 展示内容身份独立于程序 fingerprint，恢复和重放另校验匹配快照，见 [localization-runtime.md](localization-runtime.md)。
+
 只校验状态/标签/对象引用、ID 唯一性与语法，不判断世界设定是否合理或“吃书”。新增诊断 A216 用于状态声明或变更的结构错误。
 
 ## 身份权限统一迁移

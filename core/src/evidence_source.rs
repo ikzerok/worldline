@@ -11,7 +11,7 @@ pub use batch::{
     resolve_evidence_source, resolve_evidence_sources, MAX_EVIDENCE_SOURCE_BATCH,
     MAX_EVIDENCE_SOURCE_BATCH_BYTES,
 };
-pub use outputs::runtime_output_source_file;
+pub use outputs::{runtime_output_source_file, RuntimeOutputSourceIndex};
 pub use state_actions::state_action_source;
 pub use variable_writes::{variable_write_source, variable_write_source_file};
 
@@ -69,13 +69,13 @@ pub struct EvidenceSourceTarget {
     pub precision: EvidenceSourcePrecision,
 }
 
-fn choice_body<'a>(snapshot: &'a CompileResult, file: &str, node: &str) -> Option<&'a [Stmt]> {
+fn choice_body<'a>(snapshot: &'a CompileResult, node: &str) -> Option<&'a [Stmt]> {
     if let Some(name) = node.strip_prefix("fragment:") {
         let mut definitions = snapshot
             .program
             .fragments
             .iter()
-            .filter(|fragment| fragment.name == name && fragment.file == file);
+            .filter(|fragment| fragment.name == name);
         let definition = definitions.next()?;
         return definitions
             .next()
@@ -88,9 +88,6 @@ fn choice_body<'a>(snapshot: &'a CompileResult, file: &str, node: &str) -> Optio
         .events
         .get(node)
         .or_else(|| snapshot.analysis.symbols.scenes.get(node))?;
-    if snapshot.program.event_files.get(path.event)? != file {
-        return None;
-    }
     let event = snapshot.program.events.get(path.event)?;
     if path.full_name(&event.name) != node {
         return None;
@@ -124,16 +121,22 @@ fn find_scene<'a>(body: &'a [Stmt], name: &str) -> Option<&'a [Stmt]> {
     None
 }
 
-fn count_choices(body: &[Stmt], line: u32) -> usize {
+fn count_choices(
+    body: &[Stmt],
+    line: u32,
+    file: &str,
+    sources: &RuntimeOutputSourceIndex<'_>,
+) -> usize {
     body.iter()
         .map(|statement| match statement {
             Stmt::Choice(choice) => {
-                usize::from(choice.loc.line == line) + count_choices(&choice.body, line)
+                usize::from(choice.loc.line == line && sources.get(statement) == Some(file))
+                    + count_choices(&choice.body, line, file, sources)
             }
             Stmt::If(branches) => branches
                 .branches
                 .iter()
-                .map(|(_, branch)| count_choices(branch, line))
+                .map(|(_, branch)| count_choices(branch, line, file, sources))
                 .sum(),
             // A scene belongs to its own complete node identity.
             _ => 0,

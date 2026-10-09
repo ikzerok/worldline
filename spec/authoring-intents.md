@@ -35,3 +35,14 @@ preview 成功返回 `operation:"preview"`、`target`、`reference_impact`、`ch
 保存成功后基线推进。任一目标、选区或地图操作失败都返回 `ok:false` 且不写部分源码或
 展示文档；RPC 协议违规（缺字段、DTO 类型错误或未知 `project_id`）仍使用 `-32602`，
 合法 DTO 但组合失败使用结果中的稳定 `error.code` 与中文 message。
+
+## 正式人物与正文缓冲（0.33）
+
+`IntentTarget::CreateCharacter {path,draft}` 使用与实体相同的候选事务入口，draft含
+`id`、`display`、`properties`、`relations`，由正式 `write_character` 写入；JSON
+为 `{"kind":"create_character","value":{"path":"绝对源码路径","draft":{...}}}`。
+重复正式人物 ID 拒绝，同名不同 kind 不合并。旧已有目标、新实体和地图分支保持。
+书稿当前稿不直接调用本入口写 Project；必须经
+[正文关联组合事务](manuscript-authoring.md#033-正文关联世界资料)绑定
+WritingBuffer 的精确选区、基线和代次，已有链接确认后仍为草稿，新资料复合应用
+显式列出所有纳入的全文草稿。

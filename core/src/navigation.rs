@@ -27,7 +27,7 @@ pub struct InlineLink {
 }
 
 /// 求值后文字中的显式链接；start/end 是 UTF-8 字节范围。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct RenderedLink {
     pub target: TargetRef,
     pub start: usize,
@@ -137,7 +137,6 @@ pub(crate) fn collect(program: &Program, catalog: &mut Catalog, diags: &mut Vec<
         collect_body(
             &event.body,
             &TargetRef::new("event", &event.name),
-            file,
             catalog,
             diags,
             program,
@@ -148,7 +147,6 @@ pub(crate) fn collect(program: &Program, catalog: &mut Catalog, diags: &mut Vec<
         collect_body(
             &fragment.body,
             &TargetRef::new("fragment", &fragment.name),
-            &fragment.file,
             catalog,
             diags,
             program,
@@ -178,27 +176,56 @@ fn validate(
 fn collect_parts(
     parts: &[TextPart],
     source: &TargetRef,
-    file: &str,
+    file: Option<&str>,
     line: u32,
     catalog: &mut Catalog,
     diags: &mut Vec<Diagnostic>,
 ) {
     for part in parts {
         if let TextPart::Link(link) = part {
-            let target = resolve(link.target.clone(), file);
+            if file.is_none() && link.target.kind == "file" {
+                let mut diagnostic = Diagnostic::error(
+                    "A218",
+                    "",
+                    Span::new(line, link.column, (link.end - link.start) as u32),
+                    "正文文件链接来源缺失或有歧义，无法安全解析目标；不使用事件声明文件代替",
+                );
+                diagnostic.source_role = Some(crate::diagnostic::DiagnosticSourceRole::Unavailable);
+                diagnostic.source_bound = true;
+                diags.push(diagnostic);
+                continue;
+            }
+            let target = resolve(link.target.clone(), file.unwrap_or_default());
             let start = diags.len();
-            validate(catalog, &target, file, line, link.column, diags);
+            validate(
+                catalog,
+                &target,
+                file.unwrap_or_default(),
+                line,
+                link.column,
+                diags,
+            );
             for diagnostic in &mut diags[start..] {
                 diagnostic.span = Span::new(line, link.column, (link.end - link.start) as u32);
-                diagnostic.source_role = Some(crate::diagnostic::DiagnosticSourceRole::Target);
+                diagnostic.source_role = Some(if file.is_some() {
+                    crate::diagnostic::DiagnosticSourceRole::Target
+                } else {
+                    crate::diagnostic::DiagnosticSourceRole::Unavailable
+                });
+                diagnostic.source_bound = true;
             }
             catalog.references.push(ReferenceInfo {
                 source: source.clone(),
                 target: target.clone(),
                 kind: "正文链接".into(),
-                file: file.into(),
-                line,
+                // 稳定对象目标不依赖目录；未知位置仍保留引用事实，防止漏报删除影响。
+                file: file.unwrap_or_default().into(),
+                line: if file.is_some() { line } else { 0 },
             });
+            let Some(file) = file else {
+                // 不生成可编辑文字位置，也不猜测其所在的 include 文件。
+                continue;
+            };
             catalog.text_links.push(TextLinkInfo {
                 source: source.clone(),
                 target,
@@ -214,7 +241,6 @@ fn collect_parts(
 fn collect_body(
     body: &[Stmt],
     source: &TargetRef,
-    file: &str,
     catalog: &mut Catalog,
     diags: &mut Vec<Diagnostic>,
     program: &Program,
@@ -222,6 +248,11 @@ fn collect_body(
 ) {
     for stmt in body {
         let start = diags.len();
+        let file = program.source_provenance.statement_file(
+            owner,
+            crate::language::statement_loc(stmt),
+            StatementKind::of(stmt),
+        );
         match stmt {
             Stmt::Say(say) => {
                 collect_parts(&say.text.parts, source, file, say.loc.line, catalog, diags)
@@ -231,12 +262,11 @@ fn collect_body(
             }
             Stmt::Choice(choice) => {
                 collect_parts(&choice.label, source, file, choice.loc.line, catalog, diags);
-                collect_body(&choice.body, source, file, catalog, diags, program, owner);
+                collect_body(&choice.body, source, catalog, diags, program, owner);
             }
             Stmt::Scene(scene) => collect_body(
                 &scene.body,
                 &TargetRef::new("scene", &format!("{}.{}", source.id, scene.name)),
-                file,
                 catalog,
                 diags,
                 program,
@@ -244,16 +274,11 @@ fn collect_body(
             ),
             Stmt::If(branches) => {
                 for (_, body) in &branches.branches {
-                    collect_body(body, source, file, catalog, diags, program, owner);
+                    collect_body(body, source, catalog, diags, program, owner);
                 }
             }
             _ => {}
         }
-        let file = program.source_provenance.statement_file(
-            owner,
-            crate::language::statement_loc(stmt),
-            StatementKind::of(stmt),
-        );
         bind_diagnostics(&mut diags[start..], file);
     }
 }

@@ -1,5 +1,15 @@
 # 版本变更
 
+## 0.33.0
+
+- core 本地化目录、真实状态/分页/预算、显式稳定 ID、typed 译文候选与内存事务；旧 import apply 的立即持久化语义保持
+- runtime 正文/say/choice 真实译文与同次源译对照，源顺序一次求值、独立 locale 身份及保存/检查点/回放/报告/路线对照
+- 正文 WritingBuffer 稳定引用、正式 Character 与 Entity 复合创建；显式迁移、完整草稿范围和一次撤销
+- CLI/RPC 新本地化候选与 locale 协商、已打开 Project 的冻结编译；默认 source-only 保持
+- 默认语言 1.9、最高 1.13 保持；不增加独立可玩发布或自动公开范围
+
+范围及最终验证状态见[0.33版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.33.0.md)。工作分支不表示已发布，历史通过记录不代表本版通过。
+
 ## 0.32.0
 
 - 普通外改采用完整 base/local/disk 三方身份与明确选择；候选由 core 重验，采纳只改内存，可撤销，保存另行检查外改

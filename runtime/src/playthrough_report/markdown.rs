@@ -46,6 +46,24 @@ impl Writer {
     fn number(&mut self, number: impl std::fmt::Display) -> Result<(), PlaythroughReportError> {
         self.value(&number.to_string())
     }
+    fn localization(
+        &mut self,
+        status: Option<worldline_core::localization::LocalizationStatus>,
+    ) -> Result<(), PlaythroughReportError> {
+        use worldline_core::localization::LocalizationStatus;
+        let reason = match status {
+            None | Some(LocalizationStatus::Translated) => return Ok(()),
+            Some(LocalizationStatus::MissingId) => "缺少稳定ID",
+            Some(LocalizationStatus::MissingTranslation) => "缺译",
+            Some(LocalizationStatus::StaleSource) => "源文已变",
+            Some(LocalizationStatus::InvalidTranslation) => "译文无效",
+            Some(LocalizationStatus::DuplicateId) => "稳定ID重复",
+            Some(LocalizationStatus::OrphanTranslation) => "孤立译文",
+        };
+        self.raw("（源文回退：")?;
+        self.raw(reason)?;
+        self.raw("）")
+    }
     fn source(&mut self, source: Option<&PlaythroughSource>) -> Result<(), PlaythroughReportError> {
         if let Some(source) = source {
             self.value(&source.file)?;
@@ -69,6 +87,12 @@ pub(super) fn render(
     };
     out.raw("# 试玩审阅记录\n\n作者私密交接副本：正文、选择、说话者与源码文件名可能含私人信息，请先审阅再分享。此文件不是读者发布授权，也不会自动公开世界资料或附件。\n\n## 验证摘要\n\n- 结果：")?;
     out.raw(status(report))?;
+    if let Some(presentation) = &report.presentation {
+        out.raw("\n- 译文 locale：")?;
+        out.value(&presentation.request.target_locale)?;
+        out.raw("；展示内容身份：")?;
+        out.value(&presentation.presentation_digest)?;
+    }
     out.raw("\n- 工具/runtime版本：")?;
     out.value(&report.runtime_version)?;
     out.raw("；审阅schema：")?;
@@ -138,6 +162,7 @@ pub(super) fn render(
         if let Some(choice) = &observation.choice {
             out.raw("已选择：")?;
             out.value(&choice.label)?;
+            out.localization(choice.localization_status)?;
             out.raw("\n\n选择来源：")?;
             out.source(choice.source.as_ref())?;
             out.raw("\n\n")?;
@@ -154,6 +179,7 @@ pub(super) fn render(
                 out.raw("：")?;
             }
             out.value(&text.content)?;
+            out.localization(text.localization_status)?;
         }
         out.raw("\n\n来源（按正文片段顺序）：\n")?;
         for (index, text) in observation.texts.iter().enumerate() {
@@ -175,6 +201,7 @@ pub(super) fn render(
     if let Some(choice) = &report.pending_choice {
         out.raw("\n## 最后已选输入（其后观察未验证）\n\n")?;
         out.value(&choice.label)?;
+        out.localization(choice.localization_status)?;
         out.raw("\n\n")?;
         out.source(choice.source.as_ref())?;
         out.raw("\n")?;
