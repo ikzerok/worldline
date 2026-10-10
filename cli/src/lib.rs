@@ -318,6 +318,8 @@ mod catalog_import;
 mod catalog_query;
 #[path = "lib/catalog_scope.rs"]
 mod catalog_scope;
+#[path = "lib/dialogue.rs"]
+mod dialogue;
 #[path = "lib/draft_rehearsal.rs"]
 mod draft_rehearsal;
 #[path = "lib/entity.rs"]
@@ -352,6 +354,8 @@ mod play;
 mod playthrough_report;
 #[path = "lib/problems.rs"]
 mod problems;
+#[path = "lib/production_script.rs"]
+mod production_script;
 #[path = "lib/reader_export.rs"]
 mod reader_export;
 #[path = "lib/reconciliation.rs"]
@@ -386,6 +390,8 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
     };
     let rest = &args[1..];
     match cmd.as_str() {
+        "dialogue" => dialogue::command(rest, out),
+        "production-script" => production_script::command(rest, out),
         "problems" => problems::command(rest, out),
         "draft-rehearsal" => draft_rehearsal::command(rest, out),
         "catalog-scope" => catalog_scope::cmd_catalog_scope(&catalog_scope::parse_catalog_scope_args(rest)?, out),
@@ -451,7 +457,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "route-compare" => route_comparison::command(rest, out),
         "playthrough-report" => playthrough_report::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:reconciliation / draft-rehearsal / manuscript-delivery / catalog-scope / problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:reconciliation / draft-rehearsal / manuscript-delivery / dialogue / production-script / catalog-scope / problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

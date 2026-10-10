@@ -27,10 +27,15 @@
 | 多轮机器会话 | `wl-agent` | 每行一个 JSON-RPC 请求，保持进程存活 |
 | 模板草稿和影响事务 | `wl template draft\|preview\|apply DIR --request-json DTO --json` | core唯一模板模型；apply需摘要，保存须显式`--save` |
 | 完整范围书稿查询 | `wl manuscript-query DIR --query-json DTO --json` | core同快照筛选分页；可显式提供`--drafts-json` |
+| 正式对白创作 | `wl dialogue query\|preview\|apply DIR ... --json` | core typed 来源/计划；apply 需摘要，保存另须显式 `--save` |
+| 同稿角色制作台本 | `wl production-script query\|export DIR --request-json DTO ... --json` | 完整角色/locale 范围；JSON/Markdown/CSV 由 core 生成，显式 `--output` 才交付全新文件 |
 | 当前实际状态检查 | 试玩选择输入`inspect`或`inspect JSON`；RPC `session.inspect` | 有类型首次/前次/当前观测，查询不推进 |
 | Rust 结构编辑 | `Project::edit` 与各 draft 方法 | 全工程校验，失败回滚 |
 
 JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不意味着输出无法解析。每个子命令的 JSON 形状不同，完整方法、字段、错误码和示例见 [agent-protocol.md](../spec/agent-protocol.md)。CLI 当前没有通用 `--help` 子命令；无参数会输出用法并返回 2。
+
+正式对白及角色台本支持各自的 `--help`；请求、隐私与预算边界见
+[对白与制作台本机器入口](../spec/dialogue-machine.md)。
 
 `workspace check`、`maps list` 和不带 `promote` 的 `relations` 查询都是只读操作，返回 `schema_version`、
 `language_version`、`workspace_revision`、`diagnostics`、`workspace_diagnostics`、

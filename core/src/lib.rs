@@ -39,6 +39,7 @@ pub mod presentation;
 pub mod presentation_commands;
 pub mod presentation_presets;
 pub mod problems;
+pub mod production_script;
 pub mod project;
 pub use problems::*;
 pub mod project_templates;

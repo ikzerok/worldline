@@ -17,6 +17,8 @@ use crate::Diagnostic;
 pub use job::{generate_manuscript_delivery, ManuscriptDeliveryJob, ManuscriptDeliveryProgress};
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::write_manuscript_markdown_new;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use native::write_private_bytes_new;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

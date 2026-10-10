@@ -1,6 +1,8 @@
 //! Explicitly selected localization exchange; see `spec/localization.md`.
 
 mod catalog;
+mod production;
+pub(crate) use production::{production_catalog, SourceIdentity};
 mod document;
 mod editing;
 mod ids;

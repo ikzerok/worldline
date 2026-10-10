@@ -2,7 +2,13 @@
 
 - [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 
-本文档对应 0.33.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+本文档对应 0.34.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+
+## 0.34 正式对白与制作台本
+
+- [正式对白创作](dialogue-authoring.md)：typed parts、单语句转换、明确迁移和分层保存
+- [同稿角色台本](production-script.md)：正式 speaker、locale、静态定义范围与私密三格式
+- [机器入口](../spec/dialogue-machine.md)：同 core query/preview/apply/export 与严格保护
 
 ## 0.33 译文与正文关联
 

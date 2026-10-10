@@ -6,6 +6,7 @@ use std::path::Path;
 
 #[derive(Clone)]
 pub(super) struct Record {
+    pub identity: Option<SourceIdentity>,
     pub id: Option<String>,
     pub unit: SourceUnit,
 }
@@ -23,11 +24,19 @@ pub(super) fn current(project: &Project) -> Result<(crate::CompileResult, Vec<Re
 }
 
 pub(super) fn collect(program: &Program, root: &Path) -> Result<Vec<Record>, String> {
-    collect_mode(program, root, false, true)
+    collect_mode(program, root, false, true, None)
 }
 
 pub(super) fn collect_annotated(program: &Program, root: &Path) -> Result<Vec<Record>, String> {
-    collect_mode(program, root, true, false)
+    collect_mode(program, root, true, false, None)
+}
+
+pub(super) fn collect_identified(
+    program: &Program,
+    root: &Path,
+    source_ids: &std::collections::BTreeMap<PathBuf, u32>,
+) -> Result<Vec<Record>, String> {
+    collect_mode(program, root, false, true, Some(source_ids))
 }
 
 fn collect_mode(
@@ -35,9 +44,11 @@ fn collect_mode(
     root: &Path,
     identified_only: bool,
     bounded: bool,
+    source_ids: Option<&std::collections::BTreeMap<PathBuf, u32>>,
 ) -> Result<Vec<Record>, String> {
     let mut records = Vec::new();
     let mut state = WalkState {
+        source_ids,
         payload_bytes: 0,
         identified_only,
         bounded,
@@ -78,7 +89,8 @@ fn collect_mode(
     Ok(records)
 }
 
-struct WalkState {
+struct WalkState<'a> {
+    source_ids: Option<&'a std::collections::BTreeMap<PathBuf, u32>>,
     payload_bytes: usize,
     identified_only: bool,
     bounded: bool,
@@ -90,7 +102,7 @@ fn walk(
     owner: &SourceOwner,
     root: &Path,
     out: &mut Vec<Record>,
-    state: &mut WalkState,
+    state: &mut WalkState<'_>,
 ) -> Result<(), String> {
     let bounded = state.bounded;
     let identified_only = state.identified_only;
@@ -159,6 +171,15 @@ fn walk(
                     "完整来源元数据",
                 )?;
             }
+            let identity = state
+                .source_ids
+                .map(|ids| {
+                    ids.get(Path::new(file))
+                        .copied()
+                        .map(|id| SourceIdentity::new(id, line, kind))
+                        .ok_or("INVALID_SOURCE：正式来源没有匹配的原始文件身份")
+                })
+                .transpose()?;
             let parts_view = export::source_parts(parts);
             if bounded {
                 limits::parts(&parts_view)?;
@@ -170,8 +191,12 @@ fn walk(
             };
             if bounded {
                 limits::reserve(&(&id, &unit), &mut state.payload_bytes, "完整来源元数据")?;
+                if let Some(identity) = &identity {
+                    limits::reserve(identity, &mut state.payload_bytes, "制作台本来源身份")?;
+                }
             }
             out.push(Record {
+                identity,
                 id: id.clone(),
                 unit,
             });

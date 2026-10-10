@@ -1,9 +1,12 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.33.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.34.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
+| [dialogue-authoring.md](dialogue-authoring.md) | 正式单语句 typed 作者计划、同稿缓冲、明确迁移和失败保护 |
+| [production-script.md](production-script.md) | 正式 speaker/locale、静态定义闭包、当前稿台本与私密三格式 |
+| [dialogue-machine.md](dialogue-machine.md) | 对白与制作台本 CLI/RPC、精确字节、内存应用和显式保存 |
 | [workspace-reconciliation.md](workspace-reconciliation.md) | 完整三方身份、显式候选、重新验证、内存采纳与独立保存 |
 | [draft-rehearsal.md](draft-rehearsal.md) | 未应用正文的隔离真实运行、状态检查、来源返回与有界协议 |
 | [manuscript-delivery.md](manuscript-delivery.md) | 同一查询范围的连续全分支审稿、完整性和作者私密 Markdown |
