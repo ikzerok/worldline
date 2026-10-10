@@ -509,7 +509,8 @@ fn production_cross_file_sources_and_nested_scene_overlap_remain_unique() {
     let hit = project
         .production_script_source_hit(&[], &[], &result, &row.row_key)
         .unwrap();
-    assert_eq!(hit.path, root.join("body.wl"));
+    // 导航路径使用 Project 已规范化的根目录，避免 temp_dir 的短路径别名。
+    assert_eq!(hit.path, project.root.join("body.wl"));
     assert!(hit.preview.contains("Included"));
     let mut input = request();
     input.scope = ProductionScope::CurrentTarget {
