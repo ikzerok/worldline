@@ -2,7 +2,7 @@
 
 mod catalog;
 mod production;
-pub(crate) use production::production_catalog;
+pub(crate) use production::{production_catalog, SourceIdentity};
 mod document;
 mod editing;
 mod ids;

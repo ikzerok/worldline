@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::{Loc, Stmt};
+use crate::localization::SourceIdentity;
 use crate::source_provenance::{ExpressionSlot, SourceOwner, StatementKind};
 use crate::CompileResult;
 use std::{
@@ -9,6 +10,7 @@ use std::{
 
 #[derive(Serialize)]
 pub(super) struct Unit {
+    pub identity: SourceIdentity,
     pub kind: ProductionKind,
     pub declaration: TargetRef,
     pub root: TargetRef,
@@ -28,11 +30,13 @@ pub(super) fn collect(
     root: &Path,
     roots: &BTreeSet<TargetRef>,
     request: &ProductionScriptRequest,
+    source_ids: &BTreeMap<PathBuf, u32>,
 ) -> Result<Collected, ProductionError> {
     let mut walker = Walker {
         compiled,
         root,
         request,
+        source_ids,
         definitions: BTreeMap::new(),
         calls: BTreeMap::new(),
         new_callees: BTreeSet::new(),
@@ -92,10 +96,28 @@ pub(super) fn collect(
             &b.target,
         ))
     });
+    // SourceId 只负责身份；公开顺序仍按既有相对路径文本，不使用内部编号排序。
+    let mut calls: Vec<_> = walker.calls.into_values().collect();
+    calls.sort_by(|a, b| {
+        (&a.source.file, a.source.line, a.source.column).cmp(&(
+            &b.source.file,
+            b.source.line,
+            b.source.column,
+        ))
+    });
+    let mut units: Vec<_> = walker.units.into_values().collect();
+    units.sort_by(|a, b| {
+        (&a.source.file, a.source.line, a.source.column, a.kind).cmp(&(
+            &b.source.file,
+            b.source.line,
+            b.source.column,
+            b.kind,
+        ))
+    });
     Ok(Collected {
         definitions,
-        calls: walker.calls.into_values().collect(),
-        units: walker.units.into_values().collect(),
+        calls,
+        units,
         added_fragments,
     })
 }
@@ -103,10 +125,11 @@ struct Walker<'a> {
     compiled: &'a CompileResult,
     root: &'a Path,
     request: &'a ProductionScriptRequest,
+    source_ids: &'a BTreeMap<PathBuf, u32>,
     definitions: BTreeMap<TargetRef, ProductionDefinition>,
-    calls: BTreeMap<(String, u32, u32), ProductionCallUse>,
+    calls: BTreeMap<(u32, u32, u32), ProductionCallUse>,
     new_callees: BTreeSet<TargetRef>,
-    units: BTreeMap<(String, u32, u32, ProductionKind), Unit>,
+    units: BTreeMap<(SourceIdentity, u32), Unit>,
     offsets: BTreeMap<PathBuf, Vec<usize>>,
     bytes: usize,
     nodes: usize,
@@ -337,6 +360,10 @@ impl Walker<'_> {
                 .source_provenance
                 .statement_file(owner, loc, StatementKind::of(statement))
                 .ok_or_else(ProductionError::source)?;
+            let source_id = *self
+                .source_ids
+                .get(Path::new(file))
+                .ok_or_else(ProductionError::source)?;
             let source = self.source(file, loc)?;
             match statement {
                 Stmt::Say(say) => {
@@ -356,6 +383,7 @@ impl Walker<'_> {
                             .display
                             .clone();
                         self.unit(Unit {
+                            identity: SourceIdentity::new(source_id, loc.line, "say"),
                             kind: ProductionKind::Say,
                             declaration: declaration.clone(),
                             root: root.clone(),
@@ -367,6 +395,7 @@ impl Walker<'_> {
                     }
                 }
                 Stmt::Text(_) if self.request.include_narration => self.unit(Unit {
+                    identity: SourceIdentity::new(source_id, loc.line, "text"),
                     kind: ProductionKind::Text,
                     declaration: declaration.clone(),
                     root: root.clone(),
@@ -390,6 +419,7 @@ impl Walker<'_> {
                     next.push(control);
                     if self.request.include_choices {
                         self.unit(Unit {
+                            identity: SourceIdentity::new(source_id, loc.line, "choice"),
                             kind: ProductionKind::Choice,
                             declaration: declaration.clone(),
                             root: root.clone(),
@@ -436,8 +466,16 @@ impl Walker<'_> {
                     self.body(&scene.body, owner, &target, root, &next, depth + 1)?;
                 }
                 Stmt::Call(call) => {
-                    let key = (source.file.clone(), source.line, source.column);
-                    if !self.calls.contains_key(&key) {
+                    let key = (source_id, source.line, source.column);
+                    if let Some(previous) = self.calls.get(&key) {
+                        if previous.caller != *declaration
+                            || previous.callee.id != call.name
+                            || previous.source != source
+                            || previous.control_ancestry != controls
+                        {
+                            return Err(ProductionError::source());
+                        }
+                    } else {
                         if self.calls.len() >= self.request.limits.call_sites {
                             return Err(ProductionError::budget());
                         }
@@ -458,13 +496,16 @@ impl Walker<'_> {
         Ok(())
     }
     fn unit(&mut self, unit: Unit) -> Result<(), ProductionError> {
-        let key = (
-            unit.source.file.clone(),
-            unit.source.line,
-            unit.source.column,
-            unit.kind,
-        );
-        if self.units.contains_key(&key) {
+        let key = (unit.identity.clone(), unit.source.column);
+        if let Some(previous) = self.units.get(&key) {
+            if previous.source != unit.source
+                || previous.declaration != unit.declaration
+                || previous.speaker != unit.speaker
+                || previous.direction != unit.direction
+                || previous.controls != unit.controls
+            {
+                return Err(ProductionError::source());
+            }
             return Ok(());
         }
         if self.units.len() >= self.request.limits.rows {

@@ -33,6 +33,11 @@ impl Project {
         {
             return Err(ProductionError::budget());
         }
+        let sources = guards::source_index(
+            &self.root,
+            compiled.sources.keys().map(PathBuf::as_path),
+            request.limits.result_bytes,
+        )?;
         if request
             .speaker
             .as_ref()
@@ -55,23 +60,16 @@ impl Project {
                 "台本快照已变化，请重新查询完整范围",
             ));
         }
-        let locale = crate::localization::production_catalog(
+        let entries = crate::localization::production_catalog(
             self,
             compiled,
             request.target_locale.as_deref(),
             &key,
+            &sources.ids,
         )
         .map_err(|e| ProductionError::new(&e.code, e.message))?;
-        let entries: BTreeMap<_, _> = locale
-            .into_iter()
-            .filter_map(|entry| {
-                let source = entry.source.as_ref()?;
-                let key = (source.file.clone(), source.line, source.kind.clone());
-                Some((key, entry))
-            })
-            .collect();
         let (roots, chapter_occurrences) = scope::roots(&query, request)?;
-        let collected = collect::collect(compiled, &self.root, &roots, request)?;
+        let collected = collect::collect(compiled, &self.root, &roots, request, &sources.ids)?;
         let mut rows = Vec::new();
         let mut directions = BTreeMap::new();
         let mut bytes = bounded_size(
@@ -80,16 +78,17 @@ impl Project {
                 &chapter_occurrences,
                 &collected.calls,
             ),
-            request.limits.result_bytes,
-        )?;
+            request.limits.result_bytes.saturating_sub(sources.bytes),
+        )?
+        .checked_add(sources.bytes)
+        .ok_or_else(ProductionError::budget)?;
         let mut call_uses: BTreeMap<&TargetRef, Vec<&ProductionCallUse>> = BTreeMap::new();
         for call in &collected.calls {
             call_uses.entry(&call.callee).or_default().push(call);
         }
         for unit in collected.units {
-            let kind = kind_name(unit.kind);
             let entry = entries
-                .get(&(unit.source.file.clone(), unit.source.line, kind.into()))
+                .get(&unit.identity)
                 .ok_or_else(ProductionError::source)?;
             let status = status(entry, request.target_locale.is_some());
             if !request.statuses.is_empty() && !request.statuses.contains(&status) {
@@ -134,7 +133,7 @@ impl Project {
             bytes = bytes
                 .checked_add(size)
                 .ok_or_else(ProductionError::budget)?;
-            let row_key = digest(&(&key, &unit.source, unit.kind));
+            let row_key = digest(&(&key, &unit.identity, unit.source.column));
             if let Some(direction) = unit.direction {
                 directions.insert(row_key.clone(), direction);
             }
@@ -224,6 +223,17 @@ fn preflight(
     {
         return Err(ProductionError::budget());
     }
+    guards::source_index(
+        &project.root,
+        project.documents.iter().filter_map(|(path, document)| {
+            (!document.is_deleted()
+                && project
+                    .source_selection()
+                    .is_none_or(|selection| selection.is_active(path)))
+            .then_some(path.as_path())
+        }),
+        request.limits.result_bytes,
+    )?;
     let mut seen = BTreeSet::new();
     let baseline = project.content_baseline();
     for buffer in buffers {
@@ -233,6 +243,11 @@ fn preflight(
                 "同一文件只允许一个 WritingBuffer；相同内容重复项也不被静默合并",
             ));
         }
+        guards::source_index(
+            &project.root,
+            std::iter::once(buffer.path()),
+            request.limits.result_bytes,
+        )?;
         if buffer.is_changed() && buffer.baseline() != baseline {
             return Err(ProductionError::new(
                 "STALE_DRAFT",

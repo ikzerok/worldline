@@ -32,6 +32,20 @@ entity 没有 Text/Say/Choice 单元，结果为零，不把描述伪造为可�
 
 选定目标与闭包片段按真实来源去重。event 与其 scene 重叠时，同一物理正式语句只保留一次。
 共享片段沿静态 call 目标遍历，每个定义最多一次；菱形调用不展开树，不执行实参、条件、once、状态或 RNG。
+
+制作台本内部来源身份使用同一编译快照中的原始规范 `PathBuf`、物理行及正式
+语句 kind；调用点另保留列。展示用相对路径不作为关联、去重或 row_key 的唯一键。
+本地化条目与正式语句按该内部身份一一关联，重复或缺失身份为 `INVALID_SOURCE`，
+不得以后写覆盖或角色筛选隐藏歧义。事件与 scene 的合法重叠仅合并同一物理语句。
+
+在编译前先检查活动 Project/缓冲的原始路径（拒绝非 UTF-8 身份），并在
+scope、speaker、locale、status 和文本筛选前检查完整编译来源路径能否从公开
+相对 file 无损还原到同一物理 `PathBuf`；有损展示、冲突或不可逆路径均为
+`INVALID_SOURCE`，不生成快照、分页或任何格式材料。原生 Unix 的字面 `a\b.wl`
+不能被当作目录路径 `a/b.wl`；即使不存在后者也不能返回错误导航位置。该门仅限
+制作台本，不更改 Project 加载、源码救援或其他既有文件编辑能力。可信 source_hit
+仍须验证当前完整快照并恢复唯一真实来源。私有来源索引及 raw 路径副本完整计入
+既有来源/结果元数据预算，不因展示字段较短而绕过上限。
 输出按工作区相对文件、行、列、kind 的确定顺序，不声称为运行顺序。
 
 `ProductionScopeSummary` 分开提供 selected_chapter_occurrences、root_targets、definition_count、
