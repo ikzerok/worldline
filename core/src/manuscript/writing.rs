@@ -39,6 +39,7 @@ pub struct WritingBuffer {
     text: String,
     baseline: String,
     generation: u64,
+    identity: String,
 }
 
 impl WritingBuffer {
@@ -61,11 +62,33 @@ impl WritingBuffer {
         self.generation
     }
 
+    /// 缓存身份包含完整原稿/当前稿，撤销分叉回到相同代次也不会复用旧结果。
+    /// 仅用于缓存；修改仍须重新验证完整基线与来源。
+    pub fn identity(&self) -> String {
+        self.identity.clone()
+    }
+
+    fn refresh_identity(&mut self) {
+        let mut bytes = Vec::new();
+        for value in [
+            self.path.as_os_str().as_encoded_bytes(),
+            self.original.as_bytes(),
+            self.text.as_bytes(),
+            self.baseline.as_bytes(),
+        ] {
+            bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(value);
+        }
+        bytes.extend_from_slice(&self.generation.to_le_bytes());
+        self.identity = crate::presentation_commands::document_hash(&bytes);
+    }
+
     /// 源码输入不要求立即可编译；无效输入仍留在唯一缓冲中。
     pub fn replace_source(&mut self, text: String) {
         if self.text != text {
             self.text = text;
             self.generation = self.generation.wrapping_add(1);
+            self.refresh_identity();
         }
     }
 
@@ -81,6 +104,7 @@ impl WritingBuffer {
         }
         self.text.replace_range(range, replacement);
         self.generation = self.generation.wrapping_add(1);
+        self.refresh_identity();
         Ok(())
     }
 
@@ -113,6 +137,7 @@ impl WritingBuffer {
             return Err("正文文件已变化，不能自动更新草稿基线".into());
         }
         self.baseline = project.content_baseline();
+        self.refresh_identity();
         Ok(())
     }
 }
@@ -144,13 +169,16 @@ impl Project {
         };
         let path = crate::file_access::within(&self.root, &path)?;
         let text = self.document(&path)?.to_owned();
-        Ok(WritingBuffer {
+        let mut buffer = WritingBuffer {
             path,
             original: text.clone(),
             text,
             baseline: self.content_baseline(),
             generation: 0,
-        })
+            identity: String::new(),
+        };
+        buffer.refresh_identity();
+        Ok(buffer)
     }
 
     pub fn project_writing_buffer(

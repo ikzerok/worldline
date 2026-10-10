@@ -14,10 +14,27 @@ pub fn write_manuscript_markdown_new(
         .markdown()
         .filter(|_| report.complete())
         .ok_or("审稿材料不完整，不能交付")?;
+    write_private_bytes_new(
+        workspace,
+        destination,
+        markdown.as_bytes(),
+        "md",
+        before_publish,
+    )
+}
+
+/// 同一私密材料事务；仅参数化已验证完整字节与预期扩展名。
+pub(crate) fn write_private_bytes_new(
+    workspace: &Path,
+    destination: &Path,
+    bytes: &[u8],
+    extension: &str,
+    before_publish: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<(), String> {
     if !destination.is_absolute()
-        || destination.extension().and_then(|value| value.to_str()) != Some("md")
+        || destination.extension().and_then(|value| value.to_str()) != Some(extension)
     {
-        return Err("目标必须是工作区外新 .md 文件的绝对路径".into());
+        return Err(format!("目标必须是工作区外新 .{extension} 文件的绝对路径"));
     }
     let parent = destination.parent().ok_or("目标缺少父目录")?;
     if destination
@@ -38,7 +55,7 @@ pub fn write_manuscript_markdown_new(
     before_publish()?;
     let (stage, mut file) = create_stage(&parent)?;
     let result = (|| {
-        file.write_all(markdown.as_bytes())
+        file.write_all(bytes)
             .and_then(|()| file.flush())
             .and_then(|()| file.sync_all())
             .map_err(|error| format!("暂存审稿本失败：{error}"))?;

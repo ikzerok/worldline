@@ -1,12 +1,19 @@
 # worldline（世界线）
 
-世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.33 连接译文制作与状态巡检、同一运行时的真实译文体验，以及正文中的正式人物和实体关联创作；配对 worldedit 使用同一 core/runtime 的结果完成作者操作。
+世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.34 连接正式对白的 typed 创作、同一当前稿的角色/locale 制作台本，以及显式私密 JSON、Markdown、CSV 材料；配对 worldedit 使用同一 core/runtime 的结果完成作者操作。
 
-工作分支不表示正式发行。范围和验证边界见配对编辑器[0.33版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.33.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
+工作分支不表示正式发行。范围和验证边界见配对编辑器[0.34版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.34.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
 
-升级边界：0.32 及更早运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在 0.33 重放、比较或生成已验证审阅，应重新录制。合法路径 JSON 只读导入成功不代表可执行；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。
+升级边界：0.33 及更早运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在 0.34 重放、比较或生成已验证审阅，应重新录制。合法路径 JSON 只读导入成功不代表可执行；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。
 
 应用与源码发行包不附带样例工程或规范演示文件。新建作品从仅含起点与结束的空白骨架开始；必要测试、可选产品字段模板与既有作品能力保持。
+
+## 0.34 正式对白与同稿角色台本
+
+- [对白创作](docs/dialogue-authoring.md)：正式单语句、typed parts、无损范围、显式迁移和一次事务
+- [制作台本](docs/production-script.md)：正式 speaker、所选 locale、静态片段定义闭包、真实来源和完整分页
+- [机器入口](spec/dialogue-machine.md)：同 core 的 query/preview/apply/export，内存应用与保存分离
+- 私密交付默认排除演出备注；所有格式来自同一不可变结果，CSV 显示前缀不同于精确 JSON 原值，不自动向第三方发送
 
 ## 0.33 译文与正文关联创作
 

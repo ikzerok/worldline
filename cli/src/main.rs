@@ -26,6 +26,9 @@ fn main() -> ExitCode {
             eprintln!("      wl playthrough-report <目录或入口> --trace-json DTO [--max-steps N] [--time-budget-ms N] [--json]");
             eprintln!("      wl draft-rehearsal <目录或入口> (--request 文件.json | --request-json DTO) [--json]");
             eprintln!("      wl manuscript-delivery <目录或入口> --request-json DTO [--drafts-json DTO] [--output 全新.md] [--json]");
+            eprintln!("      wl dialogue query|preview|apply <目录或入口> [query: --target-json DTO] [preview|apply: --request-json DTO] [apply: --plan-digest 摘要 --save] [--json]");
+            eprintln!("      wl production-script query|export <目录或入口> --request-json DTO [--drafts-json DTO] [query: --offset N --limit N] [export: --options-json DTO --output 工作区外全新文件] [--json]");
+            eprintln!("      dialogue / production-script 的完整用法见对应子命令 --help；--save / --output 均须显式选择");
             eprintln!("      wl catalog-scope <目录或入口> --query DTO [--offset N] [--page-size N] [--focus DTO] [--relation-options DTO] [--json]");
             eprintln!("      wl reconciliation capture|preview|apply|save <工程目录> --input 文件.json [--request 文件.json] [--plan-digest 摘要] [--json]");
             eprintln!("      wl graph <文件.wl> [--json]");

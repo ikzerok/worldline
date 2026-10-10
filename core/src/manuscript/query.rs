@@ -190,6 +190,10 @@ pub struct ManuscriptQuerySnapshot {
     complete: bool,
 }
 impl ManuscriptQuerySnapshot {
+    pub(crate) fn compiled(&self) -> &crate::CompileResult {
+        &self.content.0
+    }
+
     pub fn key(&self) -> &str {
         &self.key
     }

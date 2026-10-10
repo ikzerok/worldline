@@ -1,6 +1,8 @@
 # worldline 创作手册
 
-本手册解释从建立工作区到交付作品的完整用法。精确语法以 [语法规范](../spec/syntax.md) 为准；运行细节查 [语义规范](../spec/semantics.md)，机器字段查 [协议](../spec/agent-protocol.md)。默认语言为1.9，可显式选择1.10、1.11、1.12或1.13；程序包版本为0.27.0，版本变化与验证状态见[CHANGELOG](../CHANGELOG.md)。这两个版本号不是同一概念，打开旧作品不会自动升级。
+本手册解释从建立工作区到交付作品的完整用法。精确语法以 [语法规范](../spec/syntax.md) 为准；运行细节查 [语义规范](../spec/semantics.md)，机器字段查 [协议](../spec/agent-protocol.md)。默认语言为1.9，可显式选择1.10、1.11、1.12或1.13；程序包版本为0.34.0，版本变化与验证状态见[CHANGELOG](../CHANGELOG.md)。这两个版本号不是同一概念，打开旧作品不会自动升级。
+
+正式对白的文字/角色/备注可通过[typed 作者计划](dialogue-authoring.md)编辑；同一当前稿可按角色和 locale 生成[私密制作台本](production-script.md)。这些是 core 作者与交付契约，不是另一份正文库或新 DSL。
 
 ## 阅读路线
 

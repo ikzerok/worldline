@@ -30,6 +30,8 @@ mod catalog;
 mod catalog_import;
 #[path = "lib/catalog_scope.rs"]
 mod catalog_scope;
+#[path = "lib/dialogue.rs"]
+mod dialogue;
 #[path = "lib/draft_rehearsal.rs"]
 mod draft_rehearsal;
 #[path = "lib/entities.rs"]
@@ -56,6 +58,8 @@ mod object_search;
 mod playthrough_report;
 #[path = "lib/problems.rs"]
 mod problems;
+#[path = "lib/production_script.rs"]
+mod production_script;
 #[path = "lib/projects.rs"]
 mod projects;
 #[path = "lib/reader_exports.rs"]
@@ -232,6 +236,18 @@ impl Server {
         }
         if matches!(
             msg.get("method").and_then(Value::as_str),
+            Some("dialogue.query" | "dialogue.edit.preview" | "dialogue.edit.apply")
+        ) {
+            return dialogue::dispatch(self, &msg);
+        }
+        if matches!(
+            msg.get("method").and_then(Value::as_str),
+            Some("production.script.query" | "production.script.export")
+        ) {
+            return production_script::dispatch(self, &msg);
+        }
+        if matches!(
+            msg.get("method").and_then(Value::as_str),
             Some("reconciliation.capture" | "reconciliation.preview" | "reconciliation.apply")
         ) {
             return reconciliation::dispatch(self, &msg);
@@ -308,6 +324,8 @@ impl Server {
                 "server": "wl-agent",
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
+                    "authoring.dialogue.v1",
+                    "authoring.production_script.v1",
                     "authoring.localization_workbench.v1",
                     "runtime.localization.v1",
                     "authoring.problems.v1",

@@ -1,5 +1,8 @@
 # worldline 机器接口契约(agent 协议与 CLI JSON 模式)
 
+工具 0.34 的正式对白 query/preview/apply 与私密生产台本 query/export 见
+[dialogue-machine.md](dialogue-machine.md)；继续由 core 定义内容、计划与导出字节。
+
 **协议版本:** 1（语言 v1.10 entity 字段扩展）
 
 0.33 新增本地化目录、稳定身份、译文内存候选及真实 locale 会话，详见
