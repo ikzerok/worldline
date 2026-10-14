@@ -46,7 +46,7 @@ impl SchemaIncompleteReason {
         }
     }
 
-    fn from_diagnostic(diagnostic: &Diagnostic) -> Option<Self> {
+    pub(super) fn from_diagnostic(diagnostic: &Diagnostic) -> Option<Self> {
         match diagnostic.code {
             "A105" => Some(Self::SourceLoading),
             // 附件的 A109 指向声明；编译器的 A109 指向加载目标或入口文档。
@@ -85,9 +85,7 @@ pub struct SchemaEditPreview {
 impl Project {
     pub fn schema_index(&self) -> SchemaIndex {
         let compiled = self.compile_current();
-        let mut index = super::validate(&compiled.program, &compiled.analysis.catalog);
-        index.diagnostics = compiled.diagnostics;
-        index
+        SchemaIndex::from_compile(&compiled)
     }
 
     pub fn preview_schema_edit(

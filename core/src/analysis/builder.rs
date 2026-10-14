@@ -118,8 +118,8 @@ pub(super) fn analyze(
     };
     crate::relation_context::populate(program, &ctx.symbols, &mut graph);
     let mut catalog = crate::catalog::analyze(program, &ctx.symbols, &graph, &mut ctx.diags);
-    ctx.diags
-        .extend(crate::schemas::validate(program, &catalog).diagnostics);
+    let schemas = crate::schemas::validate(program, &catalog);
+    ctx.diags.extend(schemas.diagnostics.clone());
     crate::schemas::add_binding_references(program, &mut catalog);
     let mut all = std::mem::take(&mut ctx.diags);
     all.append(&mut diags);
@@ -130,6 +130,7 @@ pub(super) fn analyze(
     let executable_context =
         crate::world_context::ExecutableContextIndex::build(program, &ctx.symbols);
     let analysis = Analysis {
+        schemas,
         executable_context,
         catalog,
         timeline,

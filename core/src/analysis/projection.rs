@@ -144,6 +144,9 @@ pub struct Stats {
 
 #[derive(Debug, Serialize)]
 pub struct Analysis {
+    /// 同次编译的持续约束索引；不改变旧分析 JSON，也不重复校验。
+    #[serde(skip)]
+    pub schemas: crate::schemas::SchemaIndex,
     /// 同编译快照的只读静态使用处；不改变旧分析 JSON。
     #[serde(skip)]
     pub executable_context: crate::world_context::ExecutableContextIndex,
@@ -162,6 +165,7 @@ pub struct Analysis {
 impl Clone for Analysis {
     fn clone(&self) -> Self {
         Analysis {
+            schemas: self.schemas.clone(),
             executable_context: self.executable_context.clone(),
             catalog: self.catalog.clone(),
             timeline: self.timeline.clone(),

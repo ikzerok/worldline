@@ -82,6 +82,8 @@ mod relation_types;
 mod route_comparison;
 #[path = "lib/scene.rs"]
 mod scene;
+#[path = "lib/schema_authoring.rs"]
+mod schema_authoring;
 #[path = "lib/sessions.rs"]
 mod sessions;
 #[path = "lib/source_edit.rs"]
@@ -236,6 +238,12 @@ impl Server {
         }
         if matches!(
             msg.get("method").and_then(Value::as_str),
+            Some("schema.authoring.query" | "schema.authoring.preview" | "schema.authoring.apply")
+        ) {
+            return schema_authoring::dispatch(self, &msg);
+        }
+        if matches!(
+            msg.get("method").and_then(Value::as_str),
             Some("dialogue.query" | "dialogue.edit.preview" | "dialogue.edit.apply")
         ) {
             return dialogue::dispatch(self, &msg);
@@ -325,6 +333,7 @@ impl Server {
                 "version": env!("CARGO_PKG_VERSION"),
                 "capabilities": [
                     "authoring.dialogue.v1",
+                    "authoring.schema_authoring.v1",
                     "authoring.production_script.v1",
                     "authoring.localization_workbench.v1",
                     "runtime.localization.v1",

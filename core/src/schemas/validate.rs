@@ -71,6 +71,11 @@ pub fn validate(program: &Program, catalog: &Catalog) -> SchemaIndex {
             }
         }
     }
+    let objects = if program.schema_bindings.is_empty() {
+        BTreeMap::new()
+    } else {
+        instances(program)
+    };
     let mut bound: BTreeMap<TargetRef, &super::SchemaBinding> = BTreeMap::new();
     for binding in &program.schema_bindings {
         let mut diagnostics = Vec::new();
@@ -93,7 +98,7 @@ pub fn validate(program: &Program, catalog: &Catalog) -> SchemaIndex {
         } else {
             bound.insert(binding.target.clone(), binding);
         }
-        let object = instance(program, &binding.target);
+        let object = objects.get(&binding.target).copied();
         if object.is_none() {
             diagnostics.push(diagnostic(
                 "SCH003",
@@ -276,33 +281,27 @@ fn check_value(
     }
 }
 
-fn instance<'a>(
-    program: &'a Program,
-    target: &TargetRef,
-) -> Option<(&'a str, Loc, &'a [Property])> {
-    match target.kind.as_str() {
-        "world" => program
-            .worlds
-            .iter()
-            .find(|x| x.name == target.id)
-            .map(|x| (x.file.as_str(), x.loc, x.properties.as_slice())),
-        "character" => program
-            .characters
-            .iter()
-            .find(|x| x.name == target.id)
-            .map(|x| (x.file.as_str(), x.loc, x.properties.as_slice())),
-        "entity" => program
-            .entities
-            .iter()
-            .find(|x| x.name == target.id)
-            .map(|x| (x.file.as_str(), x.loc, x.properties.as_slice())),
-        "relation" => program
-            .relations
-            .iter()
-            .find(|x| x.id == target.id)
-            .map(|x| (x.file.as_str(), x.loc, x.properties.as_slice())),
-        _ => None,
+type InstanceSource<'a> = (&'a str, Loc, &'a [Property]);
+
+/// 保留旧 Vec::find 的第一个声明，重复仍由正式诊断拒绝；不覆盖重复身份。
+fn instances(program: &Program) -> BTreeMap<TargetRef, InstanceSource<'_>> {
+    let mut objects = BTreeMap::new();
+    macro_rules! collect {
+        ($values:expr, $kind:literal, $id:ident) => {
+            for value in $values {
+                objects.entry(TargetRef::new($kind, &value.$id)).or_insert((
+                    value.file.as_str(),
+                    value.loc,
+                    value.properties.as_slice(),
+                ));
+            }
+        };
     }
+    collect!(&program.worlds, "world", name);
+    collect!(&program.characters, "character", name);
+    collect!(&program.entities, "entity", name);
+    collect!(&program.relations, "relation", id);
+    objects
 }
 
 pub(crate) fn add_binding_references(program: &Program, catalog: &mut Catalog) {
