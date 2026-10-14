@@ -74,3 +74,9 @@ schema声明或绑定错误。同一类别在前后两侧或多个文件出现�
 修复缺失include、非法路径或解析/身份问题后，重新预览可恢复完整性；多个include
 中一个失效也不得丢掉其它已知影响。preview仍零修改，apply/save错误草稿和运行门禁
 保持既有契约，不自动补载越界文件、不自动迁移实例、不自动保存或修复。
+
+## 工具 0.35：资料填写与修错
+
+共享完整 TargetRef 投影、真实 presence、类型/引用候选、字段来源诊断及显式
+Bind/Change/Unbind 与 Set/Remove 原子事务见 [schema-authoring.md](schema-authoring.md)。
+源码 schema 编辑入口继续保留；作者表单复用同次 CompileResult，不建立第二套校验器。
