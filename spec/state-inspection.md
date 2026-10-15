@@ -107,3 +107,59 @@ RPC `session.inspect`参数为session_id与可选query，返回runtime DTO；CLI
 首观察缺前次、构造/预算/错误/取消部分状态、checkpoint/新trace/restart清空、
 省略/检索/跨页/过期绑定；前后save/trace/RNG完全相同。编辑器覆盖来源拒绝、窄窗、
 键盘、返回位置与选择焦点。native/WASM共享语义，未运行平台不得声称通过。
+
+## 6. 工具 0.36：对象所属状态的同运行旁查
+
+新增只读能力 `runtime.object_state_inspection.v1`，沿用本页 `inspect_state` 和
+`session.inspect`、CLI `inspect` 的同一 query/page，不另建对象值或运行历史模型。
+普通 `Story`、`OwnedStory` 和现有 `DraftRehearsal` 消费完全相同的过滤协议；调用方
+必须明确选择已经存在的普通或草稿运行，无运行时只显示空态，不为查询创建/重开运行。
+
+`StateInspectionQuery.owner` 是可选的完整 `TargetRef {kind,id}`。字段缺失或 null
+保留旧全局检查行为；提供时只选取该 Story 所借用的冻结 catalog 中
+`state.target == owner` 的 state，kind 与 id 均逐字相等。不得按显示名、ID 前缀、
+变量名、相似对象或最新编辑稿的 catalog 猜归属。动态动作仍修改实际求值得到的
+state ID，查询不静态猜其目标，也不把局部/全局变量、静态 property 加入对象状态。
+所有现有合法 catalog 对象均可作为过滤身份；这不扩大 state 声明允许的 owner 种类。
+
+owner 的 kind/id 均须为字符串且必填，拒绝未知字段；kind 须为 core 已知 TargetRef
+种类、id 不得为空，owner JSON 最多16KiB。owner 模式的 group 只接受缺失/null 或
+`state`；与 `global`/`local` 组合是 `INVALID_INSPECTION_QUERY`，不伪装零命中。
+结构、种类及额度错误沿现有 RPC -32602；合法身份在该运行 catalog 中不存在时
+返回业务错误 `INSPECTION_OWNER_NOT_FOUND`，不回退至同名对象。已有 expected_stamp
+先验证，跨运行/已推进请求仍报告 `STALE_INSPECTION`，不因目标变化掩盖过期身份。
+
+owner 页附加 `owner: InspectionOwner {target,display}`，其中身份及显示名来自本次
+运行自己的冻结 catalog。`total_items` 是该 owner 的全部所属 state 数，text、
+changed_only 及分页之前计数；其余计数沿原协议。owner 存在但无所属 state 是成功
+空页（total_items=0），与有 state 但被过滤完、offset 超出末页、目标不存在分开。
+owner 过滤先于名称/组/变化过滤及分页；未改变状态默认仍包含，排序仍按稳定 state ID。
+text 同时可匹配所属 state 的冻结显示名，重复显示名不会合并独立 state。
+
+owner 页各项附加 `state_definition: InspectionStateDefinition {owner,display,initial}`。
+`owner` 是完整归属身份，`display` 是 state 的冻结显示名；`initial` 是同 catalog
+声明 tags 的 `InspectionCell`，明确标为“静态声明初值”，不参与 first/previous 的
+变化判断，也不作为历史检索或真实观测。它沿既有单值2048字节预算，超额标为 omitted，
+不得使用新稿初值或补造构造时的观察。first 继续是首次真实记录（通常已经执行 enter
+或正文动作），首次之前为 unrecorded；空初值仍是 present 的空 TagSet。
+未指定 owner 的旧查询不输出 owner/state_definition 附加字段，旧结果形状保持不变；
+消费者读取旧页时允许这两个可选字段缺失。
+
+静态初值、身份、声明来源与显示名都计入原有整页1MiB上限；超限返回
+`INSPECTION_OUTPUT_LIMIT`，不截断身份或来源后允许导航。每页1–100、首次/上一/最近
+观察保留额度、typed值省略、部分/错误/取消状态及查询零副作用契约不变。
+`history_omitted`仍描述原运行观察保留情况，不承诺仅限该 owner；初值省略由其自己的
+cell明确表示。只读查询不得开启动作捕获、求值、增加 visit/turn、修改选择、RNG、
+save、trace、state_history 或作者文档。
+
+已有真实动作和条件证据仍通过同一运行的既有接口读取；筛选按页中真实 state ID，
+不从值差异生成动作或缺失证据。相同末值不能证明没有写入，静态 changes 不冒充执行。
+结果绑定共同键为本页 owner.target、完整 stamp 与宿主冻结稿源/工作区 scope；普通和
+草稿运行即使指纹相同也不可互换 stamp。迟到页须同时核对选中 owner、run、请求及稿源
+代次后接收。旧稿可保留明确的只读展示，来源导航必须重验同运行编译与 §4 的守卫；
+不得把旧 state 或 owner 的来源套到当前同名声明。返回对象、同运行与筛选/分页/焦点
+沿现有导航合同保留，不隐式应用/保存草稿或推进故事。
+
+回归至少包括同名不同 kind/ID、同对象多个同名 state、零所属 state、首次前真实变更、
+同值写入、动态 state 动作、旧运行/新 catalog 分离、普通/草稿 run 隔离、分页后推进或
+重启、部分/错误/取消、省略/输出超限、严格 owner 输入及直接API/CLI/RPC同DTO。

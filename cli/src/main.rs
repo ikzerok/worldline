@@ -52,6 +52,7 @@ fn main() -> ExitCode {
             eprintln!("      wl catalog-import preview|apply <工程目录> --request-json '<DTO>' [--csv 文件] [apply: --plan-digest 摘要] [--save] [--json]（apply不加--save仅内存，退出即丢弃）");
             eprintln!("      wl source-edit preview|apply <工程目录> --request-json '<DTO>' [apply: --plan-digest 摘要] [--json]");
             eprintln!("      wl source-lifecycle preview|apply <目录或入口> --request-json '<DTO>' [apply: --plan-digest 摘要] [--json]");
+            eprintln!("      wl condition-authoring query|preview|apply <工程目录> [--selector-json DTO|--request-json DTO] [--plan-digest 摘要] [--save] [--json]");
             eprintln!("      wl schema-authoring query|preview|apply <工程目录> [--target-json DTO|--request-json DTO] [--plan-digest 摘要] [--save] [--json]");
             eprintln!("      wl schema-index <工程目录> [--json]");
             eprintln!("      wl schema-preview <工程目录> --request-json '<DTO>' [--json]");

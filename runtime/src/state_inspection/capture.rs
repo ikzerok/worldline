@@ -6,6 +6,7 @@ use std::sync::{
     Arc,
 };
 use worldline_core::state_inspection_source::{DeclarationKind, DeclarationSource};
+use worldline_core::TargetRef;
 
 static NEXT_RUN: AtomicU64 = AtomicU64::new(1);
 pub(crate) struct InspectionHistory {
@@ -125,8 +126,14 @@ impl Story<'_> {
         self.inspection.revision = self.inspection.revision.wrapping_add(1);
     }
     pub(super) fn inspection_candidates(&self) -> Vec<Candidate<'_>> {
+        self.inspection_candidates_for_owner(None)
+    }
+    pub(super) fn inspection_candidates_for_owner(
+        &self,
+        owner: Option<&TargetRef>,
+    ) -> Vec<Candidate<'_>> {
         let mut result = Vec::new();
-        for (name, info) in &self.symbols.vars {
+        for (name, info) in self.symbols.vars.iter().filter(|_| owner.is_none()) {
             result.push(Candidate {
                 key: InspectionKey {
                     group: InspectionGroup::Global,
@@ -150,7 +157,7 @@ impl Story<'_> {
         for (depth, frame) in self
             .frames
             .iter()
-            .filter(|f| f.fragment.is_some())
+            .filter(|f| owner.is_none() && f.fragment.is_some())
             .enumerate()
         {
             let Some(definition) = self
@@ -188,7 +195,12 @@ impl Story<'_> {
                 });
             }
         }
-        for (name, info) in &self.catalog.states {
+        for (name, info) in self
+            .catalog
+            .states
+            .iter()
+            .filter(|(_, info)| owner.is_none_or(|owner| &info.target == owner))
+        {
             result.push(Candidate {
                 key: InspectionKey {
                     group: InspectionGroup::State,

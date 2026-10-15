@@ -1,5 +1,6 @@
 //! 图形创作的源码修改接口。UI 传递字段,由 core 定位、生成并验证文本。
 mod choices;
+mod condition_patch;
 mod events;
 mod predecessors;
 mod world;
@@ -12,7 +13,7 @@ pub use predecessors::{EventPredecessorOption, EventPredecessorOptions};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct EventDraft {
     pub id: String,
     pub summary: String,

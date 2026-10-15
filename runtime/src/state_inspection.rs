@@ -1,6 +1,15 @@
 //! 真实Story的有界只读投影；不使用JSON推断类型或制造观察。
 mod capture;
 mod model;
+#[cfg(test)]
+mod object_draft_tests;
+#[cfg(test)]
+mod object_limits_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod object_performance_tests;
+#[cfg(test)]
+mod object_tests;
+mod owner;
 mod query;
 mod search;
 mod stamp_wire;

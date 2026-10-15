@@ -318,6 +318,8 @@ mod catalog_import;
 mod catalog_query;
 #[path = "lib/catalog_scope.rs"]
 mod catalog_scope;
+#[path = "lib/condition_authoring.rs"]
+mod condition_authoring;
 #[path = "lib/dialogue.rs"]
 mod dialogue;
 #[path = "lib/draft_rehearsal.rs"]
@@ -440,6 +442,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "catalog-import" => catalog_import::command(rest, out),
         "source-edit" => source_edit::command(rest, out),
         "source-lifecycle" => source_lifecycle::command(rest, out),
+        "condition-authoring" => condition_authoring::command(rest, out),
         "schema-authoring" => schema_authoring::command(rest, out),
         "schema-index" => source_edit::schema_index(rest, out),
         "schema-preview" => source_edit::schema_command(rest, out, false),
@@ -460,7 +463,7 @@ pub fn run(args: &[String], out: &mut impl Write, input: &mut impl BufRead) -> R
         "route-compare" => route_comparison::command(rest, out),
         "playthrough-report" => playthrough_report::command(rest, out),
         other => Err(format!(
-                "未知子命令 `{other}`(可用:reconciliation / draft-rehearsal / manuscript-delivery / dialogue / production-script / catalog-scope / problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / schema-authoring / schema-index / schema-preview / schema-apply / entity)"
+                "未知子命令 `{other}`(可用:reconciliation / draft-rehearsal / manuscript-delivery / dialogue / production-script / catalog-scope / problems / workspace / maps / scene / relations / relation / relation-type / check / play / replay / route-compare / playthrough-report / manuscript-review / graph / timeline / catalog / catalog-query / catalog-import / manuscript-chapter / manuscript-query / template / object-search / world-object / world-context / reader-export / localization / markdown / authoring-intent / source-edit / source-lifecycle / condition-authoring / schema-authoring / schema-index / schema-preview / schema-apply / entity)"
         )),
     }
 }

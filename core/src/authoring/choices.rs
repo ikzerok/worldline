@@ -1,5 +1,7 @@
 //! 分支表单与正文之间的无损局部改写；UI 不解释语言。
+use super::condition_patch::SourceIndex;
 use super::{block_at, comments, header_comment, quote, EventDraft};
+use crate::condition_authoring::ConditionSlot;
 use crate::lexer::LineKind;
 use std::path::Path;
 
@@ -22,21 +24,25 @@ pub struct ChoiceDraft {
 
 impl EventDraft {
     pub fn choices(&self) -> Vec<ChoiceDraft> {
+        // 只读列表不构造丢失原文的伪草稿；写路径走 fallible 版本并传播来源错误。
+        self.try_choices().unwrap_or_default()
+    }
+
+    pub(super) fn try_choices(&self) -> Result<Vec<ChoiceDraft>, String> {
         let parsed = lines(&self.body, Path::new("event.wl"));
+        let source_index = SourceIndex::new(&self.body);
         parsed
             .iter()
             .enumerate()
-            .filter_map(|(i, line)| {
+            .try_fold(Vec::new(), |mut choices, (i, line)| {
                 let LineKind::Choice {
                     label_raw,
                     once,
-                    cond_src,
-                    enable_src,
                     disabled_reason,
                     ..
                 } = &line.kind
                 else {
-                    return None;
+                    return Ok(choices);
                 };
                 let block = block_at(&self.body, &parsed, i);
                 let mut body = self.body[block.header_end..block.range.end].to_owned();
@@ -83,20 +89,26 @@ impl EventDraft {
                     .join("\n")
                     .trim_end()
                     .to_owned();
-                Some(ChoiceDraft {
+                choices.push(ChoiceDraft {
                     line: line.no,
                     depth: line.indent,
                     label: label_raw.clone(),
                     once: *once,
-                    condition: cond_src.clone().unwrap_or_default(),
-                    enable_condition: enable_src.clone().unwrap_or_default(),
+                    condition: source_index
+                        .source(line, ConditionSlot::ChoiceDisplay)?
+                        .unwrap_or_default()
+                        .to_owned(),
+                    enable_condition: source_index
+                        .source(line, ConditionSlot::ChoiceEnable)?
+                        .unwrap_or_default()
+                        .to_owned(),
                     disabled_reason: disabled_reason.clone().unwrap_or_default(),
                     body,
                     target,
                     drift,
-                })
+                });
+                Ok(choices)
             })
-            .collect()
     }
 
     /// line=None 新增到第一个顶层选择组；已有分支按当前正文行定位。
@@ -118,6 +130,11 @@ impl EventDraft {
             }
             if target == "END" && choice.drift {
                 return Err("结束故事不能使用漂流".into());
+            }
+        }
+        if let Some(number) = line {
+            if super::condition_patch::choice(self, number, choice)? {
+                return Ok(());
             }
         }
         let parsed = lines(&self.body, Path::new("event.wl"));
