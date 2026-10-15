@@ -1,6 +1,6 @@
 # 当前源码坐标与可信定位
 
-工具0.26通过 `source_coordinates` 提供独立于AST的文本坐标。适用于普通源码当前光标、作者输入行列后的预览和确认；语法未完成仍可使用。当前状态与平台覆盖见[0.26版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.26.0.md)。
+工具0.26通过 `source_coordinates` 提供独立于AST的文本坐标。适用于普通源码当前光标、作者输入行列后的预览和确认；语法未完成仍可使用。0.26 引入时的验证与平台覆盖见[0.26版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.26.0.md)。
 
 ## 使用顺序
 

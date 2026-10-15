@@ -1,10 +1,12 @@
 # worldline 语言规范
 
-语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.36.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。规范描述契约和验收要求，不表示当前候选已完成全部测试。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
+语言与共同文件格式的真源文档，实现（`worldline/core`、`worldline/runtime`）以其为准。产品 0.36.0 不新增 DSL；默认语言仍为 1.9，最高 1.13。配对 worldedit 0.36.1 的桌面修复不升级 core/runtime。规范描述契约和验收要求，不能代替具体提交的测试与发行记录。使用路线见[文档索引](../docs/README.md)，变化与状态见[CHANGELOG](../CHANGELOG.md)。
 
 | 文档 | 内容 |
 |---|---|
 | [condition-authoring.md](condition-authoring.md) | 三条件槽的有类型往返、稿源身份、精确预览与无损事务 |
+| [schema-authoring.md](schema-authoring.md) | 既有 schema 绑定、typed 属性填写、字段问题与原子计划 |
+| [schema-authoring-machine.md](schema-authoring-machine.md) | schema 作者 CLI/RPC、严格 DTO、内存应用与独立保存 |
 | [dialogue-authoring.md](dialogue-authoring.md) | 正式单语句 typed 作者计划、同稿缓冲、明确迁移和失败保护 |
 | [production-script.md](production-script.md) | 正式 speaker/locale、静态定义闭包、当前稿台本与私密三格式 |
 | [dialogue-machine.md](dialogue-machine.md) | 对白与制作台本 CLI/RPC、精确字节、内存应用和显式保存 |
@@ -67,5 +69,3 @@
 - [可读试玩审阅](https://github.com/ikzerok/worldline/blob/main/spec/playthrough-report.md)：重新验证的单路线、实际输出来源、私密交接与预算
 
 - [新章与正式正文来源](manuscript-authoring.md)：原子创建预览/应用、安全空正文槽与机器接口
-
-- [condition-authoring.md](condition-authoring.md)：有类型条件的安全往返、草稿与源码精确计划

@@ -1,8 +1,22 @@
 # worldline 文档索引
 
-- [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
+本文档对应 worldline/core/runtime 0.36.0，配对编辑器的桌面修复为 worldedit 0.36.1；两者版本不必相同。默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
 
-本文档对应 0.34.0；默认语言 1.9、最高 1.13。先按任务选择入口，精确语义始终以 [spec](../spec/README.md) 为准。完整功能与实际验收边界见 [CHANGELOG](../CHANGELOG.md)。
+## 桌面启动与配对
+
+- [配对编辑器启动](../../worldedit/docs/desktop-startup.md)：无项目欢迎页、显式新建与打开、取消及错误恢复
+- [0.36.1 编辑器修复](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.1.md)：core/runtime 继续为 0.36.0，未改变运行版本守卫
+
+## 0.36 条件与对象真实状态
+
+- [有类型条件作者契约](../spec/condition-authoring.md)：已有槽、精确原字节预览与事务保护
+- [对象真实状态](../spec/state-inspection.md)：完整 owner 身份、冻结运行目录和观测证据
+- [机器协议](../spec/agent-protocol.md)：condition-authoring 与 session.inspect 的共同接口
+
+## 0.35 约束与属性
+
+- [schema 作者契约](../spec/schema-authoring.md)：绑定、typed 字段、缺失与非法值、真实指纹预览
+- [schema 机器入口](../spec/schema-authoring-machine.md)：查询、预览、内存应用与显式保存
 
 ## 0.34 正式对白与制作台本
 
@@ -50,6 +64,7 @@
 - [创作手册](handbook.md)：工作区、资料、叙事、状态、协作与交付
 - [从资料到可信重放](author-route.md)：检查双路线与安全改稿
 - [显式能力启用](explicit-capabilities.md)：预览已有语言/资料能力，核对变化后确认
+- [逐处审阅与安全替换](selective-replace.md)：精确命中、当前稿上下文、选择式事务与失败边界
 - [工作区契约](../spec/workspace.md)：递归源码、引用边界、原字节、保存冲突与完整备份
 
 ## 全分支作者审稿
@@ -91,6 +106,6 @@
 - [后台快照](../spec/workspace-snapshot.md)：精确当前稿、墓碑、只读与传输限制
 - [发布构建](release.md)：配对、源码和包；历史版本记录不代表当前候选已完成验收
 
-当前 0.32 的完整门禁、性能与真实平台覆盖以配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。
+各版本的完整门禁、性能与真实平台覆盖以对应配对版本说明为准；旧版实测不能代替本版验证。规范中的性能数值是验收目标，不是已取得的测量结果。
 
 - [从变量终值找到实际写入](https://github.com/ikzerok/worldline/blob/main/docs/variable-write-evidence.md)：两路线的成功写入、初始化边界与机器接口

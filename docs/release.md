@@ -1,10 +1,20 @@
 # worldline 发布说明
 
+## 现行配对与版本
+
+worldline/core/runtime 当前为 0.36.0；配对编辑器的桌面补丁为 worldedit 0.36.1，两者不要求同版本号。共同语言与运行时未因本次桌面补丁改变，轨迹与运行检查点仍按实际 runtime 版本、指纹及身份校验。精确源码以编辑器 `compatibility.json` 的完整 SHA 和发行 `release-pair.json` 为准。
+
+当前配套应用与双仓源码附件统一在 [worldedit Releases](https://github.com/ikzerok/worldedit/releases)；已有正式 [v0.36.0](https://github.com/ikzerok/worldedit/releases/tag/v0.36.0) 的历史说明与[0.36.1 修复范围](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.1.md)分别保留。worldline 仓库历史独立 Release 不等同当前配套下载版本。
+
+## 构建与分发
+
 worldline 是独立 Cargo workspace，成员为 core/runtime/cli/agent；不依赖父目录文件与编辑器。保留 Cargo.lock 与 rust-toolchain.toml，执行 `cargo build --workspace --release --locked` 生成 wl 和 wl-agent。
 
 源码发布包包含 spec、docs、源码、测试、许可证和 CI；不分发仓库中的历史演示工程与规范样例。`.gitattributes` 的 `export-ignore` 是正式 `git archive` 的排除依据；归档路径和字节须与该提交按这些规则生成的结果逐一核对。`Project::new` 生成单文件空白骨架，不编译嵌入故事样例。必要的回归输入、冻结历史兼容夹具和不含故事值的字段模板仍属于可构建/可测试源码。target、日志、临时文件和发行包不上传。运行 `cargo doc --workspace --no-deps --locked` 可生成完整公开 Rust API 文档。
 
-与同级 worldedit 联合发布时使用其 scripts/package.ps1，Windows 包会附两项语言工具、规范和使用文档，不附演示工程，另输出独立 worldline-source.zip 及 SHA256 校验和。工具包版本与语言规范版本分开记录；0.3.0 同时支持显式 1.10 作者资料能力。当前不包含签名安装器。
+与同级 worldedit 联合发布时使用其 scripts/package.ps1，Windows 包会附两项语言工具、规范和使用文档，不附演示工程，另输出独立 worldline-source.zip 及 SHA256 校验和。工具包版本与语言规范版本分开记录；默认语言 1.9、最高显式 1.13。桌面无项目入口、Windows 图标与启动诊断由编辑器负责，见[启动说明](https://github.com/ikzerok/worldedit/blob/main/docs/desktop-startup.md)。当前不包含签名安装器。
+
+以下更新节是对应版本的历史功能与验证记录；当时的测试数字和限制不作为当前候选的通过结果。
 
 
 ## 0.11.0 更新
