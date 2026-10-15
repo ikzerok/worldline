@@ -3,6 +3,10 @@
 - 状态：已决定（用户已批准选项 A）
 - 关联：ikzerok/worldline#26（CAP-09B）、ikzerok/worldline#24（已关闭，不提供游戏引擎适配器）
 
+## 后续范围
+
+本页保留 CAP-09B 首次交换设计的决定与当时背景。工具 0.33 已在独立契约中增加显式 locale、源文回退及真实运行展示，见[运行本地化](../../spec/localization-runtime.md)和[现行本地化使用说明](../localization-workbench.md)。下文“不增加运行时 locale”是原决定的范围，不再是整个当前产品的能力上限；既有白名单交换、原文字节和稳定身份保护继续保持。
+
 ## 背景
 
 CAP-09B 起初缺少获批的字符串身份和翻译保存生命周期。当前 `TextStmt` / `ChoiceStmt` 没有持久字符串 ID；源码位置、事件/场景名、选择顺序都会因移动或重排改变，不能单独充当稳定 ID。`Project::content_baseline()` 绑定工作区当前内容；运行 fingerprint 则绑定可见原文及插值表达式，另有不同用途。两者不能被假定为同一个翻译修订号。

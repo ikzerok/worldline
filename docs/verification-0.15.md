@@ -1,6 +1,6 @@
 # worldline 0.15 验证事实摘要（开发候选）
 
-核对时间：2026-10-02 16:59 UTC。本文记录 worldline 已经执行的检查及其适用范围，产品仍为未正式发行的开发候选；配对编辑器的验证与待验范围由其单独摘要记录。本页不构成 0.15 整体验收完成或正式发行结论。功能与限制见 [CHANGELOG](../CHANGELOG.md)，行为和数值门槛以 [矢量场景](../spec/vector-scene.md)、[静态世界站](../spec/reader-site.md)、[快照](../spec/workspace-snapshot.md)及[共同契约第 11 节](../spec/presentation.md)为准。
+核对时间：2026-10-02 16:59 UTC。本文是该日期的历史验证记录，记录当时 worldline 已经执行的检查及其适用范围，产品当时处于开发候选阶段；配对编辑器的验证与待验范围由其单独摘要记录。本页不构成 0.15 整体验收完成或正式发行结论。功能与限制见 [CHANGELOG](../CHANGELOG.md)，行为和数值门槛以 [矢量场景](../spec/vector-scene.md)、[静态世界站](../spec/reader-site.md)、[快照](../spec/workspace-snapshot.md)及[共同契约第 11 节](../spec/presentation.md)为准。
 
 本文指向 worldedit 的跨仓相对链接仅用于 `worldline` / `worldedit` 同级检出；Windows CI 链接为对应 GitHub 运行。
 

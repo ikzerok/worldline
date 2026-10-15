@@ -2,9 +2,11 @@
 
 世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.36 将既有分支条件投影为有类型作者树，并按完整对象身份连接选定真实运行的状态；配对 worldedit 消费同一 core/runtime 的解析、来源和保护。
 
-工作分支不表示正式发行。范围和验证边界见配对编辑器[0.36版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
+当前 core/runtime 版本为 0.36.0，已随 [worldedit v0.36.0](https://github.com/ikzerok/worldedit/releases/tag/v0.36.0) 配对发行，功能与历史验证见[0.36 说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.0.md)。配对 worldedit 0.36.1 的[桌面修复](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.1.md)不升级 core/runtime；精确源码仍以编辑器的 `compatibility.json` 为准。默认语言 1.9、最高既有显式版本 1.13 保持，不新增 DSL 或自动升级作品。
 
 升级边界：运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）继续精确匹配 runtime_version；0.35 及更早记录不能在 0.36 重放、比较或生成已验证审阅，应重新录制。合法旧轨迹可只读导入查看，读取成功不代表可执行。普通 Story Save 继续按格式、能力和语义指纹独立校验；locale 记录还需匹配其展示身份。升级前保留完整工程和原记录。
+
+worldedit 0.36.1 继续使用 runtime 0.36.0，0.36.0 轨迹与运行检查点不因编辑器补丁号失效；仍须通过原有指纹、能力及 locale 身份检查。
 
 资料填写沿用既有指纹规则：schema/绑定本身不改变运行指纹；世界和人物的标量属性可能改变。预览显示 core 实算的前后指纹及是否变化；普通 Story Save 仍按实际指纹等既有规则验证，不因版本号一概宣布失效。
 
@@ -116,7 +118,7 @@ cargo build --workspace --release --locked
 ./target/release/wl play "D:/作品/我的世界"
 ```
 
-先在 worldedit 新建并保存自己的作品，或按[语法规范](spec/syntax.md)创建根目录 `world.wl`。将整个作品目录作为参数，会递归分析全部 `.wl`，以根目录 world.wl 为入口。单文件参数适合独立示例，只读取入口及 include。所有引用都必须留在入口工作区中。
+可无参数启动 worldedit，在[欢迎页](https://github.com/ikzerok/worldedit/blob/main/docs/desktop-startup.md)明确新建自己的作品，或按[语法规范](spec/syntax.md)创建根目录 `world.wl`。将整个作品目录作为参数，会递归分析全部 `.wl`，以根目录 world.wl 为入口。单文件参数适合独立示例，只读取入口及 include。所有引用都必须留在入口工作区中。
 
 ## 文档
 

@@ -29,13 +29,15 @@
 | 完整范围书稿查询 | `wl manuscript-query DIR --query-json DTO --json` | core同快照筛选分页；可显式提供`--drafts-json` |
 | 正式对白创作 | `wl dialogue query\|preview\|apply DIR ... --json` | core typed 来源/计划；apply 需摘要，保存另须显式 `--save` |
 | 同稿角色制作台本 | `wl production-script query\|export DIR --request-json DTO ... --json` | 完整角色/locale 范围；JSON/Markdown/CSV 由 core 生成，显式 `--output` 才交付全新文件 |
-| 当前实际状态检查 | 试玩选择输入`inspect`或`inspect JSON`；RPC `session.inspect` | 有类型首次/前次/当前观测，查询不推进 |
+| schema 绑定与字段填写 | `wl schema-authoring query\|preview\|apply DIR ... --json` | core typed 计划；apply 需摘要，保存另须 `--save` |
+| 既有条件安全修改 | `wl condition-authoring query\|preview\|apply DIR ... --json` | 精确表达式槽与来源，apply 显式保存；复杂原式完整保留 |
+| 当前实际状态检查 | 试玩选择输入`inspect`或`inspect JSON`；RPC `session.inspect` | 有类型首次/前次/当前观测，完整 `owner` 身份筛选，查询不推进 |
 | Rust 结构编辑 | `Project::edit` 与各 draft 方法 | 全工程校验，失败回滚 |
 
 JSON 消费者应按字段语义读取，不依赖映射键序。诊断失败不意味着输出无法解析。每个子命令的 JSON 形状不同，完整方法、字段、错误码和示例见 [agent-protocol.md](../spec/agent-protocol.md)。CLI 当前没有通用 `--help` 子命令；无参数会输出用法并返回 2。
 
 正式对白及角色台本支持各自的 `--help`；请求、隐私与预算边界见
-[对白与制作台本机器入口](../spec/dialogue-machine.md)。
+[对白与制作台本机器入口](../spec/dialogue-machine.md)。schema 与条件的接口分别见[schema 机器契约](../spec/schema-authoring-machine.md)、[条件作者契约](../spec/condition-authoring.md)和[机器协议](../spec/agent-protocol.md)。
 
 `workspace check`、`maps list` 和不带 `promote` 的 `relations` 查询都是只读操作，返回 `schema_version`、
 `language_version`、`workspace_revision`、`diagnostics`、`workspace_diagnostics`、
@@ -148,7 +150,7 @@ Analysis 属于编译快照，改稿后重新编译再取 ID 与源位置。行�
 
 ## 运行时
 
-以 program 和 analysis 建立 Story，`continue_story()` 推进到选择或结束，`choices()` 查询可选项，`choose(index)` 选择，`state_view()` 取机器状态，`save()` 生成存档字符串。运行时借用编译产物，调用方须让产物活得比会话更久。保存与恢复边界见 semantics；外部进程需要持久会话时使用 wl-agent，而不是重复启动后复用失效的 session_id。
+以 program 和 analysis 建立 Story，`continue_story()` 推进到选择或结束，`choices()` 查询可选项，`choose(index)` 选择，`state_view()` 取机器状态，`save()` 生成存档字符串。借用型 `Story` 要求调用方让编译产物活得比会话更久；长期持有的编辑器会话可使用[拥有型 `OwnedStory`](../spec/owned-story.md)，由包装器保持同一编译快照，不另建解释器。保存与恢复边界见 semantics；外部进程需要持久会话时使用 wl-agent，而不是重复启动后复用失效的 session_id。
 
 运行失败可能包括准入拒绝、动态表达式问题、执行步数限制及无效存档。按实际 RunError 报告位置和信息，避免将所有错误都解释成语法错误。
 

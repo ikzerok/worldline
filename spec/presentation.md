@@ -398,7 +398,7 @@ M1新增展示/模板/批注文档不进入Story.program、不改旧指纹。新
 | 5000 scene nodes CPU | P95≤33ms | release交互；headless与native证据分开 | 0.15 |
 | 长任务前台反馈 / 取消响应 | ≤250ms / ≤500ms | 无部分稿件、站点或陈旧提交 | 0.15 |
 
-0.15 行为安全上限与性能门是当前候选的明确验收条件，不因历史 debug 结果或较小夹具通过而放宽。RGBA 预算不代表渲染库内部合成总内存上限；组隔离和裁剪的额外工作集必须单独检查并在超限时明确拒绝。完整 scene、网站与后台快照的预算语义分别见 [vector-scene.md](vector-scene.md)、[reader-site.md](reader-site.md)、[workspace-snapshot.md](workspace-snapshot.md)。
+自 0.15 建立的行为安全上限与性能门是相关候选的明确验收条件，不因历史 debug 结果或较小夹具通过而放宽。RGBA 预算不代表渲染库内部合成总内存上限；组隔离和裁剪的额外工作集必须单独检查并在超限时明确拒绝。完整 scene、网站与后台快照的预算语义分别见 [vector-scene.md](vector-scene.md)、[reader-site.md](reader-site.md)、[workspace-snapshot.md](workspace-snapshot.md)。
 
 
 ## 独立文字标签（工具 0.5.0）（文字几何 v1）

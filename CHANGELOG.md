@@ -1,5 +1,15 @@
 # 版本变更
 
+各版本段落记录该版本的变化与当时验证范围；历史候选、测试数字和平台限制不代表当前版本结果。公开发行状态以对应 Release 和发行配对清单为准。
+
+## 配对 worldedit 0.36.1 的文档修订
+
+- worldline/core/runtime 版本保持 0.36.0；本次没有语言或运行时变更
+- 同步无项目欢迎页、显式新建/打开、手册、索引与历史发行状态
+- 编辑器补丁不改变 runtime 0.36.0 的轨迹/检查点版本兼容；实际指纹、能力与身份保护保持
+
+配对修复与验证见[worldedit 0.36.1 说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.1.md)。
+
 ## 0.36.0
 
 - 既有 choice 显示、可选条件与 event after 的有类型往返；安全纯子集可读回、修改和预览，复杂原式完整保留高级源码
@@ -9,7 +19,7 @@
 - 全局与书稿操作按真实字宽收拢；输入待应用与工程待保存同时可见，保留 Studio 默认、五布局及十家族十七有效明暗
 - 默认语言1.9、最高既有1.13保持；产品升级沿用严格 replay/checkpoint runtime_version 守卫，普通 Story Save 仍独立验证
 
-范围、实际验证与未测边界见[0.36版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.0.md)。工作分支不表示正式发行。
+范围、实际验证与未测边界见[0.36版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.0.md)。该版本已随 [worldedit v0.36.0](https://github.com/ikzerok/worldedit/releases/tag/v0.36.0) 配对发行。
 
 ## 0.35.0
 
@@ -243,7 +253,7 @@
 - 同 0.17 合法源码移动、保存重开后，入口 trace、checkpoint-origin trace 和普通 save 已独立验证
 - 候选本地 core 1041 通过、0 失败、4 性能 ignored；最终合并、配对与正式发行以对应 CI 和版本报告为准
 
-## 0.16.0（开发中）
+## 0.16.0（保留开发期记录）
 
 ### 语言、core 与机器契约
 
@@ -271,7 +281,7 @@
 
 产品版本与语言版本独立。当前默认语言为 1.9，最高支持 1.13；打开旧作品不会自动启用新能力。历史变化与兼容说明另见 [发布说明](docs/release.md)。
 
-## 0.15.0 — 开发候选，未正式发行
+## 0.15.0（保留开发期记录）
 
 ### 原生矢量地图
 
@@ -324,8 +334,8 @@
 
 SVG 单次输入上限为 2 MiB、1000 图元；每图 scene 上限为 5000 节点、32 层级。v3 公开对象上限为 2000，旧 v1/v2 仍为 500；静态站点上限为 10000 文件、128 MiB。附件、路径段、文档、像素及后台快照还有各自限额，以[阈值登记表](spec/presentation.md#11-阈值登记单源)和[发布预算](spec/reader-site.md#7-原子性预算与验证)为准。预算不等于达到上限时的交互性能保证。
 
-### 当前验证状态
+### 当时验证状态
 
-0.15.0 仍为开发候选，未正式发行。Linux workspace 与 core head `90000754940c9b8630d294732912c9a9daea79d3` 的 Windows CI 均为 925 通过、0 失败、3 ignored，格式及严格 Clippy 通过；1000 SVG 和 2000 对象世界站的 release 固定负载通过相应门槛。profile 曾出现 269 ms 超限，等价索引优化后重新通过 core 与完整 UI 提交测量，保留原失败记录。
+以下为 0.15.0 尚在开发候选阶段时的验证记录，保留当时范围，不作为当前发行状态。Linux workspace 与 core head `90000754940c9b8630d294732912c9a9daea79d3` 的 Windows CI 均为 925 通过、0 失败、3 ignored，格式及严格 Clippy 通过；1000 SVG 和 2000 对象世界站的 release 固定负载通过相应门槛。profile 曾出现 269 ms 超限，等价索引优化后重新通过 core 与完整 UI 提交测量，保留原失败记录。
 
 精确提交、机器、fixture、全部测量和待验范围见 [0.15 验证摘要](docs/verification-0.15.md)。真实 `file://` 被工具安全策略拒绝，正常 HTTP 重试也被客户端阻断，实际离线网页与 Browser Worker 未验；静态资源审计、Node WASM 或配对编辑器原生功能结果不能替代浏览器验证。
