@@ -117,7 +117,7 @@ impl Project {
             .collect()
     }
 
-    fn event_draft_from(
+    pub(super) fn event_draft_from(
         &self,
         id: &str,
         result: &crate::CompileResult,
@@ -190,7 +190,17 @@ impl Project {
                 perm, after_src, ..
             } => (
                 perm.clone().unwrap_or_default(),
-                after_src.clone().unwrap_or_default(),
+                if after_src.is_some() {
+                    super::condition_patch::SourceIndex::new(text)
+                        .source(
+                            &lines[i],
+                            crate::condition_authoring::ConditionSlot::EventAfter,
+                        )?
+                        .unwrap_or_default()
+                        .to_owned()
+                } else {
+                    String::new()
+                },
             ),
             _ => (String::new(), String::new()),
         };
@@ -221,6 +231,11 @@ impl Project {
     ) -> Result<(), String> {
         let result = self.compile_current();
         self.validate_event_edit(path, original, draft, &result)?;
+        if let Some(id) = original {
+            if let Some(source) = super::condition_patch::event(self, path, id, draft, &result)? {
+                return self.edit(|candidate| candidate.set_text(path, source));
+            }
+        }
         self.edit(|candidate| candidate.replace_event_source(path, original, draft))
     }
 

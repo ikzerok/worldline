@@ -6,6 +6,7 @@ use crate::diagnostic::Diagnostic;
 pub use crate::fingerprint::fingerprint_program;
 
 mod builder;
+pub(crate) use builder::condition_diagnostics;
 mod projection;
 
 pub use projection::{

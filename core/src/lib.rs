@@ -15,6 +15,7 @@ mod catalog_syntax;
 pub mod checkpoints;
 pub mod collaboration;
 mod compiler;
+pub mod condition_authoring;
 mod content_baseline;
 pub mod content_templates;
 pub mod deletion_content_references;

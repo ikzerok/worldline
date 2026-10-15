@@ -6,6 +6,8 @@ use crate::diagnostic::{sort_diagnostics, Diagnostic, Span};
 use crate::graph::{AnchorDecl, EdgeKind, GraphEdge, GraphNode, RelationGraph};
 use std::collections::{BTreeMap, HashMap};
 
+mod authoring;
+pub(crate) use authoring::condition_diagnostics;
 mod expressions;
 mod flow;
 mod flow_safety;

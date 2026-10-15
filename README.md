@@ -1,14 +1,21 @@
 # worldline（世界线）
 
-世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.35 连接既有 schema、四类资料的显式绑定、同 core 字段填写与诊断、预览和原子应用；配对 worldedit 使用同一 core/runtime 的结果完成作者操作。
+世界设定与分支叙事的语言、核心分析和运行时，语言源码为唯一真源。0.36 将既有分支条件投影为有类型作者树，并按完整对象身份连接选定真实运行的状态；配对 worldedit 消费同一 core/runtime 的解析、来源和保护。
 
-工作分支不表示正式发行。范围和验证边界见配对编辑器[0.35版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.35.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
+工作分支不表示正式发行。范围和验证边界见配对编辑器[0.36版本说明](https://github.com/ikzerok/worldedit/blob/main/docs/releases/v0.36.0.md)。本轮不新增 DSL，默认语言 1.9、最高既有显式版本 1.13 保持，不自动升级作品。
 
-升级边界：0.34 及更早运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）按既有 runtime_version 守卫拒绝在 0.35 重放、比较或生成已验证审阅，应重新录制。合法路径 JSON 只读导入成功不代表可执行；普通 Story Save 继续按格式、能力和指纹独立校验。升级前保留完整工程和原记录。
+升级边界：运行轨迹与运行检查点（ReplayTrace / ReplayCheckpoint）继续精确匹配 runtime_version；0.35 及更早记录不能在 0.36 重放、比较或生成已验证审阅，应重新录制。合法旧轨迹可只读导入查看，读取成功不代表可执行。普通 Story Save 继续按格式、能力和语义指纹独立校验；locale 记录还需匹配其展示身份。升级前保留完整工程和原记录。
 
 资料填写沿用既有指纹规则：schema/绑定本身不改变运行指纹；世界和人物的标量属性可能改变。预览显示 core 实算的前后指纹及是否变化；普通 Story Save 仍按实际指纹等既有规则验证，不因版本号一概宣布失效。
 
 应用与源码发行包不附带样例工程或规范演示文件。新建作品从仅含起点与结束的空白骨架开始；必要测试、可选产品字段模板与既有作品能力保持。
+
+## 0.36 条件往返与对象运行状态
+
+- [条件作者契约](spec/condition-authoring.md)：三个既有条件入口、有序类型树、正式来源范围与原字节往返；复杂表达式保留全部高级源码
+- [状态检查契约](spec/state-inspection.md)：完整对象身份筛选所属 state，冻结目录与运行 stamp 绑定，静态初值和首次/前次/当前记录分开
+- [机器入口](spec/agent-protocol.md)：`condition-authoring query/preview/apply` 与 `condition.authoring.*` 使用同一 core；`session.inspect` 和暂停时的 `inspect` 接受显式 owner
+- 条件预览不执行语言，状态查询不推进运行；只读、外改冲突、过期计划、版本与预算检查保持。UI 作者草稿不由另一进程的 CLI/RPC 读取
 
 ## 0.35 同一约束的资料填写
 

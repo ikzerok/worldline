@@ -40,12 +40,7 @@ impl DraftRehearsalRunRequest {
         if self.choice_ids.len() > 256 || self.choice_ids.iter().any(|id| id.len() > 1024) {
             return Err("单次明确选择最多 256 项，每个 ID 最多 1024 字节".into());
         }
-        if self.inspection.limit == 0
-            || self.inspection.limit > 100
-            || self.inspection.text.chars().count() > 256
-        {
-            return Err("状态查询每页须为 1–100 项，检索词最多 256 字符".into());
-        }
+        self.inspection.validate().map_err(|error| error.message)?;
         Ok(())
     }
 }

@@ -30,6 +30,8 @@ mod catalog;
 mod catalog_import;
 #[path = "lib/catalog_scope.rs"]
 mod catalog_scope;
+#[path = "lib/condition_authoring.rs"]
+mod condition_authoring;
 #[path = "lib/dialogue.rs"]
 mod dialogue;
 #[path = "lib/draft_rehearsal.rs"]
@@ -238,6 +240,16 @@ impl Server {
         }
         if matches!(
             msg.get("method").and_then(Value::as_str),
+            Some(
+                "condition.authoring.query"
+                    | "condition.authoring.preview"
+                    | "condition.authoring.apply"
+            )
+        ) {
+            return condition_authoring::dispatch(self, &msg);
+        }
+        if matches!(
+            msg.get("method").and_then(Value::as_str),
             Some("schema.authoring.query" | "schema.authoring.preview" | "schema.authoring.apply")
         ) {
             return schema_authoring::dispatch(self, &msg);
@@ -334,6 +346,8 @@ impl Server {
                 "capabilities": [
                     "authoring.dialogue.v1",
                     "authoring.schema_authoring.v1",
+                    worldline_core::condition_authoring::CONDITION_AUTHORING_CAPABILITY,
+                    worldline_runtime::OBJECT_STATE_INSPECTION_CAPABILITY,
                     "authoring.production_script.v1",
                     "authoring.localization_workbench.v1",
                     "runtime.localization.v1",

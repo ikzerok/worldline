@@ -939,3 +939,24 @@ CLI普通或JSON试玩在等待选择输入时接收 `inspect` 或 `inspect {que
 过期、预算、保护和编译失败走`ok:false`。各能力的输入、结果、完整外壳与换行预算
 不同，以链接契约为准；新适配器的编码预算不声称改变既有stdio首次读行/JSON解析器
 的全局资源边界。CLI还受宿主命令行长度限制，大正文试演宜使用`--request`文件。
+
+
+## 工具 0.36 条件作者协议
+
+能力 `authoring.condition_authoring.v1` 对应 core `condition_authoring` 模块。
+完整 DTO、支持子集、稿源与预算见 [condition-authoring.md](condition-authoring.md)。
+
+- `condition.authoring.query {project_id, selector}`：返回 `ok/projection/applied:false/saved:false`
+- `condition.authoring.preview {project_id, request}`：返回 `ok/plan/applied:false/saved:false`
+- `condition.authoring.apply {project_id, request, plan_digest}`：重建同一core计划后只改内存，
+  有变化成功 `applied:true/saved:false`，无变化 applied:false；保存仍用既有 `project.save`
+- CLI `wl condition-authoring query <作品> --selector-json <JSON> --json`；
+  `preview|apply` 使用 `--request-json`，apply 另需 `--plan-digest`；只有显式 `--save` 保存
+
+未知字段/版本/重复键/不完整owner/无效树预算使用 INVALID_PARAMS；过期、只读、
+来源歧义和复杂条件为领域 `ok:false`。响应预算在改动前预检，保存失败保留真实的
+`applied:true/saved:false`，不回报虚假未应用。查询通过只读打开，不恢复事务或迁移。
+
+`session.inspect` 的可选 `query.owner` 使用完整 TargetRef，并由runtime在同一冻结
+运行目录过滤所属状态；能力 `runtime.object_state_inspection.v1` 与初值/首次记录、
+无状态/未知对象、stamp和只读边界见 [state-inspection.md](state-inspection.md)。

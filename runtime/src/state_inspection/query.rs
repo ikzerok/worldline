@@ -16,12 +16,7 @@ impl Story<'_> {
         query: &StateInspectionQuery,
     ) -> Result<StateInspectionPage, StateInspectionError> {
         let stamp = self.inspection_stamp();
-        if query.limit == 0 || query.limit > 100 || query.text.chars().count() > 256 {
-            return Err(StateInspectionError {
-                code: "INVALID_INSPECTION_QUERY".into(),
-                message: "状态查询每页须为1–100项，检索词最多256字符".into(),
-            });
-        }
+        query.validate()?;
         if query
             .expected_stamp
             .is_some_and(|expected| expected != stamp)
@@ -31,13 +26,18 @@ impl Story<'_> {
                 message: "运行或观察位置已变化，请重新查询第一页".into(),
             });
         }
+        let owner = self.inspection_owner(query)?;
+        let mut definition_bytes = MAX_INSPECTION_OUTPUT_BYTES
+            - crate::route_comparison::encoded_size(&owner, MAX_INSPECTION_OUTPUT_BYTES)
+                .map_err(|_| super::owner::output_limit())?;
         let history = &self.inspection;
         let previous = history.previous();
         let text = FoldedSearch::new(query.text.trim());
-        let candidates = self.inspection_candidates();
+        let candidates = self.inspection_candidates_for_owner(query.owner.as_ref());
         let mut page = StateInspectionPage {
             stamp,
             status: history.status,
+            owner,
             first_observation: history.first.as_ref().map(|o| o.number),
             previous_observation: previous.map(|o| o.number),
             current_observation: history
@@ -66,6 +66,10 @@ impl Story<'_> {
             {
                 continue;
             }
+            let definition = query
+                .owner
+                .as_ref()
+                .and_then(|_| self.catalog.states.get(&candidate.key.name));
             let current = candidate.value.cell();
             let first = baseline(history.first.as_deref(), &candidate.key);
             let previous = baseline(previous, &candidate.key);
@@ -73,6 +77,7 @@ impl Story<'_> {
                 && ![
                     candidate.key.name.as_str(),
                     candidate.fragment.unwrap_or(""),
+                    definition.map_or("", |info| info.display.as_str()),
                     &first.display,
                     &previous.display,
                     &current.display,
@@ -109,15 +114,15 @@ impl Story<'_> {
                 first_change,
                 previous_change,
                 source: candidate.source,
+                state_definition: definition
+                    .map(|info| super::owner::state_definition(info, &mut definition_bytes))
+                    .transpose()?,
             });
         }
         let next = query.offset.saturating_add(page.items.len());
         page.next_offset = (next < page.total_matches).then_some(next);
-        if crate::route_comparison::encoded_size(&page, 1024 * 1024).is_err() {
-            return Err(StateInspectionError {
-                code: "INSPECTION_OUTPUT_LIMIT".into(),
-                message: "检查页超过1MiB输出预算，请减少每页条数或缩小检索".into(),
-            });
+        if crate::route_comparison::encoded_size(&page, MAX_INSPECTION_OUTPUT_BYTES).is_err() {
+            return Err(super::owner::output_limit());
         }
         Ok(page)
     }

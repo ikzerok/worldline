@@ -208,15 +208,20 @@ fn source_move_preserves_same_semantics_and_points_time_evidence_at_the_new_file
 fn structural_event_roundtrip_keeps_quoted_expressions_and_current_time_order() {
     let (_ws, mut project) = Workspace::new(SOURCE);
     let before = checked(&mut project);
+    let baseline = project.content_baseline();
     let (path, draft) = project.event_draft("finish").unwrap();
     let original_body = draft.body.clone();
     project
         .edit(|p| p.write_event(&path, Some("finish"), &draft))
         .unwrap();
     let after = checked(&mut project);
+    // v0.36 无变化往返保留原始字节，不再由旧结构序列化追加末尾空行。
+    // 历史 golden 仍为冻结的 v0.18 真实产物；只明确记录新旧格式差异。
+    assert_eq!(project.content_baseline(), baseline);
+    assert_eq!(project.document(&path).unwrap(), SOURCE);
     assert_eq!(
-        project.document(&path).unwrap(),
-        include_str!("v019_fixtures/roundtrip.wl")
+        include_str!("v019_fixtures/roundtrip.wl"),
+        format!("{SOURCE}\n")
     );
     assert_eq!(before.analysis.fingerprint, after.analysis.fingerprint);
     assert_eq!(

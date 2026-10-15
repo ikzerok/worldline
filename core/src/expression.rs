@@ -4,6 +4,7 @@ use crate::ast::*;
 use crate::diagnostic::{Diagnostic, DiagnosticSourceRole, Span};
 use crate::lexer;
 use crate::source_provenance::ExpressionSource;
+pub(crate) mod condition;
 pub(crate) mod outline_budget;
 mod quoted;
 mod reference;
@@ -489,7 +490,7 @@ pub(crate) fn parse_expr_with_source(
     diags: &mut Vec<Diagnostic>,
 ) -> (Expr, ExpressionSource) {
     let toks = lex_expr(src, file, line, base_col, diags);
-    if !outline_budget::allow(&toks) {
+    if !outline_budget::allow(&toks) || !condition::allow(&toks) {
         return (Expr::Num(0.0), ExpressionSource::default());
     }
     let mut p = ExprParser {
@@ -505,6 +506,10 @@ pub(crate) fn parse_expr_with_source(
         p.err_here("表达式后有多余内容".into(), diags);
     }
     let source = p.sources.pop().unwrap_or_default();
+    if !condition::allow_expression(&expr) {
+        condition::discard(expr, source);
+        return (Expr::Num(0.0), ExpressionSource::default());
+    }
     (expr, source)
 }
 
